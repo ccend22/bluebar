@@ -110,6 +110,40 @@ test("waiters are pinned to the venue IP, limited to order commands and see trim
   }
 });
 
+test("frequent order changes return only the affected table and remain idempotent", async () => {
+  const t = await setup();
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 10 });
+    const cookie = t.cookieOf(await t.managerLogin());
+    const stateResponse = await t.call("GET", "/api/state", { cookie });
+    const before = stateResponse.json();
+    const command = {
+      id: randomUUID(),
+      version: before.version,
+      type: "order.add",
+      payload: { tableId: 1, productId: 1, waiterId: 1 },
+    };
+    const response = await t.call("POST", "/api/commands", { cookie, body: command });
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal("state" in body, false);
+    assert.equal(body.patch.table.id, 1);
+    assert.equal(body.patch.table.lines[0].qty, 1);
+    assert.ok(response.body.length < stateResponse.body.length / 2);
+
+    const replay = await t.call("POST", "/api/commands", { cookie, body: command });
+    assert.equal(replay.statusCode, 200);
+    assert.equal(replay.json().replayed, true);
+    assert.equal(replay.json().patch.table.lines[0].qty, 1);
+    const saved = (await t.call("GET", "/api/state", { cookie })).json();
+    assert.equal(saved.state.tables.find((table) => table.id === 1).lines[0].qty, 1);
+  } finally {
+    await t.close();
+  }
+});
+
 test("five wrong PINs lock the account until a manager resets it", async () => {
   const t = await setup();
   try {

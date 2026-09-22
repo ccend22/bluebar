@@ -204,6 +204,144 @@ export async function readSnapshot(pool) {
     client.release();
   }
 }
+
+async function readOrderTable(client, tableId) {
+  const row = (
+    await client.query(
+      `SELECT t.id, t.area, t.shape, t.active, t.waiter_id,
+        COALESCE(
+          jsonb_agg(jsonb_build_object(
+            'id', l.product_id, 'name', l.name, 'price', l.price, 'qty', l.qty
+          ) ORDER BY l.product_id) FILTER (WHERE l.product_id IS NOT NULL),
+          '[]'::jsonb
+        ) AS lines
+       FROM bluebar.dining_tables t
+       LEFT JOIN bluebar.order_lines l ON l.table_id = t.id
+       WHERE t.id = $1
+       GROUP BY t.id, t.area, t.shape, t.active, t.waiter_id`,
+      [tableId],
+    )
+  ).rows[0];
+  if (!row) throw new AppError("Tavolina nuk ekziston.");
+  return {
+    id: row.id,
+    area: row.area,
+    shape: row.shape,
+    active: row.active,
+    waiter: row.waiter_id,
+    lines: row.lines,
+  };
+}
+
+// The high-frequency POS path reads and returns only the affected order.
+// Full snapshots remain the source of truth for initial load and management actions.
+export async function executeOrderPatch(pool, command) {
+  if (!["order.add", "order.remove"].includes(command.type))
+    throw new AppError("Veprimi i porosisë është i pavlefshëm.");
+  const { tableId, productId, waiterId } = command.payload || {};
+  if (!Number.isSafeInteger(tableId) || tableId < 1 ||
+      !Number.isSafeInteger(productId) || productId < 1 ||
+      (command.type === "order.add" && (!Number.isSafeInteger(waiterId) || waiterId < 1)))
+    throw new AppError("Vlerë numerike e pavlefshme.");
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const hash = createHash("sha256")
+      .update(JSON.stringify({ type: command.type, payload: command.payload }))
+      .digest("hex");
+    const context = (
+      await client.query(
+        `SELECT c.version, cmd.payload_hash, cmd.result,
+          EXISTS(SELECT 1 FROM bluebar.shifts WHERE closed IS NULL) AS shift_open,
+          t.id AS table_id, t.active AS table_active,
+          w.active AS waiter_active,
+          p.name AS product_name, p.price AS product_price, p.stock AS product_stock,
+          COALESCE((SELECT sum(qty) FROM bluebar.order_lines WHERE product_id = $4), 0)::integer AS reserved,
+          line.qty AS line_qty
+         FROM bluebar.control c
+         LEFT JOIN bluebar.commands cmd ON cmd.id = $1
+         LEFT JOIN bluebar.dining_tables t ON t.id = $2
+         LEFT JOIN bluebar.waiters w ON w.id = $3
+         LEFT JOIN bluebar.products p ON p.id = $4
+         LEFT JOIN bluebar.order_lines line ON line.table_id = $2 AND line.product_id = $4
+         WHERE c.id = 1
+         FOR UPDATE OF c`,
+        [command.id, tableId, waiterId || null, productId],
+      )
+    ).rows[0];
+
+    if (context.payload_hash) {
+      if (context.payload_hash !== hash)
+        throw new AppError("Ky identifikues është përdorur për një veprim tjetër.", 409);
+      const table = await readOrderTable(client, tableId);
+      await client.query("COMMIT");
+      return {
+        version: context.version,
+        patch: { table },
+        result: context.result,
+        replayed: true,
+      };
+    }
+    if (command.version !== context.version)
+      throw new AppError(
+        "Të dhënat ndryshuan nga një sesion tjetër. Gjendja u rifreskua; kontrolloni dhe provoni sërish.",
+        409,
+      );
+    if (!context.shift_open) throw new AppError("Hapni turnin për të marrë porosi.");
+    if (!context.table_id) throw new AppError("Tavolina nuk ekziston.");
+    if (!context.table_active) throw new AppError("Tavolina është joaktive.");
+
+    if (command.type === "order.add") {
+      if (!context.waiter_active) throw new AppError("Zgjidhni një kamarier aktiv.");
+      if (!context.product_name || context.reserved >= context.product_stock)
+        throw new AppError("Nuk ka stok të disponueshëm për këtë produkt.");
+      await client.query(
+        `WITH added AS (
+           INSERT INTO bluebar.order_lines(table_id, product_id, name, price, qty)
+           VALUES($1, $2, $3, $4, 1)
+           ON CONFLICT(table_id, product_id) DO UPDATE SET qty = bluebar.order_lines.qty + 1
+           RETURNING 1
+         )
+         UPDATE bluebar.dining_tables SET waiter_id = $5 WHERE id = $1`,
+        [tableId, productId, context.product_name, context.product_price, waiterId],
+      );
+    } else {
+      if (!context.line_qty) throw new AppError("Produkti nuk është në porosi.");
+      await client.query(
+        `WITH removed AS (
+           DELETE FROM bluebar.order_lines
+           WHERE table_id = $1 AND product_id = $2 AND qty = 1
+           RETURNING 1
+         )
+         UPDATE bluebar.order_lines SET qty = qty - 1
+         WHERE table_id = $1 AND product_id = $2 AND qty > 1`,
+        [tableId, productId],
+      );
+    }
+
+    const version = (
+      await client.query(
+        `WITH bumped AS (
+           UPDATE bluebar.control SET version = version + 1 WHERE id = 1 RETURNING version
+         )
+         INSERT INTO bluebar.commands(id, payload_hash, type, result)
+         SELECT $1, $2, $3, '{}'::jsonb FROM bumped
+         RETURNING (SELECT version FROM bumped) AS version`,
+        [command.id, hash, command.type],
+      )
+    ).rows[0].version;
+    const table = await readOrderTable(client, tableId);
+    await client.query("COMMIT");
+    return { version, patch: { table }, result: {} };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function execute(pool, command, actor = null) {
   const client = await pool.connect();
   try {

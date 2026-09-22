@@ -429,7 +429,7 @@ function App({ user, onLogout }) {
     );
   return (
     <>
-      {database.pending && !database.busy && (
+      {database.pending && !database.busy && !database.syncingOrders && (
         <div className="database-overlay">
           <section className="panel" role="status">
             <h2>Veprimi kërkon verifikim</h2>
@@ -461,7 +461,10 @@ function App({ user, onLogout }) {
       <a className="skip-link" href="#main">
         Kalo te përmbajtja
       </a>
-      <div className="app" inert={!!database.pending && !database.busy}>
+      <div
+        className="app"
+        inert={!!database.pending && !database.busy && !database.syncingOrders}
+      >
         <aside className="sidebar">
           <a className="brand" href="#main" onClick={() => nav("Tavolinat")}>
             <span className="brandmark">b.</span>BlueBar
@@ -515,7 +518,7 @@ function App({ user, onLogout }) {
             </div>
             <div className="header-actions">
               <span className="save-status" role="status" aria-live="polite">
-                {database.busy ? "Po ruhet…" : ""}
+                {database.saving ? "Po ruhet…" : ""}
               </span>
               <span className={`shift-status ${state.shift ? "" : "closed"}`}>
                 <span className="dot" />
@@ -523,7 +526,7 @@ function App({ user, onLogout }) {
               </span>
               <span className="role">
                 <span>{user.name}</span>
-                <button onClick={onLogout} disabled={database.busy}>Dil</button>
+                <button onClick={onLogout} disabled={database.saving}>Dil</button>
               </span>
             </div>
           </header>

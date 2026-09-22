@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { AppError } from "./commands.js";
-import { readSnapshot, execute } from "./repository.js";
+import { readSnapshot, execute, executeOrderPatch } from "./repository.js";
 import {
   cookieName,
   endSession,
@@ -76,6 +76,7 @@ export function buildApp({
     };
   // Managers get PIN status; waiters only see what a shift needs (no history, cash float or stock log).
   const present = async (data, user) => {
+    if (data.patch) return { ...data, provider };
     const { state } = data;
     if (user.role === "manager") {
       const pins = new Set(
@@ -238,7 +239,10 @@ export function buildApp({
         if (!WAITER_COMMANDS.has(body.type) || !own)
           throw new AppError("Nuk keni leje për këtë veprim.", 403);
       }
-      return present(await execute(pool, body, user), user);
+      const result = ["order.add", "order.remove"].includes(body.type)
+        ? await executeOrderPatch(pool, body)
+        : await execute(pool, body, user);
+      return present(result, user);
     },
   );
   app.setErrorHandler((error, request, reply) => {
