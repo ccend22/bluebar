@@ -95,6 +95,11 @@ export function Login({ onSignedIn }) {
               <PinPad value={pin} onChange={setPin} onComplete={submit} disabled={busy} />
             </Field>
           )}
+          {busy && (
+            <p className="helper" role="status">
+              Po hyhet…
+            </p>
+          )}
         </div>
       )}
     </main>
