@@ -1,0 +1,12 @@
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {createServer} from 'vite';
+import {createPool} from '../server/db.js';
+import {buildApp} from '../server/app.js';
+const {stdout}=await promisify(execFile)('neon',['connection-string','br-purple-thunder-zap71blp','--project-id','wandering-rice-50334443','--ssl','verify-full']);
+const url=stdout.split('\n').map(s=>s.trim()).find(s=>/^postgres(?:ql)?:\/\//.test(s));
+const pool=createPool(url);const app=buildApp({pool,provider:'Neon PostgreSQL (test branch)',origins:['http://127.0.0.1:5180']});
+await app.listen({host:'127.0.0.1',port:3002});
+const vite=await createServer({server:{host:'127.0.0.1',port:5180,strictPort:true,proxy:{'/api':{target:'http://127.0.0.1:3002',changeOrigin:true}}}});await vite.listen();
+console.log('Isolated Neon browser verification: http://127.0.0.1:5180');
+for(const signal of ['SIGINT','SIGTERM'])process.once(signal,async()=>{await vite.close();await app.close();await pool.end();process.exit(0)});
