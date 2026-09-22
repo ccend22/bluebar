@@ -47,7 +47,7 @@ async function setup(options = {}) {
     await app.close();
     await db.close();
   };
-  return { call, send, manager, managerLogin, waiterLogin, cookieOf, close };
+  return { call, send, manager, managerLogin, waiterLogin, cookieOf, close, pool };
 }
 
 test("manager signs in with a PIN; sessions are HttpOnly and revocable", async () => {
@@ -183,4 +183,37 @@ test("IP policy handles CIDR, IPv4-mapped IPv6 and defaults to loopback", () => 
   const dev = ipPolicy([]);
   assert.ok(dev("127.0.0.1") && dev("::1") && !dev(OUTSIDE));
   assert.throws(() => ipPolicy(["nope"]));
+});
+
+
+test("only managers cancel open orders, with an audit record and safe retries", async () => {
+  const t = await setup();
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 10 });
+    await t.send("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    const cookie = t.cookieOf(await t.managerLogin());
+    const before = (await t.call("GET", "/api/state", { cookie })).json();
+    const waiterCookie = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const command = { id: randomUUID(), version: before.version, type: "order.cancel", payload: { tableId: 1, reason: "Porosi prove" } };
+    assert.equal((await t.call("POST", "/api/commands", { cookie: waiterCookie, body: command })).statusCode, 403);
+    assert.equal((await t.call("POST", "/api/commands", { cookie, body: { ...command, payload: { tableId: 1, reason: "" } } })).statusCode, 400);
+    const response = await t.call("POST", "/api/commands", { cookie, body: command });
+    assert.equal(response.statusCode, 200);
+    const after = response.json();
+    assert.deepEqual(after.state.tables.find(t => t.id === 1).lines, []);
+    assert.equal(after.state.tables.find(t => t.id === 1).waiter, null);
+    for (const key of ["products", "invoices", "movements", "shift", "shifts"]) assert.deepEqual(after.state[key], before.state[key], key);
+    assert.equal(after.result.cancelled.by, "boss");
+    assert.deepEqual(after.result.cancelled.lines, before.state.tables.find(t => t.id === 1).lines);
+    const replay = (await t.call("POST", "/api/commands", { cookie, body: command })).json();
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.version, after.version);
+    const audit = await t.pool.query("SELECT result FROM bluebar.commands WHERE id=$1", [command.id]);
+    assert.deepEqual(audit.rows[0].result, after.result);
+    assert.equal((await t.call("POST", "/api/commands", { cookie, body: { ...command, id: randomUUID(), version: after.version } })).statusCode, 400);
+  } finally {
+    await t.close();
+  }
 });

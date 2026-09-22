@@ -35,7 +35,7 @@ const unique = (items, value, except) => {
   )
     fail("Ky emër ekziston tashmë.");
 };
-export function applyCommand(state, type, payload) {
+export function applyCommand(state, type, payload, actor = null) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
     fail("Kërkesë e pavlefshme.");
   const p = payload;
@@ -94,6 +94,28 @@ export function applyCommand(state, type, payload) {
         ),
       };
       break;
+    case "order.cancel": {
+      const t = table();
+      if (!t.lines.length) fail("Tavolina nuk ka porosi të hapur.");
+      const reason = name(p.reason, 200);
+      if (reason.length < 3) fail("Shkruani arsyen e anulimit.");
+      result = {
+        cancelled: {
+          tableId: t.id,
+          lines: structuredClone(t.lines),
+          reason,
+          by: actor?.name || "manager",
+          at: new Date().toISOString(),
+        },
+      };
+      next = {
+        ...state,
+        tables: state.tables.map((x) =>
+          x.id === t.id ? { ...x, lines: [], waiter: null } : x,
+        ),
+      };
+      break;
+    }
     case "order.pay": {
       const t = table();
       if (p.method === "Cash") integer(p.received, 0, 100000000);

@@ -41,11 +41,6 @@ button {
   line-height: 1.3;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  transition:
-    background-color 150ms var(--ease-out),
-    border-color 150ms var(--ease-out),
-    color 150ms var(--ease-out),
-    transform 120ms var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
   button:hover {
@@ -55,9 +50,6 @@ button {
 }
 button:active {
   background: #ebebeb;
-}
-button:not(:disabled):active {
-  transform: scale(0.97);
 }
 button:disabled {
   opacity: 0.48;
@@ -623,9 +615,6 @@ main {
     background: #f8f8f8;
   }
 }
-.table-card:not(:disabled):active {
-  transform: scale(0.985);
-}
 .table-card.selected {
   outline: 2px solid var(--blue);
   outline-offset: 1px;
@@ -947,9 +936,6 @@ main {
 }
 .primary:active {
   background: #0058b0;
-}
-.primary:not(:disabled):active {
-  transform: scale(0.95);
 }
 .icon-button {
   width: 36px;
@@ -1571,21 +1557,9 @@ td small {
 .payment-dialog[open],
 .payment-dialog[open]::backdrop {
   opacity: 1;
-  transition:
-    opacity 200ms var(--ease-out),
-    transform 200ms var(--ease-out);
 }
 .payment-dialog[open] {
   transform: none;
-}
-@starting-style {
-  .payment-dialog[open] {
-    opacity: 0;
-    transform: scale(0.96) translateY(6px);
-  }
-  .payment-dialog[open]::backdrop {
-    opacity: 0;
-  }
 }
 .dialog-heading {
   display: flex;
@@ -2375,8 +2349,8 @@ footer > span:last-child {
   }
 }
 @media (max-width: 760px) {
-  main:has(.order) > .title-row,
-  main:has(.order) > .floor-summary { display: none; }
+  main:has(.order) > .workspace-controls > .title-row,
+  main:has(.order) > .workspace-controls > .floor-summary { display: none; }
   .order { scroll-margin-top: 12px; }
   .order-title h2:focus { outline: none; }
 }
@@ -2523,14 +2497,15 @@ footer > span:last-child {
   }
 }
 @media print {.database-overlay {display:none!important}}
-@media (prefers-reduced-motion: reduce) {
-  button:not(:disabled):active,
-  .primary:not(:disabled):active,
-  .table-card:not(:disabled):active {
-    transform: none;
-  }
-  .payment-dialog[open] {
-    transition: opacity 120ms linear;
-  }
-}
-
+/* PIN is a group of independent controls, never a label for the first key. */
+.pin-field {border:0;padding:0;margin:0;min-width:0}
+.pin-field legend {font-size:12px;font-weight:600;margin-bottom:12px;color:var(--muted)}
+.pin-keys button {transition:none;transform:none;-webkit-user-select:none;user-select:none}
+.workspace-controls {border:0;padding:0;margin:0;min-width:0}
+.workspace-controls:disabled {opacity:1}
+.save-status {font-size:11px;color:var(--muted);min-width:62px}
+.order-cancel {padding:0 20px 16px}
+.order-cancel .text-button {color:#99423a}
+.danger-button {background:#a43d34;color:#fff;border-color:#a43d34}
+.danger-button:hover {background:#892f28;color:#fff}
+@media(max-width:760px){.save-status{min-width:0;font-size:10px}.header-actions{flex-wrap:wrap}}

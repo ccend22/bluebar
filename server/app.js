@@ -212,6 +212,7 @@ export function buildApp({
                 "order.remove",
                 "order.assign",
                 "order.pay",
+                "order.cancel",
                 "table.save",
                 "table.toggle",
                 "product.save",
@@ -237,7 +238,7 @@ export function buildApp({
         if (!WAITER_COMMANDS.has(body.type) || !own)
           throw new AppError("Nuk keni leje për këtë veprim.", 403);
       }
-      return present(await execute(pool, body), user);
+      return present(await execute(pool, body, user), user);
     },
   );
   app.setErrorHandler((error, request, reply) => {

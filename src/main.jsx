@@ -193,7 +193,8 @@ function App({ user, onLogout }) {
     [stockFilter, setStockFilter] = useState("Të gjitha"),
     [counted, setCounted] = useState(""),
     [manageTables, setManageTables] = useState(false),
-    [report, setReport] = useState(null);
+    [report, setReport] = useState(null),
+    [cancelling, setCancelling] = useState(false);
   const dialog = useRef(null),
     dialogTrigger = useRef(null),
     heading = useRef(null),
@@ -244,6 +245,7 @@ function App({ user, onLogout }) {
     setTimeout(() => heading.current?.focus(), 0);
   };
   const selectTable = (t) => {
+    setCancelling(false);
     setSelected(t.id);
     setQuery("");
     setCategory("Të gjitha");
@@ -427,20 +429,11 @@ function App({ user, onLogout }) {
     );
   return (
     <>
-      {(database.busy || database.pending) && (
+      {database.pending && !database.busy && (
         <div className="database-overlay">
           <section className="panel" role="status">
-            <h2>
-              {database.busy
-                ? "Po ruhet në databazë…"
-                : "Veprimi kërkon verifikim"}
-            </h2>
-            <p>
-              {database.busy
-                ? "Prisni konfirmimin nga serveri."
-                : "Përgjigjja e mëparshme mungon. Verifikojeni me të njëjtin identifikues për të shmangur dublikimet."}
-            </p>
-            {!database.busy && (
+            <h2>Veprimi kërkon verifikim</h2>
+            <p>Përgjigjja e mëparshme mungon. Verifikojeni përpara se të vazhdoni; veprimi nuk do të dyfishohet.</p>
               <button
                 className="primary"
                 onClick={async () => {
@@ -462,14 +455,13 @@ function App({ user, onLogout }) {
               >
                 Verifiko veprimin
               </button>
-            )}
           </section>
         </div>
       )}
       <a className="skip-link" href="#main">
         Kalo te përmbajtja
       </a>
-      <div className="app" inert={database.busy || !!database.pending}>
+      <div className="app" inert={!!database.pending && !database.busy}>
         <aside className="sidebar">
           <a className="brand" href="#main" onClick={() => nav("Tavolinat")}>
             <span className="brandmark">b.</span>BlueBar
@@ -522,13 +514,16 @@ function App({ user, onLogout }) {
               <strong>{page}</strong>
             </div>
             <div className="header-actions">
+              <span className="save-status" role="status" aria-live="polite">
+                {database.busy ? "Po ruhet…" : ""}
+              </span>
               <span className={`shift-status ${state.shift ? "" : "closed"}`}>
                 <span className="dot" />
                 {state.shift ? "Turn i hapur" : "Turn i mbyllur"}
               </span>
               <span className="role">
                 <span>{user.name}</span>
-                <button onClick={onLogout}>Dil</button>
+                <button onClick={onLogout} disabled={database.busy}>Dil</button>
               </span>
             </div>
           </header>
@@ -540,6 +535,7 @@ function App({ user, onLogout }) {
             <Badge>{database.error ? "PA LIDHJE" : "DATABASE"}</Badge>
           </div>
           <main id="main">
+            <fieldset className="workspace-controls" disabled={database.busy} aria-busy={database.busy} aria-label="Hapësira e punës">
             <div className="title-row">
               <div>
                 <h1 ref={heading} tabIndex={-1}>
@@ -909,7 +905,7 @@ function App({ user, onLogout }) {
                     <div className="floor-help">
                       <Icon name="info" size={16} />
                       <span>
-                        Porositë ruhen automatikisht kur shtoni produkte.
+                        Porositë ruhen kur shtoni produkte dhe qëndrojnë të hapura deri në pagesë ose anulim.
                       </span>
                     </div>
                   </section>
@@ -1085,6 +1081,30 @@ function App({ user, onLogout }) {
                           </div>
                         )}
                       </div>
+                      {role === "Menaxher" && table.lines.length > 0 && (
+                        <div className="order-cancel">
+                          {cancelling ? (
+                            <form className="stack-form" onSubmit={async (e) => {
+                              e.preventDefault();
+                              const reason = new FormData(e.currentTarget).get("reason");
+                              const data = await update("order.cancel", { tableId: table.id, reason }, "Porosia u anulua dhe tavolina u lirua.");
+                              if (data) {
+                                setCancelling(false);
+                                setSelected(null);
+                              }
+                            }}>
+                              <Field label="Arsyeja e anulimit" name="reason" minLength={3} maxLength={200} required placeholder="p.sh. Porosi prove" autoFocus />
+                              <p className="helper">Anulohet vetëm porosia e papaguar. Nuk krijohet faturë dhe arsyeja e anulimit ruhet.</p>
+                              <div className="actions">
+                                <button type="button" onClick={() => setCancelling(false)}>Kthehu</button>
+                                <button className="danger-button">Konfirmo anulimin</button>
+                              </div>
+                            </form>
+                          ) : (
+                            <button className="text-button" onClick={() => setCancelling(true)}>Anulo porosinë</button>
+                          )}
+                        </div>
+                      )}
                       <div className="order-payment">
                         <div className="order-total">
                           <span>Totali për pagesë</span>
@@ -2181,6 +2201,7 @@ function App({ user, onLogout }) {
                 </aside>
               </div>
             )}
+          </fieldset>
           </main>
           <footer>
             <strong>BlueBar</strong>

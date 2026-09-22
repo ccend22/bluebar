@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { fetchLoginWaiters, loginWaiter, loginManager } from "./api.js";
 import { Field, PinPad } from "./components.jsx";
 
@@ -10,6 +10,7 @@ export function Login({ onSignedIn }) {
     [pin, setPin] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   useEffect(() => {
     fetchLoginWaiters()
       .then((r) => {
@@ -27,8 +28,10 @@ export function Login({ onSignedIn }) {
     setPin("");
   };
   async function submit(enteredPin) {
+    if (submitting.current) return;
     if (mode === "manager" && !username.trim())
       return setError("Vendosni përdoruesin përpara PIN-it.");
+    submitting.current = true;
     setBusy(true);
     setError("");
     try {
@@ -40,6 +43,7 @@ export function Login({ onSignedIn }) {
     } catch (err) {
       setError(err.message);
       setPin("");
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -54,7 +58,7 @@ export function Login({ onSignedIn }) {
       <h1>Hyrje</h1>
       <div className="tabs" role="group" aria-label="Lloji i llogarisë">
         {tabs.map(([id, label]) => (
-          <button key={id} type="button" aria-pressed={mode === id} onClick={() => reset(id)}>
+          <button key={id} type="button" aria-pressed={mode === id} disabled={busy} onClick={() => reset(id)}>
             {label}
           </button>
         ))}
@@ -70,7 +74,7 @@ export function Login({ onSignedIn }) {
         <div className="stack-form">
           {mode === "waiter" ? (
             <Field label="Kamarieri">
-              <select value={waiterId} onChange={(e) => setWaiterId(e.target.value)} disabled={busy}>
+              <select value={waiterId} onChange={(e) => {setWaiterId(e.target.value);setPin("");setError("")}} disabled={busy}>
                 {(waiters?.waiters ?? []).map((w) => (
                   <option value={w.id} key={w.id}>
                     {w.name}
@@ -82,7 +86,7 @@ export function Login({ onSignedIn }) {
             <Field
               label="Përdoruesi"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => {setUsername(e.target.value);setPin("");setError("")}}
               autoComplete="username"
               disabled={busy}
               autoFocus
@@ -91,9 +95,10 @@ export function Login({ onSignedIn }) {
           {mode === "waiter" && waiters && !waiters.waiters.length ? (
             <p>Asnjë kamarier nuk ka PIN. Menaxheri e vendos te Kamarierët.</p>
           ) : (
-            <Field label="PIN (6 shifra)">
+            <fieldset className="pin-field" disabled={busy}>
+              <legend>PIN (6 shifra)</legend>
               <PinPad value={pin} onChange={setPin} onComplete={submit} disabled={busy} />
-            </Field>
+            </fieldset>
           )}
           {busy && (
             <p className="helper" role="status">

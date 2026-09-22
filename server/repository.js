@@ -2,15 +2,23 @@ import { createHash } from "node:crypto";
 import { applyCommand, AppError } from "./commands.js";
 const iso = (v) => (v == null ? null : new Date(v).toISOString());
 export async function loadState(client) {
-  // Sequential queries on the same transaction connection produce one consistent snapshot.
-  const rows = async (table) =>
-    (await client.query(`SELECT * FROM bluebar.${table}`)).rows;
-  const control = (await rows("control"))[0];
-  const categories = (await rows("categories")).map((r) => r.name).sort();
-  const products = (await rows("products")).sort((a, b) => a.id - b.id);
-  const waiters = (await rows("waiters")).sort((a, b) => a.id - b.id);
-  const lines = await rows("order_lines");
-  const tables = (await rows("dining_tables"))
+  // One database round trip, within the caller's transaction snapshot.
+  const names = [
+    "control", "categories", "products", "waiters", "order_lines",
+    "dining_tables", "shifts", "invoice_lines", "invoices", "stock_movements",
+  ];
+  // Identifiers come only from the fixed list above, never request data.
+  const query = "SELECT jsonb_build_object(" + names.map((name) =>
+    `'${name}', (SELECT COALESCE(jsonb_agg(r), '[]'::jsonb) FROM bluebar.${name} r)`,
+  ).join(",") + ") AS data";
+  const data = (await client.query(query)).rows[0].data;
+  const rows = (name) => data[name];
+  const control = (rows("control"))[0];
+  const categories = (rows("categories")).map((r) => r.name).sort();
+  const products = (rows("products")).sort((a, b) => a.id - b.id);
+  const waiters = (rows("waiters")).sort((a, b) => a.id - b.id);
+  const lines = rows("order_lines");
+  const tables = (rows("dining_tables"))
     .sort((a, b) => a.id - b.id)
     .map((t) => ({
       id: t.id,
@@ -28,7 +36,7 @@ export async function loadState(client) {
           qty: l.qty,
         })),
     }));
-  const shifts = (await rows("shifts"))
+  const shifts = (rows("shifts"))
     .map((s) => ({
       id: s.id,
       opened: iso(s.opened),
@@ -43,8 +51,8 @@ export async function loadState(client) {
         : {}),
     }))
     .sort((a, b) => b.id - a.id);
-  const invoiceLines = await rows("invoice_lines");
-  const invoices = (await rows("invoices"))
+  const invoiceLines = rows("invoice_lines");
+  const invoices = (rows("invoices"))
     .sort((a, b) => b.id - a.id)
     .map((i) => ({
       id: i.id,
@@ -65,7 +73,7 @@ export async function loadState(client) {
           qty: l.qty,
         })),
     }));
-  const movements = (await rows("stock_movements"))
+  const movements = (rows("stock_movements"))
     .sort((a, b) => Number(a.id) - Number(b.id))
     .map((m) => ({
       product: m.product,
@@ -196,7 +204,7 @@ export async function readSnapshot(pool) {
     client.release();
   }
 }
-export async function execute(pool, command) {
+export async function execute(pool, command, actor = null) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -231,7 +239,7 @@ export async function execute(pool, command) {
       );
     let next;
     try {
-      next = applyCommand(snapshot.state, command.type, command.payload);
+      next = applyCommand(snapshot.state, command.type, command.payload, actor);
     } catch (e) {
       if (e instanceof AppError) throw e;
       throw new AppError(e.message);
