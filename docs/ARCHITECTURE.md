@@ -1,8 +1,8 @@
-# BlueBar — arkitektura e propozuar
+# BlueBar — arkitektura
 
-Status: arkitekturë e propozuar; integrimi fillestar React → Fastify → Neon është implementuar më 21 shtator 2026. Sistemi mbetet vetëm për zhvillim lokal, jo prodhim publik.
+Implementimi aktual: React/Vite, Fastify në Vercel dhe Neon PostgreSQL. Hyrja me PIN, sesionet HttpOnly, autorizimi, IP restriction dhe multi-tenancy janë implementuar. Ndarja aktuale përdor një skemë për biznes (`bluebar_<uuid>`), me katalog qendror `bluebar_catalog.venues`; shih [README](../README.md#multi-tenant). Skema `bluebar` ruan instalimin ekzistues.
 
-Implementimi aktual: skema `bluebar`, migrime SQL, API komandash me validim server-side, versionim, transaksione dhe idempotency keys. Ruajtja në localStorage është zëvendësuar me databazën. Roli në UI nuk është autorizim. Autentikimi, IP restriction, reçetat dhe fiskalizimi më poshtë janë ende plan, jo funksionalitet i përfunduar. Serveri serializon mutacionet për një lokal dhe lexon historikun e plotë; pagination dhe kontroll më granular i konkurrencës nevojiten për volum të madh.
+Pjesët më poshtë për modelin me `venue_id`, reçetat, fiskalizimin, pagination dhe print queue janë propozime për faza të ardhshme, jo përshkrim i funksionalitetit të publikuar.
 
 ## Vendimi
 React + Vite + CSS i thjeshtë në frontend; Node.js/TypeScript + Fastify në një API modulare; Neon PostgreSQL për të dhënat. Një domain për UI dhe `/api`, me TLS dhe reverse proxy të kontrolluar. Pa microservices, Redux, framework UI, animacione ose ORM të rëndë në fillim. `pg` dhe migrime SQL të versionuara mjaftojnë. TypeScript rekomandohet për implementimin e prodhimit; eksperimenti aktual është JavaScript.

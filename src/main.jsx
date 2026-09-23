@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { money, total } from "./domain.js";
-import { useDatabase, pendingKey } from "./useDatabase.js";
+import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
+import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { fetchSession, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
@@ -67,11 +68,11 @@ const time = (value) =>
     minute: "2-digit",
     hour12: false,
   });
-function Receipt({ invoice }) {
+function Receipt({ invoice, venueName }) {
   return (
     <>
       <div className="receipt-brand">
-        BlueBar<span>BAR & KAFE</span>
+        {venueName || "BlueBar"}<span>BAR & KAFE</span>
       </div>
       <p>KOPJE DEMO · JO FATURË FISKALE</p>
       <div className="receipt-meta">
@@ -101,12 +102,12 @@ function Receipt({ invoice }) {
     </>
   );
 }
-function ShiftReport({ report }) {
+function ShiftReport({ report, venueName }) {
   const { shift, invoiceCount, cash, card, topProducts, byWaiter } = report;
   return (
     <>
       <div className="receipt-brand">
-        BlueBar<span>RAPORT TURNI</span>
+        {venueName || "BlueBar"}<span>RAPORT TURNI</span>
       </div>
       <div className="receipt-meta">
         <span>Turni #{shift.id}</span>
@@ -472,7 +473,7 @@ function App({ user, onLogout }) {
           </a>
           <div className="workspace-label">
             <span className="venue-dot" />
-            Hapësira e lokalit
+            {user.venue?.name || "BlueBar"}
           </div>
           <nav aria-label="Navigimi kryesor">
             {pages
@@ -534,7 +535,7 @@ function App({ user, onLogout }) {
           <div className="demo">
             <Icon name="info" size={15} />
             <span>
-              {database.provider} · Zhvillim lokal. Pa fiskalizim.
+              {user.venue?.name || "BlueBar"} · Pa fiskalizim.
             </span>
             <Badge>{database.error ? "PA LIDHJE" : "DATABASE"}</Badge>
           </div>
@@ -886,9 +887,9 @@ function App({ user, onLogout }) {
                     ) && (
                       <Empty
                         icon="tables"
-                        title="Nuk ka tavolina në këtë filtër"
+                        title={state.tables.length ? "Nuk ka tavolina në këtë filtër" : "Shtoni tavolinën e parë"}
                         action={
-                          <button
+                          !state.tables.length ? (role === "Menaxher" && <button className="primary" onClick={() => { setManageTables(true); setEditor({}); }}>Shto tavolinë</button>) : <button
                             onClick={() => {
                               setArea("Të gjitha");
                               setStatus("Të gjitha");
@@ -898,7 +899,7 @@ function App({ user, onLogout }) {
                           </button>
                         }
                       >
-                        Provoni një zonë ose gjendje tjetër.
+                        {state.tables.length ? "Provoni një zonë ose gjendje tjetër." : "Biznesi juaj është gati. Konfiguroni sallën, produktet dhe stafin përpara hapjes së turnit."}
                       </Empty>
                     )}
                     <div className="floor-help">
@@ -1313,7 +1314,7 @@ function App({ user, onLogout }) {
                       </button>
                     </div>
                     <article className="receipt-paper">
-                      <Receipt invoice={receipt} />
+                      <Receipt invoice={receipt} venueName={user.venue?.name} />
                     </article>
                     <button
                       className="primary full-width"
@@ -1454,9 +1455,9 @@ function App({ user, onLogout }) {
                   ) : (
                     <Empty
                       icon="stock"
-                      title="Nuk ka produkte në këtë filtër"
+                      title={state.products.length ? "Nuk ka produkte në këtë filtër" : "Ende pa inventar"}
                       action={
-                        <button
+                        !state.products.length ? <button onClick={() => nav("Produktet")}>Shko te produktet</button> : <button
                           onClick={() => {
                             setQuery("");
                             setStockFilter("Të gjitha");
@@ -1466,7 +1467,7 @@ function App({ user, onLogout }) {
                         </button>
                       }
                     >
-                      Kërkoni një produkt tjetër ose shfaqni gjithë stokun.
+                      {state.products.length ? "Kërkoni një produkt tjetër ose shfaqni gjithë stokun." : "Shtoni produktet në menu, pastaj regjistroni sasitë e stokut këtu."}
                     </Empty>
                   )}
                 </section>
@@ -1584,8 +1585,8 @@ function App({ user, onLogout }) {
                   ) : (
                     <Empty
                       icon="menu"
-                      title="Nuk u gjet asnjë produkt"
-                      action={
+                      title={state.products.length ? "Nuk u gjet asnjë produkt" : "Menuja juaj nis këtu"}
+                      action={state.products.length > 0 &&
                         <button
                           onClick={() => {
                             setQuery("");
@@ -1596,7 +1597,7 @@ function App({ user, onLogout }) {
                         </button>
                       }
                     >
-                      Provoni një emër tjetër ose ndryshoni kategorinë.
+                      {state.products.length ? "Provoni një emër tjetër ose ndryshoni kategorinë." : "Krijoni kategorinë e parë te Kategoritë, pastaj shtoni produktet dhe çmimet."}
                     </Empty>
                   )}
                 </section>
@@ -1868,12 +1869,13 @@ function App({ user, onLogout }) {
                       })}
                   </div>
                   {!state.waiters.some((w) => matches(w.name, query)) && (
-                    <Empty icon="people" title="Nuk u gjet asnjë kamarier">
-                      Provoni një emër tjetër.
+                    <Empty icon="people" title={state.waiters.length ? "Nuk u gjet asnjë kamarier" : "Ndërtoni ekipin tuaj"}>
+                      {state.waiters.length ? "Provoni një emër tjetër." : "Shtoni kamarierin e parë, vendosni PIN-in dhe lejoni rrjetin e lokalit."}
                     </Empty>
                   )}
                 </section>
                 <aside className="management-aside">
+                  <BusinessNetwork venue={user.venue} />
                   <section className="panel">
                     <SectionHeading
                       title="Shto në ekip"
@@ -2095,7 +2097,7 @@ function App({ user, onLogout }) {
                         </button>
                       </div>
                       <article className="receipt-paper">
-                        <ShiftReport report={report} />
+                        <ShiftReport report={report} venueName={user.venue?.name} />
                       </article>
                       <button
                         className="primary full-width"
@@ -2205,7 +2207,7 @@ function App({ user, onLogout }) {
           <footer>
             <strong>BlueBar</strong>
             <span>Në ritmin e lokalit tuaj.</span>
-            <span>Zhvillim lokal · v0.3</span>
+            <span>{user.venue?.name || "BlueBar"}</span>
           </footer>
         </div>
       </div>
@@ -2300,12 +2302,12 @@ function App({ user, onLogout }) {
       </dialog>
       {receipt && (
         <article className="receipt print-only">
-          <Receipt invoice={receipt} />
+          <Receipt invoice={receipt} venueName={user.venue?.name} />
         </article>
       )}
       {report && (
         <article className="receipt print-only">
-          <ShiftReport report={report} />
+          <ShiftReport report={report} venueName={user.venue?.name} />
         </article>
       )}
     </>
@@ -2319,7 +2321,6 @@ function Root() {
     fetchSession().then(setUser, () => setUser(null));
   }, []);
   const enter = (u) => {
-    sessionStorage.removeItem(pendingKey);
     setUser(u);
   };
   const leave = async () => {

@@ -65,7 +65,7 @@ test("manager signs in with a PIN; sessions are HttpOnly and revocable", async (
     );
     const ok = await t.managerLogin();
     assert.equal(ok.statusCode, 200);
-    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss" });
+    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss", venue: { slug: "bluebar", name: "BlueBar" } });
     const setCookie = ok.headers["set-cookie"];
     assert.match(setCookie, /HttpOnly/);
     assert.match(setCookie, /SameSite=Strict/);

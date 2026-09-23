@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchState, sendCommand } from "./api.js";
+import { fetchState, sendCommand, venueSlug } from "./api.js";
 import { addItem } from "./domain.js";
 
 const empty = {
   products: [], categories: [], waiters: [], tables: [], invoices: [],
   movements: [], shifts: [], shift: null,
 };
-const key = "bluebar-pending-command-v1";
-const orderQueueKey = "bluebar-order-queue-v1";
+const key = `bluebar-pending-command-v2:${venueSlug}`;
+const orderQueueKey = `bluebar-order-queue-v2:${venueSlug}`;
 export const pendingKey = key;
 
 function readStorage(storageKey, fallback) {

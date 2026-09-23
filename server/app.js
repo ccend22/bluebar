@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks } from "./tenants.js";
 import { AppError } from "./commands.js";
 import { readSnapshot, execute, executeOrderPatch } from "./repository.js";
 import {
@@ -36,8 +37,12 @@ export function buildApp({
   });
   const allowed = new Set(origins);
   const hosts = new Set(allowedHosts);
-  const cookie = cookieName(secureCookies);
-  const waiterIpOk = ipPolicy(allowedIps);
+  const requestCookie = request => cookieName(secureCookies, request.venue.slug);
+  const waiterIpOk = request => {
+    const ips = request.venue.use_legacy_network ? allowedIps : request.venue.allowed_ips;
+    if (!request.venue.use_legacy_network && !ips.length) return false;
+    return ipPolicy(ips)(request.ip);
+  };
   const loginBudget = throttle();
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -51,6 +56,10 @@ export function buildApp({
     // No CORS: cross-site browser requests cannot add this non-simple header.
     if (request.headers["x-bluebar-client"] !== "1")
       return reply.code(403).send({ error: "Kërkesë e palejuar." });
+    if (request.url.split("?")[0] === "/api/venues/register") return;
+    requireDb();
+    request.venue = await resolveVenue(pool, request.headers["x-bluebar-venue"] || "bluebar");
+    request.db = tenantPool(pool, request.venue.schema_name);
   });
   const requireDb = () => {
     if (!pool)
@@ -64,10 +73,10 @@ export function buildApp({
     (...roles) =>
     async (request) => {
       requireDb();
-      const token = readCookie(request, cookie);
-      const user = token && (await findSession(pool, token));
+      const token = readCookie(request, requestCookie(request));
+      const user = token && (await findSession(request.db, token));
       if (!user) throw new AppError("Sesioni ka skaduar. Hyni përsëri.", 401);
-      if (user.role === "waiter" && !waiterIpOk(request.ip))
+      if (user.role === "waiter" && !waiterIpOk(request))
         throw new AppError("Kamarierët punojnë vetëm nga rrjeti i lokalit.", 403);
       if (roles.length && !roles.includes(user.role))
         throw new AppError("Nuk keni leje për këtë veprim.", 403);
@@ -75,12 +84,12 @@ export function buildApp({
       request.sessionToken = token;
     };
   // Managers get PIN status; waiters only see what a shift needs (no history, cash float or stock log).
-  const present = async (data, user) => {
+  const present = async (data, user, db) => {
     if (data.patch) return { ...data, provider };
     const { state } = data;
     if (user.role === "manager") {
       const pins = new Set(
-        (await pool.query("SELECT waiter_id FROM bluebar.accounts WHERE role = 'waiter'")).rows.map(
+        (await db.query("SELECT waiter_id FROM bluebar.accounts WHERE role = 'waiter'")).rows.map(
           (r) => r.waiter_id,
         ),
       );
@@ -101,15 +110,42 @@ export function buildApp({
       provider,
     };
   };
-  const start = async (reply, accountId) => {
-    const token = await issueSession(pool, accountId);
-    reply.header("Set-Cookie", sessionCookie(secureCookies, token));
-    return publicUser(await findSession(pool, token));
+  const start = async (request, reply, accountId) => {
+    const token = await issueSession(request.db, accountId);
+    reply.header("Set-Cookie", sessionCookie(secureCookies, token, 12 * 3600, request.venue.slug));
+    return { ...publicUser(await findSession(request.db, token)), venue: publicVenue(request.venue) };
   };
   const attempt = (request) => {
     if (!loginBudget(request.ip))
       throw new AppError("Shumë përpjekje. Provoni pas pak minutash.", 429);
   };
+
+  app.post("/api/venues/register", {
+    schema: { body: { type: "object", additionalProperties: false, required: ["slug", "name", "pin"],
+      properties: { slug: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{2,39}$" }, name: { type: "string", minLength: 2, maxLength: 80 }, pin } } },
+  }, async (request, reply) => {
+    requireDb();
+    attempt(request);
+    const { venue, accountId } = await registerVenue(pool, request.body, request.ip);
+    request.venue = venue;
+    request.db = tenantPool(pool, venue.schema_name);
+    reply.code(201);
+    return start(request, reply, accountId);
+  });
+  app.get("/api/venue", async request => publicVenue(request.venue));
+  app.get("/api/venue/network", { preValidation: session("manager") }, async request => ({
+    allowedIps: request.venue.use_legacy_network ? allowedIps : request.venue.allowed_ips,
+    currentIp: request.ip.replace(/^::ffff:/i, ""),
+  }));
+  app.put("/api/venue/network", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["allowedIps"],
+      properties: { allowedIps: { type: "array", maxItems: 20, items: { type: "string", maxLength: 60 } } } } },
+  }, async request => {
+    const ips = validateNetworks(request.body.allowedIps);
+    await pool.query("UPDATE bluebar_catalog.venues SET allowed_ips=$1, use_legacy_network=false WHERE slug=$2", [ips, request.venue.slug]);
+    return { allowedIps: ips, currentIp: request.ip.replace(/^::ffff:/i, "") };
+  });
 
   app.get("/api/health", async () => {
     requireDb();
@@ -119,8 +155,8 @@ export function buildApp({
   // Names for the waiter sign-in picker; only served to the venue network.
   app.get("/api/auth/waiters", async (request) => {
     requireDb();
-    if (!waiterIpOk(request.ip)) return { allowed: false, waiters: [] };
-    const { rows } = await pool.query(
+    if (!waiterIpOk(request)) return { allowed: false, waiters: [] };
+    const { rows } = await request.db.query(
       `SELECT w.id, w.name FROM bluebar.waiters w JOIN bluebar.accounts a ON a.waiter_id = w.id
        WHERE w.active AND a.active ORDER BY w.name`,
     );
@@ -140,10 +176,10 @@ export function buildApp({
     },
     async (request, reply) => {
       requireDb();
-      if (!waiterIpOk(request.ip))
+      if (!waiterIpOk(request))
         throw new AppError("Kamarierët hyjnë vetëm nga rrjeti i lokalit.", 403);
       attempt(request);
-      return start(reply, await loginWaiter(pool, request.body));
+      return start(request, reply, await loginWaiter(request.db, request.body));
     },
   );
   app.post(
@@ -161,17 +197,17 @@ export function buildApp({
     async (request, reply) => {
       requireDb();
       attempt(request);
-      return start(reply, await loginManager(pool, request.body));
+      return start(request, reply, await loginManager(request.db, request.body));
     },
   );
   app.get("/api/auth/session", { preValidation: session() }, async (request) =>
-    publicUser(request.user),
+    ({ ...publicUser(request.user), venue: publicVenue(request.venue) }),
   );
   app.post("/api/auth/logout", async (request, reply) => {
     requireDb();
-    const token = readCookie(request, cookie);
-    if (token) await endSession(pool, token);
-    reply.header("Set-Cookie", sessionCookie(secureCookies, "", 0));
+    const token = readCookie(request, requestCookie(request));
+    if (token) await endSession(request.db, token);
+    reply.header("Set-Cookie", sessionCookie(secureCookies, "", 0, request.venue.slug));
     return { ok: true };
   });
   app.put(
@@ -184,12 +220,12 @@ export function buildApp({
       },
     },
     async (request) => {
-      await setWaiterPin(pool, request.params.id, request.body.pin);
+      await setWaiterPin(request.db, request.params.id, request.body.pin);
       return { ok: true };
     },
   );
   app.get("/api/state", { preValidation: session() }, async (request) =>
-    present(await readSnapshot(pool), request.user),
+    present(await readSnapshot(request.db), request.user, request.db),
   );
   app.post(
     "/api/commands",
@@ -237,9 +273,9 @@ export function buildApp({
           throw new AppError("Nuk keni leje për këtë veprim.", 403);
       }
       const result = ["order.add", "order.remove"].includes(body.type)
-        ? await executeOrderPatch(pool, body)
-        : await execute(pool, body, user);
-      return present(result, user);
+        ? await executeOrderPatch(request.db, body)
+        : await execute(request.db, body, user);
+      return present(result, user, request.db);
     },
   );
   app.setErrorHandler((error, request, reply) => {

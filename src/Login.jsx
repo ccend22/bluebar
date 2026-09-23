@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchLoginWaiters, loginWaiter, loginManager } from "./api.js";
+import { fetchLoginWaiters, loginWaiter, loginManager, venueSlug, fetchVenue, registerVenue, openBusiness } from "./api.js";
 import { Field, PinPad } from "./components.jsx";
 
-export function Login({ onSignedIn }) {
+function PinLogin({ onSignedIn }) {
   const [mode, setMode] = useState("waiter"),
     [waiters, setWaiters] = useState(null),
     [waiterId, setWaiterId] = useState(""),
     [pin, setPin] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const [venue, setVenue] = useState(null);
   const submitting = useRef(false);
   useEffect(() => {
+    fetchVenue().then(setVenue).catch(e => setError(e.message));
     fetchLoginWaiters()
       .then((r) => {
         setWaiters(r);
@@ -52,7 +54,8 @@ export function Login({ onSignedIn }) {
   return (
     <main className="database-setup login-screen">
       <span className="brand">BlueBar</span>
-      <h1>Hyrje</h1>
+      <h1>{venue?.name || "Hyrje"}</h1>
+      <p className="helper">Kodi i biznesit: <strong>{venueSlug}</strong> · <a href="/">Ndrysho biznesin</a></p>
       <div className="tabs" role="group" aria-label="Lloji i llogarisë">
         {tabs.map(([id, label]) => (
           <button key={id} type="button" aria-pressed={mode === id} disabled={busy} onClick={() => reset(id)}>
@@ -97,4 +100,55 @@ export function Login({ onSignedIn }) {
       )}
     </main>
   );
+}
+
+
+export function Login({ onSignedIn }) {
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  if (new URLSearchParams(window.location.search).has("business"))
+    return <PinLogin onSignedIn={onSignedIn} />;
+  async function submit(event) {
+    event.preventDefault();
+    if (submitting.current) return;
+    const form = new FormData(event.currentTarget);
+    const slug = String(form.get("slug")).trim().toLowerCase();
+    setError("");
+    if (!creating) return openBusiness(slug);
+    if (form.get("pin") !== form.get("confirm")) return setError("PIN-et nuk përputhen.");
+    submitting.current = true;
+    setBusy(true);
+    try {
+      await registerVenue({ slug, name: String(form.get("name")).trim(), pin: form.get("pin") });
+      openBusiness(slug);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+      submitting.current = false;
+    }
+  }
+  return <main className="database-setup business-entry">
+    <span className="brand">BlueBar</span>
+    <h1>{creating ? "Krijoni biznesin tuaj" : "Mirë se vini"}</h1>
+    <p>{creating ? "Tavolinat, stafi dhe faturat tuaja në një hapësirë të veçantë." : "Vendosni kodin e biznesit për të hyrë në hapësirën e lokalit."}</p>
+    {error && <div className="notice error" role="alert">{error}</div>}
+    <form className="stack-form" onSubmit={submit} key={String(creating)}>
+      <fieldset className="business-fields" disabled={busy}>
+        {creating && <Field label="Emri i biznesit" name="name" required minLength={2} maxLength={80} autoComplete="organization" placeholder="p.sh. Bar Aurora" />}
+        <Field label="Kodi i biznesit" name="slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9-]{2,39}" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={creating ? "p.sh. bar-aurora" : "p.sh. bluebar"} />
+        <p className="helper">{creating ? "3–40 shkronja të vogla, numra ose viza. Ndajeni këtë kod me stafin." : "Për lokalin ekzistues, përdorni kodin bluebar."}</p>
+        {creating && <>
+          <Field label="PIN-i i menaxherit (6 shifra)" name="pin" type="password" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="new-password" required />
+          <Field label="Përsëritni PIN-in" name="confirm" type="password" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="new-password" required />
+          <p className="helper">Ruajeni PIN-in në një vend të sigurt. Biznesi nis bosh, me turn të mbyllur.</p>
+        </>}
+        <button className="primary full-width" disabled={busy}>{busy ? "Po krijohet…" : creating ? "Krijo biznesin" : "Vazhdo"}</button>
+      </fieldset>
+    </form>
+    <button className="subtle-button full-width business-switch" disabled={busy} onClick={() => { setCreating(!creating); setError(""); }}>
+      {creating ? "Kam një biznes · Hyr" : "Biznes i ri? Krijo hapësirën"}
+    </button>
+  </main>;
 }

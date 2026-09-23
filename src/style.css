@@ -2756,3 +2756,14 @@ footer > span:last-child {
 .danger-button {background:#a43d34;color:#fff;border-color:#a43d34}
 .danger-button:hover {background:#892f28;color:#fff}
 @media(max-width:760px){.save-status{min-width:0;font-size:10px}.header-actions{flex-wrap:wrap}}
+
+.business-entry { max-width: 440px; }
+.business-fields { display: grid; gap: 18px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.business-switch { margin-top: 18px; }
+.business-entry .helper { margin: 0; }
+.business-entry h1 { font-size: 26px; }
+textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); font: inherit; color: inherit; resize: vertical; }
+@media (max-width: 760px) {
+  .business-entry input, textarea { font-size: 16px; }
+  .business-entry { padding: 24px; }
+}

@@ -27,22 +27,25 @@ const decoyHash = async () => (decoy ??= await hashSecret("decoy"));
 export const validPin = (p) =>
   /^\d{6}$/.test(p) && !/^(\d)\1{5}$/.test(p) && !"01234567890".includes(p) && !"09876543210".includes(p);
 
-export const cookieName = (secure) => (secure ? "__Host-session" : "bluebar_session");
+export const cookieName = (secure, slug = "bluebar") =>
+  (secure ? "__Host-session" : "bluebar_session") + (slug === "bluebar" ? "" : `_${slug}`);
 export const readCookie = (request, name) =>
   request.headers.cookie
     ?.split(/;\s*/)
     .map((c) => c.split("="))
     .find(([k]) => k === name)?.[1];
-export const sessionCookie = (secure, token, maxAge = 12 * 3600) =>
-  `${cookieName(secure)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+export const sessionCookie = (secure, token, maxAge = 12 * 3600, slug = "bluebar") =>
+  `${cookieName(secure, slug)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
 
 // Empty list = loopback only, so an unconfigured deployment fails closed for waiters.
 export function ipPolicy(entries = []) {
   const list = new BlockList();
   for (const entry of entries.length ? entries : ["127.0.0.1", "::1"]) {
-    const [addr, len] = entry.trim().split("/");
+    const parts = entry.trim().split("/");
+    const [addr, len] = parts;
     const family = isIP(addr);
-    if (!family) throw new Error(`Invalid IP in allowlist: ${entry}`);
+    if (!family || parts.length > 2 || (len !== undefined && (!/^\d+$/.test(len) || Number(len) > (family === 6 ? 128 : 32))))
+      throw new Error(`Invalid IP in allowlist: ${entry}`);
     const type = family === 6 ? "ipv6" : "ipv4";
     len ? list.addSubnet(addr, Number(len), type) : list.addAddress(addr, type);
   }
