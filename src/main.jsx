@@ -12,6 +12,7 @@ import {
   Field,
   SectionHeading,
   TableSymbol,
+  TableShapePicker,
 } from "./components.jsx";
 import "./style.css";
 
@@ -614,8 +615,8 @@ function App({ user, onLogout }) {
 
             {page === "Tavolinat" &&
               (manageTables ? (
-                <div className="management-layout">
-                  <section className="panel">
+                <div className="management-layout table-management-layout">
+                  <section className="panel table-management-panel">
                     <SectionHeading
                       title="Tavolinat e lokalit"
                       description={`${state.tables.length} tavolina · ${activeTables.length} aktive`}
@@ -626,71 +627,73 @@ function App({ user, onLogout }) {
                       </button>
                     </SectionHeading>
                     {state.tables.length ? (
-                      <div className="table-scroll">
-                        <table className="responsive-table">
-                          <thead>
-                            <tr>
-                              <th>Tavolina</th>
-                              <th>Zona</th>
-                              <th>Forma</th>
-                              <th>Gjendja</th>
-                              <th>
-                                <span className="sr-only">Veprimet</span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[...state.tables]
-                              .sort((a, b) => a.id - b.id)
-                              .map((t) => (
-                                <tr key={t.id}>
-                                  <td data-label="Tavolina">
-                                    <strong>
-                                      {String(t.id).padStart(2, "0")}
-                                    </strong>
-                                  </td>
-                                  <td data-label="Zona">{t.area}</td>
-                                  <td data-label="Forma">
-                                    {t.shape || "Drejtkëndësh"}
-                                  </td>
-                                  <td data-label="Gjendja">
-                                    <Badge tone={t.active ? "green" : ""}>
-                                      {t.active ? "Aktive" : "Joaktive"}
-                                    </Badge>
-                                  </td>
-                                  <td className="row-actions">
-                                    <button
-                                      className="icon-button"
-                                      aria-label={`Ndrysho tavolinën ${t.id}`}
-                                      onClick={() => setEditor({ ...t })}
-                                    >
-                                      <Icon name="edit" size={18} />
-                                    </button>
-                                    <button
-                                      disabled={t.active && t.lines.length > 0}
-                                      aria-describedby={`table-help-${t.id}`}
-                                      onClick={() =>
-                                        update(
-                                          "table.toggle",
-                                          { id: t.id },
-                                          t.active
-                                            ? "Tavolina u çaktivizua."
-                                            : "Tavolina u aktivizua.",
-                                        )
-                                      }
-                                    >
-                                      {t.active ? "Çaktivizo" : "Aktivizo"}
-                                    </button>
-                                    <small id={`table-help-${t.id}`}>
-                                      {t.active && t.lines.length > 0
-                                        ? "Ka porosi të hapura"
-                                        : ""}
-                                    </small>
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
+                      <div className="table-admin-grid">
+                        {[...state.tables]
+                          .sort((a, b) => a.id - b.id)
+                          .map((t) => (
+                            <article
+                              className={`table-admin-card ${t.active ? "" : "inactive"}`}
+                              key={t.id}
+                            >
+                              <div className="table-admin-head">
+                                <div>
+                                  <small>Tavolina</small>
+                                  <strong>{String(t.id).padStart(2, "0")}</strong>
+                                </div>
+                                <Badge tone={t.active ? "green" : ""}>
+                                  {t.active ? "Aktive" : "Joaktive"}
+                                </Badge>
+                              </div>
+                              <div className="table-admin-visual">
+                                <TableSymbol shape={t.shape} />
+                                <span className="sr-only">
+                                  Forma {t.shape || "Drejtkëndësh"}
+                                </span>
+                              </div>
+                              <div className="table-admin-zone">
+                                <Icon name="location" size={15} />
+                                <span>{t.area}</span>
+                              </div>
+                              <div className="table-admin-actions">
+                                <button
+                                  aria-label={`Ndrysho tavolinën ${t.id}`}
+                                  onClick={() => setEditor({ ...t })}
+                                >
+                                  <Icon name="edit" size={17} />
+                                  Ndrysho
+                                </button>
+                                <button
+                                  className="subtle-button"
+                                  disabled={t.active && t.lines.length > 0}
+                                  aria-describedby={
+                                    t.active && t.lines.length > 0
+                                      ? `table-help-${t.id}`
+                                      : undefined
+                                  }
+                                  onClick={() =>
+                                    update(
+                                      "table.toggle",
+                                      { id: t.id },
+                                      t.active
+                                        ? "Tavolina u çaktivizua."
+                                        : "Tavolina u aktivizua.",
+                                    )
+                                  }
+                                >
+                                  <Icon name="power" size={17} />
+                                  {t.active ? "Çaktivizo" : "Aktivizo"}
+                                </button>
+                              </div>
+                              {t.active && t.lines.length > 0 && (
+                                <small
+                                  className="table-admin-help"
+                                  id={`table-help-${t.id}`}
+                                >
+                                  Ka porosi të hapura
+                                </small>
+                              )}
+                            </article>
+                          ))}
                       </div>
                     ) : (
                       <Empty icon="tables" title="Ende pa tavolina">
@@ -728,18 +731,11 @@ function App({ user, onLogout }) {
                             required
                             autoFocus
                           />
-                          <Field label="Forma (opsionale)">
-                            <select name="shape" defaultValue={editor.shape || ""}>
-                              <option value="">Pa formë të caktuar</option>
-                              <option>Rreth</option>
-                              <option>Katror</option>
-                              <option>Drejtkëndësh</option>
-                              <option>Bar</option>
-                            </select>
-                          </Field>
+                          <TableShapePicker
+                            defaultValue={editor.shape || "Drejtkëndësh"}
+                          />
                           <p className="helper">
-                            Forma ndryshon vetëm simbolin te karta e
-                            tavolinës.
+                            Zgjidhni formën që përputhet me tavolinën fizike.
                           </p>
                           <button className="primary">
                             {editor.id ? "Ruaj ndryshimet" : "Shto tavolinë"}

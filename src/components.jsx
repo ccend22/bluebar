@@ -90,6 +90,18 @@ const paths = {
       <path d="M5 9h1M18 15h1" />
     </>
   ),
+  power: (
+    <>
+      <path d="M12 2v10" />
+      <path d="M6.4 5.6a8 8 0 1 0 11.2 0" />
+    </>
+  ),
+  location: (
+    <>
+      <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </>
+  ),
 };
 export function Icon({ name, size = 20, ...props }) {
   return (
@@ -329,5 +341,28 @@ export function TableSymbol({ shape }) {
         </>
       )}
     </svg>
+  );
+}
+
+const tableShapeOptions = ["Rreth", "Katror", "Drejtkëndësh", "Bar"];
+export function TableShapePicker({ defaultValue = "Drejtkëndësh" }) {
+  return (
+    <fieldset className="shape-picker">
+      <legend>Forma e tavolinës</legend>
+      <div className="shape-options">
+        {tableShapeOptions.map((shape) => (
+          <label className="shape-option" key={shape}>
+            <input
+              type="radio"
+              name="shape"
+              value={shape}
+              defaultChecked={shape === (defaultValue || "Drejtkëndësh")}
+            />
+            <TableSymbol shape={shape} />
+            <span>{shape}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
