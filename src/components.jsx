@@ -102,6 +102,12 @@ const paths = {
       <circle cx="12" cy="10" r="2.5" />
     </>
   ),
+  rotate: (
+    <>
+      <path d="M3 12a9 9 0 1 1 3 6.7" />
+      <path d="M3 21v-6h6" />
+    </>
+  ),
 };
 export function Icon({ name, size = 20, ...props }) {
   return (
@@ -308,6 +314,26 @@ const tableShapes = {
       />
     </>
   ),
+  Oval: (
+    <>
+      <ellipse
+        cx="41"
+        cy="29"
+        rx="24"
+        ry="15"
+        fill="currentColor"
+        fillOpacity=".045"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M31 8V5h20v3M31 50v3h20v-3M11 24h-3v10h3M71 24h3v10h-3"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
 };
 export function TableSymbol({ shape }) {
   return (
@@ -344,7 +370,7 @@ export function TableSymbol({ shape }) {
   );
 }
 
-const tableShapeOptions = ["Rreth", "Katror", "Drejtkëndësh", "Bar"];
+const tableShapeOptions = ["Rreth", "Katror", "Drejtkëndësh", "Oval", "Bar"];
 export function TableShapePicker({ defaultValue = "Drejtkëndësh" }) {
   return (
     <fieldset className="shape-picker">

@@ -249,6 +249,7 @@ export function buildApp({
                 "order.cancel",
                 "table.save",
                 "table.toggle",
+                "table.layout",
                 "product.save",
                 "category.create",
                 "stock.receive",

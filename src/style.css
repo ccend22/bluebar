@@ -519,32 +519,6 @@ main {
   background: transparent;
   font-size: 12px;
 }
-.tables {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 15px;
-}
-.has-order .tables {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.table-card {
-  display: block;
-  text-align: left;
-  padding: 16px;
-  border-radius: var(--radius);
-  font-weight: 400;
-  min-height: 164px;
-  width: 100%;
-  border-color: var(--line);
-}
-.table-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: #6f6f6f;
-}
 .badge {
   display: inline-flex;
   align-items: center;
@@ -572,61 +546,9 @@ main {
   background: #fbe9e8;
   color: #a43935;
 }
-.table-center {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 15px 0 12px;
-  gap: 5px;
-  color: #8b8b8b;
-}
-.table-center > strong {
-  font-size: 35px;
-  letter-spacing: -0.04em;
-  line-height: 1.3;
-  color: #505050;
-  font-weight: 600;
-}
 .table-symbol {
   flex-shrink: 0;
   max-width: 53%;
-}
-.table-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-top: 1px solid #ececec;
-  padding-top: 12px;
-  font-size: 11px;
-  color: #757575;
-  min-height: 29px;
-}
-.table-bottom b {
-  font-size: 12px;
-  color: var(--green);
-  white-space: nowrap;
-}
-.table-card.occupied {
-  background: #f3f9f6;
-  border-color: #bfd6ca;
-}
-.table-card.occupied .table-center,
-.table-card.occupied .table-center > strong {
-  color: #3f7b62;
-}
-.table-card.occupied .table-bottom {
-  border-color: #dce9e2;
-}
-@media (hover: hover) and (pointer: fine) {
-  .table-card:hover {
-    border-color: #a4a4a4;
-    background: #f8f8f8;
-  }
-}
-.table-card.selected {
-  outline: 2px solid var(--blue);
-  outline-offset: 1px;
 }
 .floor-help {
   display: flex;
@@ -639,6 +561,194 @@ main {
 }
 .floor-help svg {
   flex-shrink: 0;
+}
+.floor-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+.floor-edit-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--blue-strong);
+  background: var(--blue-soft);
+  border: 1px solid #cfe2f8;
+  border-radius: var(--radius-control);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.floor-edit-hint svg {
+  flex-shrink: 0;
+}
+/* The floor plan: a spatial canvas, not a card grid. Position/size are percentages of
+   this box, so the layout is identical at any screen size without device-specific
+   coordinates. A faint dot grid reads as "floor" without competing with the tables. */
+.floor-plan {
+  position: relative;
+  /* Absolutely positioned children still contribute to a grid/flex item's default
+     "auto" minimum size in some engines; without this the tables' own min-width
+     pushes this (and every ancestor up to .floor-layout) wider than the viewport. */
+  min-width: 0;
+  width: 100%;
+  min-height: 460px;
+  aspect-ratio: 16 / 10;
+  background-color: var(--surface-subtle);
+  background-image: radial-gradient(circle, var(--line-strong) 1px, transparent 1px);
+  background-size: 28px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.floor-plan.editing {
+  cursor: default;
+}
+.fp-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 20px;
+}
+.fp-table {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  min-width: 56px;
+  min-height: 56px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(20, 30, 40, 0.04),
+    0 8px 20px -12px rgba(20, 30, 40, 0.35);
+  cursor: pointer;
+  touch-action: none;
+}
+.floor-plan:not(.editing) .fp-table:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .floor-plan:not(.editing) .fp-table:hover {
+    border-color: var(--line-strong);
+    box-shadow:
+      0 1px 2px rgba(20, 30, 40, 0.05),
+      0 12px 24px -12px rgba(20, 30, 40, 0.45);
+  }
+}
+.fp-table.occupied {
+  background: var(--green-soft);
+  border-color: #bfd9cb;
+}
+.fp-table.selected {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  /* Tables can be dragged close enough to overlap; keep the selected one (and its
+     handles) reachable on top rather than whichever has the higher id. */
+  z-index: 1;
+}
+.fp-table.editing {
+  cursor: grab;
+}
+.fp-table.editing:active {
+  cursor: grabbing;
+}
+.fp-chairs {
+  position: absolute;
+  inset: 0;
+  /* Decorative only — without this, its full (invisible) box would steal clicks
+     and drags meant for whatever table ends up underneath it once tables overlap. */
+  pointer-events: none;
+}
+.fp-chair {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border-radius: 4px;
+  background: var(--line-strong);
+  transition: opacity 120ms var(--ease-out);
+}
+.fp-table.occupied .fp-chair {
+  opacity: 0;
+}
+.fp-body {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 6px;
+  text-align: center;
+  pointer-events: none;
+}
+.fp-body strong {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  color: #4a5257;
+  font-variant-numeric: tabular-nums;
+}
+.fp-table.occupied .fp-body strong {
+  color: #2f6b52;
+}
+.fp-info {
+  font-size: 10px;
+  font-weight: 600;
+  color: #3f7b62;
+  white-space: nowrap;
+}
+.fp-handle {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 9999px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 6px rgba(20, 30, 40, 0.18);
+  color: var(--blue);
+  z-index: 2;
+}
+.fp-rotate {
+  top: 0;
+  left: 50%;
+  transform-origin: center;
+  cursor: grab;
+}
+.fp-resize {
+  right: -10px;
+  bottom: -10px;
+  cursor: nwse-resize;
+}
+.fp-resize::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--blue);
+  border-bottom: 2px solid var(--blue);
+  border-radius: 0 0 2px 0;
+}
+.fp-detail-row {
+  display: flex;
+  gap: 22px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+.fp-detail-row span {
+  display: grid;
+  gap: 3px;
+}
+.fp-detail-row small {
+  font-size: 10px;
+  color: var(--muted);
+  margin: 0;
+}
+.fp-detail-row strong {
+  font-size: 13px;
+  color: #3d454b;
 }
 .floor-guide {
   border-left: 1px solid var(--line);
@@ -1815,14 +1925,8 @@ footer > span:last-child {
   .floor-layout {
     grid-template-columns: minmax(0, 1fr) 280px;
   }
-  .tables {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
   .floor-layout.has-order {
     grid-template-columns: minmax(0, 1fr) 420px;
-  }
-  .has-order .tables {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 @media (max-width: 1250px) {
@@ -1853,25 +1957,8 @@ footer > span:last-child {
   .floor-guide h2 {
     font-size: 19px;
   }
-  .table-card {
-    padding: 13px;
-  }
-  .table-top {
-    font-size: 10px;
-  }
-  .table-top .badge {
-    font-size: 10px;
-    padding: 4px 6px;
-  }
   .table-symbol {
     width: 65px;
-  }
-  .table-bottom {
-    font-size: 10px;
-    gap: 5px;
-  }
-  .table-bottom b {
-    font-size: 11px;
   }
   .management-layout {
     grid-template-columns: minmax(0, 1fr) 270px;
@@ -1916,25 +2003,10 @@ footer > span:last-child {
     display: none;
   }
   .floor-layout {
-    grid-template-columns: 1fr;
-  }
-  .tables {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .table-card {
-    padding: 16px;
-  }
-  .table-top {
-    font-size: 11px;
-  }
-  .table-top .badge {
-    font-size: 11px;
+    grid-template-columns: minmax(0, 1fr);
   }
   .floor-layout.has-order {
     grid-template-columns: minmax(0, 1fr) 340px;
-  }
-  .has-order .tables {
-    grid-template-columns: 1fr;
   }
   .management-layout {
     grid-template-columns: 1fr;
@@ -2090,6 +2162,13 @@ footer > span:last-child {
     margin-bottom: 24px;
     gap: 10px;
     align-items: start;
+    flex-wrap: wrap;
+  }
+  .title-actions {
+    flex-shrink: 1;
+  }
+  .floor-edit-actions {
+    flex-wrap: wrap;
   }
   h1 {
     font-size: 27px;
@@ -2133,36 +2212,8 @@ footer > span:last-child {
   .mobile-hidden {
     display: none;
   }
-  .tables {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-  .table-card {
-    padding: 13px;
-    min-height: 156px;
-  }
-  .table-center {
-    margin: 12px 0;
-  }
-  .table-center > strong {
-    font-size: 32px;
-  }
   .table-symbol {
     width: 65px;
-  }
-  .table-top {
-    font-size: 10px;
-  }
-  .table-top .badge {
-    font-size: 10px;
-    padding: 4px 6px;
-    min-height: 22px;
-  }
-  .table-bottom {
-    font-size: 10px;
-  }
-  .table-bottom b {
-    font-size: 11px;
   }
   .toolbar {
     gap: 12px;
@@ -2564,23 +2615,11 @@ footer > span:last-child {
   .role > span {
     display: none;
   }
-  .table-card {
-    padding: 10px;
-  }
   .table-symbol {
     width: 55px;
   }
-  .table-top {
-    gap: 3px;
-  }
   .tabs button {
     padding-inline: 7px;
-  }
-  .table-bottom {
-    flex-wrap: wrap;
-  }
-  .table-bottom b {
-    margin-left: auto;
   }
   .title-row {
     flex-wrap: wrap;

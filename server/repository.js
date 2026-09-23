@@ -26,6 +26,13 @@ export async function loadState(client) {
       shape: t.shape,
       active: t.active,
       waiter: t.waiter_id,
+      posX: Number(t.pos_x),
+      posY: Number(t.pos_y),
+      width: Number(t.width),
+      height: Number(t.height),
+      rotation: t.rotation,
+      seats: t.seats,
+      occupiedSince: iso(t.occupied_since),
       lines: lines
         .filter((l) => l.table_id === t.id)
         .sort((a, b) => a.product_id - b.product_id)
@@ -152,15 +159,22 @@ export async function persist(client, previous, next) {
       t,
     ),
   )) {
+    const layout = [
+      t.id, t.area, t.shape || null, t.active, t.waiter || null,
+      t.posX, t.posY, t.width, t.height, t.rotation, t.seats, t.occupiedSince || null,
+    ];
     if (previous.tables.some((x) => x.id === t.id))
       await client.query(
-        "UPDATE bluebar.dining_tables SET area=$2,shape=$3,active=$4,waiter_id=$5 WHERE id=$1",
-        [t.id, t.area, t.shape || null, t.active, t.waiter || null],
+        `UPDATE bluebar.dining_tables SET area=$2,shape=$3,active=$4,waiter_id=$5,
+           pos_x=$6,pos_y=$7,width=$8,height=$9,rotation=$10,seats=$11,occupied_since=$12
+         WHERE id=$1`,
+        layout,
       );
     else
       await client.query(
-        "INSERT INTO bluebar.dining_tables(id,area,shape,active,waiter_id) VALUES($1,$2,$3,$4,$5)",
-        [t.id, t.area, t.shape || null, t.active, t.waiter || null],
+        `INSERT INTO bluebar.dining_tables(id,area,shape,active,waiter_id,pos_x,pos_y,width,height,rotation,seats,occupied_since)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        layout,
       );
     await client.query("DELETE FROM bluebar.order_lines WHERE table_id=$1", [
       t.id,
@@ -209,6 +223,7 @@ async function readOrderTable(client, tableId) {
   const row = (
     await client.query(
       `SELECT t.id, t.area, t.shape, t.active, t.waiter_id,
+        t.pos_x, t.pos_y, t.width, t.height, t.rotation, t.seats, t.occupied_since,
         COALESCE(
           jsonb_agg(jsonb_build_object(
             'id', l.product_id, 'name', l.name, 'price', l.price, 'qty', l.qty
@@ -229,6 +244,13 @@ async function readOrderTable(client, tableId) {
     shape: row.shape,
     active: row.active,
     waiter: row.waiter_id,
+    posX: Number(row.pos_x),
+    posY: Number(row.pos_y),
+    width: Number(row.width),
+    height: Number(row.height),
+    rotation: row.rotation,
+    seats: row.seats,
+    occupiedSince: iso(row.occupied_since),
     lines: row.lines,
   };
 }
@@ -258,7 +280,8 @@ export async function executeOrderPatch(pool, command) {
           w.active AS waiter_active,
           p.name AS product_name, p.price AS product_price, p.stock AS product_stock,
           COALESCE((SELECT sum(qty) FROM bluebar.order_lines WHERE product_id = $4), 0)::integer AS reserved,
-          line.qty AS line_qty
+          line.qty AS line_qty,
+          (SELECT count(*) FROM bluebar.order_lines WHERE table_id = $2)::integer AS table_line_count
          FROM bluebar.control c
          LEFT JOIN bluebar.commands cmd ON cmd.id = $1
          LEFT JOIN bluebar.dining_tables t ON t.id = $2
@@ -303,7 +326,8 @@ export async function executeOrderPatch(pool, command) {
            ON CONFLICT(table_id, product_id) DO UPDATE SET qty = bluebar.order_lines.qty + 1
            RETURNING 1
          )
-         UPDATE bluebar.dining_tables SET waiter_id = $5 WHERE id = $1`,
+         UPDATE bluebar.dining_tables SET waiter_id = $5, occupied_since = COALESCE(occupied_since, now())
+         WHERE id = $1`,
         [tableId, productId, context.product_name, context.product_price, waiterId],
       );
     } else {
@@ -318,6 +342,11 @@ export async function executeOrderPatch(pool, command) {
          WHERE table_id = $1 AND product_id = $2 AND qty > 1`,
         [tableId, productId],
       );
+      // Data-modifying CTEs in one statement share a snapshot and can't see each
+      // other's writes, so "is the table empty now" is computed here from the
+      // counts already read under FOR UPDATE, not re-queried after the delete.
+      if (context.line_qty === 1 && context.table_line_count === 1)
+        await client.query("UPDATE bluebar.dining_tables SET occupied_since = NULL WHERE id = $1", [tableId]);
     }
 
     const version = (

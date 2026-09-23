@@ -123,7 +123,9 @@ test("frequent order changes return only the affected table and remain idempoten
   try {
     await t.send("shift.open", { opening: 1000 });
     await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("product.save", { name: "Uji", price: 50, category: "Kafe" });
     await t.send("stock.receive", { productId: 1, qty: 10 });
+    await t.send("stock.receive", { productId: 2, qty: 10 });
     const cookie = t.cookieOf(await t.managerLogin());
     const stateResponse = await t.call("GET", "/api/state", { cookie });
     const before = stateResponse.json();
@@ -140,6 +142,7 @@ test("frequent order changes return only the affected table and remain idempoten
     assert.equal(body.patch.table.id, 1);
     assert.equal(body.patch.table.lines[0].qty, 1);
     assert.ok(response.body.length < stateResponse.body.length / 2);
+    assert.ok(body.patch.table.occupiedSince, "the hot order-add path stamps occupiedSince too");
 
     const replay = await t.call("POST", "/api/commands", { cookie, body: command });
     assert.equal(replay.statusCode, 200);
@@ -147,6 +150,31 @@ test("frequent order changes return only the affected table and remain idempoten
     assert.equal(replay.json().patch.table.lines[0].qty, 1);
     const saved = (await t.call("GET", "/api/state", { cookie })).json();
     assert.equal(saved.state.tables.find((table) => table.id === 1).lines[0].qty, 1);
+
+    // A second product on the same table must not reset the original occupiedSince.
+    const firstStamp = body.patch.table.occupiedSince;
+    const add2 = await t.call("POST", "/api/commands", {
+      cookie,
+      body: { id: randomUUID(), version: replay.json().version, type: "order.add", payload: { tableId: 1, productId: 2, waiterId: 1 } },
+    });
+    assert.equal(add2.json().patch.table.occupiedSince, firstStamp);
+
+    // Removing one of two products leaves the table occupied.
+    const removeOne = await t.call("POST", "/api/commands", {
+      cookie,
+      body: { id: randomUUID(), version: add2.json().version, type: "order.remove", payload: { tableId: 1, productId: 2 } },
+    });
+    assert.equal(removeOne.json().patch.table.lines.length, 1);
+    assert.equal(removeOne.json().patch.table.occupiedSince, firstStamp);
+
+    // Removing the last product clears occupiedSince (avoiding the CTE-visibility
+    // trap: a data-modifying CTE can't see another CTE's writes in the same statement).
+    const removeLast = await t.call("POST", "/api/commands", {
+      cookie,
+      body: { id: randomUUID(), version: removeOne.json().version, type: "order.remove", payload: { tableId: 1, productId: 1 } },
+    });
+    assert.equal(removeLast.json().patch.table.lines.length, 0);
+    assert.equal(removeLast.json().patch.table.occupiedSince, null);
   } finally {
     await t.close();
   }

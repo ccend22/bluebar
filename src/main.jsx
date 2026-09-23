@@ -4,6 +4,7 @@ import { money, total } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
+import { FloorPlan, TableDetailPanel } from "./FloorPlan.jsx";
 import { fetchSession, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
@@ -196,7 +197,11 @@ function App({ user, onLogout }) {
     [counted, setCounted] = useState(""),
     [manageTables, setManageTables] = useState(false),
     [report, setReport] = useState(null),
-    [cancelling, setCancelling] = useState(false);
+    [cancelling, setCancelling] = useState(false),
+    [floorEditing, setFloorEditing] = useState(false),
+    [floorDraft, setFloorDraft] = useState(null),
+    [floorSelected, setFloorSelected] = useState(null),
+    [floorSaving, setFloorSaving] = useState(false);
   const dialog = useRef(null),
     dialogTrigger = useRef(null),
     heading = useRef(null),
@@ -244,8 +249,34 @@ function App({ user, onLogout }) {
     setReceipt(null);
     setManageTables(false);
     setReport(null);
+    setFloorEditing(false);
+    setFloorDraft(null);
+    setFloorSelected(null);
     setTimeout(() => heading.current?.focus(), 0);
   };
+  const startFloorEdit = () => {
+    setFloorDraft(
+      Object.fromEntries(
+        activeTables.map((t) => [t.id, { posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation }]),
+      ),
+    );
+    setFloorSelected(null);
+    setFloorEditing(true);
+  };
+  const cancelFloorEdit = () => {
+    setFloorEditing(false);
+    setFloorDraft(null);
+    setFloorSelected(null);
+  };
+  const changeFloorLayout = (id, patch) =>
+    setFloorDraft((d) => ({ ...d, [id]: { ...d[id], ...patch } }));
+  async function saveFloorLayout() {
+    setFloorSaving(true);
+    const tables = Object.entries(floorDraft).map(([id, p]) => ({ id: Number(id), ...p }));
+    if (await update("table.layout", { tables }, "Plani i sallës u ruajt."))
+      cancelFloorEdit();
+    setFloorSaving(false);
+  }
   const selectTable = (t) => {
     setCancelling(false);
     setSelected(t.id);
@@ -261,6 +292,11 @@ function App({ user, onLogout }) {
         a.localeCompare(b, "sq"),
       ),
     ];
+  // While editing, the canvas shows the local draft position/size/rotation; nothing
+  // reaches the server until "Ruaj planin" sends it as one table.layout command.
+  const floorTables = floorDraft
+    ? activeTables.map((t) => (floorDraft[t.id] ? { ...t, ...floorDraft[t.id] } : t))
+    : activeTables;
   const table = activeTables.find((t) => t.id === selected),
     occupied = activeTables.filter((t) => t.lines.length).length;
   const available = (p) =>
@@ -362,12 +398,13 @@ function App({ user, onLogout }) {
     e.preventDefault();
     const form = new FormData(e.currentTarget),
       area = form.get("area").trim(),
-      shape = form.get("shape") || undefined;
+      shape = form.get("shape") || undefined,
+      seats = Number(form.get("seats"));
     if (!area) return notify("Vendosni zonën e tavolinës.", "error");
     if (
       await update(
         "table.save",
-        { ...(editor.id ? { id: editor.id } : {}), area, shape },
+        { ...(editor.id ? { id: editor.id } : {}), area, shape, seats },
         editor.id ? "Tavolina u përditësua." : "Tavolina u shtua.",
       )
     )
@@ -555,16 +592,45 @@ function App({ user, onLogout }) {
                     Shto produkt
                   </button>
                 ) : page === "Tavolinat" && role === "Menaxher" ? (
-                  <button
-                    onClick={() => {
-                      setManageTables((v) => !v);
-                      setSelected(null);
-                      setEditor(null);
-                    }}
-                  >
-                    <Icon name={manageTables ? "tables" : "edit"} size={18} />
-                    {manageTables ? "Shiko sallën" : "Menaxho tavolinat"}
-                  </button>
+                  manageTables ? (
+                    <button
+                      onClick={() => {
+                        setManageTables(false);
+                        setSelected(null);
+                        setEditor(null);
+                      }}
+                    >
+                      <Icon name="tables" size={18} />
+                      Shiko sallën
+                    </button>
+                  ) : floorEditing ? (
+                    <div className="floor-edit-actions">
+                      <button onClick={cancelFloorEdit} disabled={floorSaving}>
+                        Anulo
+                      </button>
+                      <button className="primary" onClick={saveFloorLayout} disabled={floorSaving}>
+                        <Icon name="check" size={17} />
+                        {floorSaving ? "Po ruhet…" : "Ruaj planin"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="floor-edit-actions">
+                      <button
+                        onClick={() => {
+                          setManageTables(true);
+                          setSelected(null);
+                          setEditor(null);
+                        }}
+                      >
+                        <Icon name="edit" size={18} />
+                        Menaxho tavolinat
+                      </button>
+                      <button onClick={startFloorEdit} disabled={!activeTables.length}>
+                        <Icon name="rotate" size={18} />
+                        Rregullo planin
+                      </button>
+                    </div>
+                  )
                 ) : (
                   <span className="date">
                     <Icon name="clock" size={16} />
@@ -735,8 +801,17 @@ function App({ user, onLogout }) {
                           <TableShapePicker
                             defaultValue={editor.shape || "Drejtkëndësh"}
                           />
+                          <Field
+                            label="Numri i vendeve"
+                            name="seats"
+                            type="number"
+                            min={1}
+                            max={12}
+                            defaultValue={editor.seats || 4}
+                            required
+                          />
                           <p className="helper">
-                            Zgjidhni formën që përputhet me tavolinën fizike.
+                            Forma dhe vendet caktohen këtu; pozicioni në sallë vendoset te "Rregullo planin".
                           </p>
                           <button className="primary">
                             {editor.id ? "Ruaj ndryshimet" : "Shto tavolinë"}
@@ -795,119 +870,94 @@ function App({ user, onLogout }) {
                     className={`floor ${table ? "mobile-hidden" : ""}`}
                     aria-label="Tavolinat e lokalit"
                   >
-                    <div className="toolbar">
-                      <div className="tabs" aria-label="Filtro zonën">
-                        {areas.map((a) => (
-                          <button
-                            key={a}
-                            aria-pressed={area === a}
-                            onClick={() => setArea(a)}
-                          >
-                            {a}
-                            {a !== "Të gjitha" && (
-                              <span>
-                                {
-                                  activeTables.filter((t) => t.area === a)
-                                    .length
-                                }
-                              </span>
-                            )}
-                          </button>
-                        ))}
+                    {floorEditing ? (
+                      <div className="floor-edit-hint">
+                        <Icon name="info" size={16} />
+                        <span>
+                          Tërhiqni për të lëvizur. Klikoni një tavolinë për ta rrotulluar ose ndryshuar madhësinë.
+                        </span>
                       </div>
-                      <label className="compact-select">
-                        <span className="sr-only">Gjendja e tavolinës</span>
-                        <select
-                          value={status}
-                          onChange={(e) => setStatus(e.target.value)}
-                        >
-                          <option>Të gjitha</option>
-                          <option>Të lira</option>
-                          <option>Të zëna</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div className="tables">
-                      {activeTables
-                        .filter(
-                          (t) =>
-                            (area === "Të gjitha" || t.area === area) &&
-                            (status === "Të gjitha" ||
-                              Boolean(t.lines.length) ===
-                                (status === "Të zëna")),
-                        )
-                        .map((t) => (
-                          <button
-                            className={`table-card ${t.lines.length ? "occupied" : ""} ${selected === t.id ? "selected" : ""}`}
-                            key={t.id}
-                            onClick={() => selectTable(t)}
-                            aria-label={`Tavolina ${t.id}, ${t.area}, ${t.lines.length ? "e zënë" : "e lirë"}`}
-                            aria-pressed={selected === t.id}
-                          >
-                            <div className="table-top">
-                              <span>{t.area}</span>
-                              <Badge tone={t.lines.length ? "green" : ""}>
-                                <span className="dot" />
-                                {t.lines.length ? "E zënë" : "E lirë"}
-                              </Badge>
-                            </div>
-                            <div className="table-center">
-                              <strong>{String(t.id).padStart(2, "0")}</strong>
-                              <TableSymbol shape={t.shape} />
-                            </div>
-                            <div className="table-bottom">
-                              {t.lines.length ? (
-                                <>
-                                  <span>
-                                    {
-                                      state.waiters
-                                        .find((w) => w.id === t.waiter)
-                                        ?.name.split(" ")[0]
-                                    }{" "}
-                                    · {t.lines.reduce((s, l) => s + l.qty, 0)}{" "}
-                                    artikuj
-                                  </span>
-                                  <b>{money(total(t.lines))}</b>
-                                </>
-                              ) : (
-                                <>
-                                  <span>Hap porosi</span>
-                                  <Icon name="plus" size={17} />
-                                </>
+                    ) : (
+                      <div className="toolbar">
+                        <div className="tabs" aria-label="Filtro zonën">
+                          {areas.map((a) => (
+                            <button
+                              key={a}
+                              aria-pressed={area === a}
+                              onClick={() => setArea(a)}
+                            >
+                              {a}
+                              {a !== "Të gjitha" && (
+                                <span>
+                                  {
+                                    activeTables.filter((t) => t.area === a)
+                                      .length
+                                  }
+                                </span>
                               )}
-                            </div>
-                          </button>
-                        ))}
-                    </div>
-                    {!activeTables.some(
-                      (t) =>
-                        (area === "Të gjitha" || t.area === area) &&
-                        (status === "Të gjitha" ||
-                          Boolean(t.lines.length) === (status === "Të zëna")),
-                    ) && (
-                      <Empty
-                        icon="tables"
-                        title={state.tables.length ? "Nuk ka tavolina në këtë filtër" : "Shtoni tavolinën e parë"}
-                        action={
-                          !state.tables.length ? (role === "Menaxher" && <button className="primary" onClick={() => { setManageTables(true); setEditor({}); }}>Shto tavolinë</button>) : <button
-                            onClick={() => {
-                              setArea("Të gjitha");
-                              setStatus("Të gjitha");
-                            }}
+                            </button>
+                          ))}
+                        </div>
+                        <label className="compact-select">
+                          <span className="sr-only">Gjendja e tavolinës</span>
+                          <select
+                            value={status}
+                            onChange={(e) => setStatus(e.target.value)}
                           >
-                            Shfaq të gjitha
-                          </button>
-                        }
-                      >
-                        {state.tables.length ? "Provoni një zonë ose gjendje tjetër." : "Biznesi juaj është gati. Konfiguroni sallën, produktet dhe stafin përpara hapjes së turnit."}
-                      </Empty>
+                            <option>Të gjitha</option>
+                            <option>Të lira</option>
+                            <option>Të zëna</option>
+                          </select>
+                        </label>
+                      </div>
                     )}
-                    <div className="floor-help">
-                      <Icon name="info" size={16} />
-                      <span>
-                        Porositë ruhen kur shtoni produkte dhe qëndrojnë të hapura deri në pagesë ose anulim.
-                      </span>
-                    </div>
+                    {(() => {
+                      const visible = floorEditing
+                        ? floorTables
+                        : floorTables.filter(
+                            (t) =>
+                              (area === "Të gjitha" || t.area === area) &&
+                              (status === "Të gjitha" ||
+                                Boolean(t.lines.length) === (status === "Të zëna")),
+                          );
+                      return visible.length ? (
+                        <FloorPlan
+                          tables={visible}
+                          editing={floorEditing}
+                          selected={floorEditing ? floorSelected : selected}
+                          waiters={state.waiters}
+                          onSelectTable={(t) =>
+                            floorEditing ? setFloorSelected(t ? t.id : null) : t && selectTable(t)
+                          }
+                          onLayoutChange={changeFloorLayout}
+                        />
+                      ) : (
+                        <Empty
+                          icon="tables"
+                          title={state.tables.length ? "Nuk ka tavolina në këtë filtër" : "Shtoni tavolinën e parë"}
+                          action={
+                            !state.tables.length ? (role === "Menaxher" && <button className="primary" onClick={() => { setManageTables(true); setEditor({}); }}>Shto tavolinë</button>) : <button
+                              onClick={() => {
+                                setArea("Të gjitha");
+                                setStatus("Të gjitha");
+                              }}
+                            >
+                              Shfaq të gjitha
+                            </button>
+                          }
+                        >
+                          {state.tables.length ? "Provoni një zonë ose gjendje tjetër." : "Biznesi juaj është gati. Konfiguroni sallën, produktet dhe stafin përpara hapjes së turnit."}
+                        </Empty>
+                      );
+                    })()}
+                    {!floorEditing && (
+                      <div className="floor-help">
+                        <Icon name="info" size={16} />
+                        <span>
+                          Porositë ruhen kur shtoni produkte dhe qëndrojnë të hapura deri në pagesë ose anulim.
+                        </span>
+                      </div>
+                    )}
                   </section>
                   {table ? (
                     <section
@@ -937,6 +987,7 @@ function App({ user, onLogout }) {
                           <Icon name="close" />
                         </button>
                       </div>
+                      <TableDetailPanel table={table} time={time} />
                       <div className="order-body">
                         {!state.waiters.some((w) => w.active) && (
                           <p className="notice warning">

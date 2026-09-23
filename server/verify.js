@@ -30,6 +30,8 @@ export async function verifyEmptyDatabase(pool) {
   await send("order.add", { tableId: 1, productId: 1, waiterId: 1, price: 1 });
   await send("order.add", { tableId: 2, productId: 1, waiterId: 1 });
   assert.equal(data.state.tables[0].lines[0].price, 100);
+  assert.ok(data.state.tables[0].occupiedSince, "table stamps occupiedSince once it has an order");
+  assert.equal(data.state.tables[3].occupiedSince, null, "an empty table has no occupiedSince");
   const rejected = async (type, payload, pattern) =>
     assert.rejects(
       () =>
@@ -65,6 +67,22 @@ export async function verifyEmptyDatabase(pool) {
   );
   await send("table.toggle", { id: 13 });
   assert.equal(data.state.tables.find((t) => t.id === 13).active, false);
+  // Floor plan: bulk position/size/rotation save, and the fields survive a fresh read.
+  await send("table.layout", {
+    tables: [
+      { id: 1, posX: 30, posY: 40, width: 20, height: 15, rotation: 90 },
+      { id: 2, posX: 70, posY: 60, width: 10, height: 10, rotation: 0 },
+    ],
+  });
+  const laidOut = data.state.tables.find((t) => t.id === 1);
+  assert.equal(laidOut.posX, 30);
+  assert.equal(laidOut.rotation, 90);
+  assert.equal(
+    (await readSnapshot(pool)).state.tables.find((t) => t.id === 1).width,
+    20,
+  );
+  await rejected("table.layout", { tables: [{ id: 1, posX: 200, posY: 40, width: 20, height: 15 }] }, /Pozicioni/);
+  await rejected("table.layout", { tables: [{ id: 999, posX: 1, posY: 1, width: 10, height: 10 }] }, /ekziston/);
   await rejected(
     "order.add",
     { tableId: 13, productId: 1, waiterId: 1 },
@@ -106,6 +124,7 @@ export async function verifyEmptyDatabase(pool) {
     total: 1,
   });
   assert.equal(data.state.invoices[0].total, 100);
+  assert.equal(data.state.tables[0].occupiedSince, null, "paying clears occupiedSince");
   const replay = await execute(pool, cmd);
   assert.equal(replay.replayed, true);
   assert.equal(replay.state.invoices.length, 1);

@@ -19,12 +19,25 @@ const name = (v, max = 80) => {
   return v.trim();
 };
 const nextId = (items) => Math.max(0, ...items.map((x) => x.id)) + 1;
-const TABLE_SHAPES = ["Rreth", "Katror", "Drejtkëndësh", "Bar"];
+const TABLE_SHAPES = ["Rreth", "Katror", "Drejtkëndësh", "Bar", "Oval"];
 const shape = (v) => {
   if (v === undefined || v === null || v === "") return null;
   if (!TABLE_SHAPES.includes(v)) fail("Forma e tavolinës është e pavlefshme.");
   return v;
 };
+const requireRange = (v, min, max, message) => {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) fail(message);
+  return v;
+};
+const range = (v, min, max, fallback, message) =>
+  v === undefined ? fallback : requireRange(v, min, max, message);
+const pct = (v, fallback) => range(v, 0, 100, fallback, "Pozicioni i tavolinës është i pavlefshëm.");
+const dim = (v, fallback) => range(v, 4, 60, fallback, "Madhësia e tavolinës është e pavlefshme.");
+const rotation = (v, fallback) =>
+  v === undefined ? fallback : requireRange(((v % 360) + 360) % 360, 0, 359, "Rrotullimi i tavolinës është i pavlefshëm.");
+const seats = (v, fallback) => (v === undefined ? fallback : integer(v, 1, 12));
+const requirePct = (v) => requireRange(v, 0, 100, "Pozicioni i tavolinës është i pavlefshëm.");
+const requireDim = (v) => requireRange(v, 4, 60, "Madhësia e tavolinës është e pavlefshme.");
 const unique = (items, value, except) => {
   if (
     items.some(
@@ -144,6 +157,13 @@ export function applyCommand(state, type, payload, actor = null) {
         active: existing?.active ?? true,
         waiter: existing?.waiter ?? null,
         lines: existing?.lines ?? [],
+        posX: pct(p.posX, existing?.posX ?? 50),
+        posY: pct(p.posY, existing?.posY ?? 50),
+        width: dim(p.width, existing?.width ?? 12),
+        height: dim(p.height, existing?.height ?? 12),
+        rotation: rotation(p.rotation, existing?.rotation ?? 0),
+        seats: seats(p.seats, existing?.seats ?? 4),
+        occupiedSince: existing?.occupiedSince ?? null,
       };
       next = {
         ...state,
@@ -163,6 +183,29 @@ export function applyCommand(state, type, payload, actor = null) {
         ...state,
         tables: state.tables.map((x) =>
           x.id === t.id ? { ...x, active: !x.active } : x,
+        ),
+      };
+      break;
+    }
+    case "table.layout": {
+      if (!Array.isArray(p.tables) || !p.tables.length || p.tables.length > 200)
+        fail("Vendosni pozicionet e tavolinave.");
+      const patches = new Map();
+      for (const t of p.tables) {
+        integer(t.id);
+        if (!state.tables.some((x) => x.id === t.id)) fail("Tavolina nuk ekziston.");
+        patches.set(t.id, {
+          posX: requirePct(t.posX),
+          posY: requirePct(t.posY),
+          width: requireDim(t.width),
+          height: requireDim(t.height),
+          rotation: rotation(t.rotation, 0),
+        });
+      }
+      next = {
+        ...state,
+        tables: state.tables.map((x) =>
+          patches.has(x.id) ? { ...x, ...patches.get(x.id) } : x,
         ),
       };
       break;
@@ -279,6 +322,19 @@ export function applyCommand(state, type, payload, actor = null) {
       break;
     default:
       fail("Veprimi nuk njihet.");
+  }
+  // One pass over every path that can change a table's lines (order.add/remove/pay/
+  // cancel), rather than stamping it separately in each case above.
+  if (next.tables !== state.tables) {
+    const now = new Date().toISOString();
+    next = {
+      ...next,
+      tables: next.tables.map((t) => {
+        const before = state.tables.find((x) => x.id === t.id);
+        if (!before || before.lines.length === t.lines.length) return t;
+        return { ...t, occupiedSince: t.lines.length ? t.occupiedSince ?? now : null };
+      }),
+    };
   }
   return { state: next, result };
 }
