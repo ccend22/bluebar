@@ -123,12 +123,31 @@ export async function loginWaiter(pool, { waiterId, pin }) {
   await clear(pool, a.id);
   return a.id;
 }
-export async function loginManager(pool, { username, pin }) {
-  const a = await reserve(pool, null, username.toLowerCase());
-  const ok = await verifySecret(pin, a?.secret_hash ?? (await decoyHash()));
-  if (!a || !ok) throw bad();
-  await clear(pool, a.id);
-  return a.id;
+// No username at login: the PIN alone must pick the account. Every eligible manager
+// row is reserved (attempt counted) atomically before any hash is checked, so this
+// keeps the same race-safe lockout guarantee as the single-account waiter/manager
+// lookup above — a wrong guess still can't outrun concurrent parallel attempts.
+// With one manager (the common case) this behaves identically to before; with several,
+// a wrong PIN charges all of them, so one mistyped guess can lock out every manager.
+const reserveManagers = async (pool) =>
+  (
+    await pool.query(
+      `UPDATE bluebar.accounts a
+       SET failed_attempts = failed_attempts + 1,
+           locked_until = CASE WHEN failed_attempts + 1 >= 5 THEN now() + interval '15 minutes' ELSE locked_until END
+       WHERE a.role = 'manager' AND a.active AND (a.locked_until IS NULL OR a.locked_until <= now())
+       RETURNING a.id, a.secret_hash`,
+    )
+  ).rows;
+export async function loginManager(pool, { pin }) {
+  const candidates = await reserveManagers(pool);
+  for (const c of candidates)
+    if (await verifySecret(pin, c.secret_hash)) {
+      await clear(pool, c.id);
+      return c.id;
+    }
+  if (!candidates.length) await verifySecret(pin, await decoyHash());
+  throw bad();
 }
 
 export async function setWaiterPin(pool, waiterId, pin) {

@@ -6,7 +6,6 @@ export function Login({ onSignedIn }) {
   const [mode, setMode] = useState("waiter"),
     [waiters, setWaiters] = useState(null),
     [waiterId, setWaiterId] = useState(""),
-    [username, setUsername] = useState(""),
     [pin, setPin] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -29,8 +28,6 @@ export function Login({ onSignedIn }) {
   };
   async function submit(enteredPin) {
     if (submitting.current) return;
-    if (mode === "manager" && !username.trim())
-      return setError("Vendosni përdoruesin përpara PIN-it.");
     submitting.current = true;
     setBusy(true);
     setError("");
@@ -38,7 +35,7 @@ export function Login({ onSignedIn }) {
       onSignedIn(
         mode === "waiter"
           ? await loginWaiter(Number(waiterId), enteredPin)
-          : await loginManager({ username: username.trim(), pin: enteredPin }),
+          : await loginManager({ pin: enteredPin }),
       );
     } catch (err) {
       setError(err.message);
@@ -72,7 +69,7 @@ export function Login({ onSignedIn }) {
         <p>Kamarierët hyjnë vetëm nga rrjeti i lokalit. Menaxherët hyjnë nga skeda "Menaxher".</p>
       ) : (
         <div className="stack-form">
-          {mode === "waiter" ? (
+          {mode === "waiter" && (
             <Field label="Kamarieri">
               <select value={waiterId} onChange={(e) => {setWaiterId(e.target.value);setPin("");setError("")}} disabled={busy}>
                 {(waiters?.waiters ?? []).map((w) => (
@@ -82,15 +79,6 @@ export function Login({ onSignedIn }) {
                 ))}
               </select>
             </Field>
-          ) : (
-            <Field
-              label="Përdoruesi"
-              value={username}
-              onChange={(e) => {setUsername(e.target.value);setPin("");setError("")}}
-              autoComplete="username"
-              disabled={busy}
-              autoFocus
-            />
           )}
           {mode === "waiter" && waiters && !waiters.waiters.length ? (
             <p>Asnjë kamarier nuk ka PIN. Menaxheri e vendos te Kamarierët.</p>

@@ -38,7 +38,7 @@ async function setup(options = {}) {
     });
   const managerLogin = (over = {}) =>
     call("POST", "/api/auth/manager-login", {
-      body: { username: "boss", pin: manager.pin, ...over },
+      body: { pin: manager.pin, ...over },
     });
   const waiterLogin = (waiterId, pin, ip) =>
     call("POST", "/api/auth/waiter-login", { body: { waiterId, pin }, ip });
@@ -54,7 +54,15 @@ test("manager signs in with a PIN; sessions are HttpOnly and revocable", async (
   const t = await setup();
   try {
     assert.equal((await t.managerLogin({ pin: "000000" })).statusCode, 401);
-    assert.equal((await t.managerLogin({ username: "nobody" })).statusCode, 401);
+    assert.equal((await t.managerLogin({ pin: "111119" })).statusCode, 401);
+    const withStrayUsername = await t.call("POST", "/api/auth/manager-login", {
+      body: { username: "boss", pin: t.manager.pin },
+    });
+    assert.equal(
+      withStrayUsername.statusCode,
+      200,
+      "an unrecognised field is dropped, not rejected — PIN alone still identifies the account",
+    );
     const ok = await t.managerLogin();
     assert.equal(ok.statusCode, 200);
     assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss" });
@@ -162,6 +170,27 @@ test("five wrong manager PINs lock the account until it is reset", async () => {
   try {
     for (let i = 0; i < 5; i++) assert.equal((await t.managerLogin({ pin: "000000" })).statusCode, 401);
     assert.equal((await t.managerLogin()).statusCode, 401, "correct PIN is refused while locked");
+  } finally {
+    await t.close();
+  }
+});
+
+test("manager login identifies the account by PIN alone; a wrong guess locks every manager", async () => {
+  const t = await setup();
+  try {
+    const second = await createManager(t.pool, "assistant");
+    const loginAs = (pin) => t.call("POST", "/api/auth/manager-login", { body: { pin } });
+    const first = await loginAs(t.manager.pin);
+    assert.equal(first.statusCode, 200);
+    assert.equal(first.json().name, "boss");
+    const other = await loginAs(second.pin);
+    assert.equal(other.statusCode, 200);
+    assert.equal(other.json().name, "assistant");
+    // A wrong guess can't be aimed at one account without a username, so it is charged
+    // against every eligible manager row.
+    for (let i = 0; i < 5; i++) assert.equal((await loginAs("000000")).statusCode, 401);
+    assert.equal((await loginAs(t.manager.pin)).statusCode, 401, "boss is locked too");
+    assert.equal((await loginAs(second.pin)).statusCode, 401, "assistant is locked too");
   } finally {
     await t.close();
   }

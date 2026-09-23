@@ -153,11 +153,8 @@ export function buildApp({
         body: {
           type: "object",
           additionalProperties: false,
-          required: ["username", "pin"],
-          properties: {
-            username: { type: "string", minLength: 3, maxLength: 32 },
-            pin,
-          },
+          required: ["pin"],
+          properties: { pin },
         },
       },
     },
