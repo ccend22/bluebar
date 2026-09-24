@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { money, total } from "./domain.js";
-import { Badge, Empty, SectionHeading } from "./components.jsx";
+import { Badge, Empty, Icon, SectionHeading } from "./components.jsx";
 
 export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
   const [area, setArea] = useState("Të gjitha");
@@ -27,7 +27,7 @@ export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
 
   return (
     <div className="orders-layout">
-      <section className="panel orders-list-panel">
+      <section className={`panel orders-list-panel ${table ? "mobile-hidden" : ""}`}>
         <SectionHeading title="Porositë" description={`${openTables.length} porosi aktive`} />
         {areas.length > 1 && (
           <div className="tabs" aria-label="Filtro zonën">
@@ -83,6 +83,9 @@ export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
               </div>
               <div className="orders-detail-actions">
                 <button onClick={() => onModify(table)}>Ndrysho porosinë</button>
+                <button className="icon-button orders-detail-close" onClick={() => onSelect(null)} aria-label="Kthehu te lista">
+                  <Icon name="close" />
+                </button>
               </div>
             </div>
             <p className="orders-detail-meta">

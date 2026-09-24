@@ -843,21 +843,27 @@ function App({ user, onLogout }) {
                                       </button>
                                     </div>
                                   );
+                                // An open order is already explained above (for the
+                                // toggle button); only the history case needs its own note.
                                 return (
                                   <>
                                     <button
                                       className="text-button table-admin-delete"
                                       disabled={blocked}
-                                      aria-describedby={blocked ? `table-delete-help-${t.id}` : undefined}
+                                      aria-describedby={
+                                        t.lines.length > 0
+                                          ? `table-help-${t.id}`
+                                          : hasHistory
+                                            ? `table-delete-help-${t.id}`
+                                            : undefined
+                                      }
                                       onClick={() => setDeleteConfirmId(t.id)}
                                     >
                                       Fshi tavolinën
                                     </button>
-                                    {blocked && (
+                                    {hasHistory && t.lines.length === 0 && (
                                       <small className="table-admin-help" id={`table-delete-help-${t.id}`}>
-                                        {t.lines.length > 0
-                                          ? "Ka porosi të hapura"
-                                          : "Ka histori faturash; përdorni çaktivizimin"}
+                                        Ka histori faturash; përdorni çaktivizimin
                                       </small>
                                     )}
                                   </>

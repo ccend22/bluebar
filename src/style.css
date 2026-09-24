@@ -2852,6 +2852,13 @@ footer > span:last-child {
   .table-management-layout {
     display: flex;
     flex-direction: column;
+    /* Desktop's align-items: start (for the grid layout) carries over here; without
+       stretch, a column flex item sizes to its own content instead of the container
+       width, so the floor-plan grid's min-content size pushed this past the phone. */
+    align-items: stretch;
+  }
+  .table-management-layout > * {
+    min-width: 0;
   }
   .table-management-layout:has(.editor-panel) > .management-aside {
     order: -1;
