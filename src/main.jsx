@@ -308,9 +308,9 @@ function App({ user, onLogout }) {
     setPage("Tavolinat");
     selectTable(t);
   };
-  const closeOrderTable = (t) => {
+  const closeOrderTable = (t, method) => {
     setSelected(t.id);
-    startPayment("Zgjidh");
+    startPayment(method);
   };
   // Deactivated tables ("Menaxho tavolinat") drop off the floor but stay listed there for reactivation.
   const activeTables = state.tables.filter((t) => t.active),

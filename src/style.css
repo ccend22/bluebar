@@ -1607,6 +1607,12 @@ td small {
   align-items: center;
   gap: 10px;
 }
+.orders-list-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
 .orders-list-item-meta {
   display: flex;
   flex-direction: column;
@@ -1616,11 +1622,18 @@ td small {
 }
 .orders-list-item-total {
   font-size: 15px;
+  white-space: nowrap;
 }
 .orders-detail-head {
   display: flex;
   justify-content: space-between;
   align-items: start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.orders-detail-title {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
 .orders-detail-head h2 {
@@ -1636,7 +1649,6 @@ td small {
 .orders-detail-actions {
   display: flex;
   gap: 10px;
-  margin-bottom: 22px;
 }
 .orders-item-table td,
 .orders-item-table th {
@@ -1653,6 +1665,14 @@ td small {
 }
 .orders-detail-total strong {
   font-size: 20px;
+}
+.orders-detail-payment {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.orders-detail-payment button {
+  flex: 1;
 }
 @media (max-width: 900px) {
   .orders-layout {

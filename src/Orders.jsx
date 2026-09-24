@@ -52,13 +52,15 @@ export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
                   <strong>Tavolina {String(t.id).padStart(2, "0")}</strong>
                   <Badge tone="green">E hapur</Badge>
                 </div>
-                <div className="orders-list-item-meta">
-                  <span>{waiterName(t.waiter) || "Pa kamarier"}</span>
-                  <span>
-                    {t.lines.reduce((s, l) => s + l.qty, 0)} artikuj · Nisi {time(t.occupiedSince)}
-                  </span>
+                <div className="orders-list-item-row">
+                  <div className="orders-list-item-meta">
+                    <span>{waiterName(t.waiter) || "Pa kamarier"}</span>
+                    <span>
+                      {t.lines.reduce((s, l) => s + l.qty, 0)} artikuj · Nisi {time(t.occupiedSince)}
+                    </span>
+                  </div>
+                  <strong className="orders-list-item-total">{money(total(t.lines))}</strong>
                 </div>
-                <strong className="orders-list-item-total">{money(total(t.lines))}</strong>
               </button>
             ))}
           </div>
@@ -72,21 +74,20 @@ export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
         {table ? (
           <>
             <div className="orders-detail-head">
-              <div>
-                <small>Tavolina</small>
-                <h2>{String(table.id).padStart(2, "0")}</h2>
+              <div className="orders-detail-title">
+                <div>
+                  <small>Tavolina</small>
+                  <h2>{String(table.id).padStart(2, "0")}</h2>
+                </div>
+                <Badge tone="green">E hapur</Badge>
               </div>
-              <Badge tone="green">E hapur</Badge>
+              <div className="orders-detail-actions">
+                <button onClick={() => onModify(table)}>Ndrysho porosinë</button>
+              </div>
             </div>
             <p className="orders-detail-meta">
               {waiterName(table.waiter) || "Pa kamarier"} · {table.seats} vende · Nisi {time(table.occupiedSince)}
             </p>
-            <div className="orders-detail-actions">
-              <button onClick={() => onModify(table)}>Ndrysho porosinë</button>
-              <button className="primary" onClick={() => onClose(table)}>
-                Mbyll &amp; fatura
-              </button>
-            </div>
             <div className="table-scroll">
               <table className="responsive-table orders-item-table">
                 <thead>
@@ -118,6 +119,12 @@ export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
             <div className="orders-detail-total">
               <span>Totali</span>
               <strong>{money(total(table.lines))}</strong>
+            </div>
+            <div className="orders-detail-payment">
+              <button className="primary" onClick={() => onClose(table, "Kartë")}>
+                Paguaj me kartë
+              </button>
+              <button onClick={() => onClose(table, "Cash")}>Paguaj cash</button>
             </div>
           </>
         ) : (
