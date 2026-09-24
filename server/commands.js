@@ -165,9 +165,8 @@ export function applyCommand(state, type, payload, actor = null) {
         if (!existing) fail("Tavolina nuk ekziston.");
       }
       // A bar counter reads as furniture only once it's wider than it is tall; a new
-      // table otherwise defaults to a plain square the manager can still resize freely.
-      // Kept within FloorPlan.jsx's MAX_TABLE_W/MAX_TABLE_H (80% of one grid cell, so
-      // chairs have room without reaching into the next slot).
+      // table otherwise defaults to a single-slot square the manager can resize up to
+      // a few grid cells (see FloorPlan.jsx's MAX_TABLE_W/MAX_TABLE_H) for a big party.
       const [defaultWidth, defaultHeight] = shapeValue === "Bar" ? [9, 4] : [9, 9];
       const slot = existing ? null : firstOpenSlot(state.tables);
       const row = {

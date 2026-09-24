@@ -39,17 +39,18 @@ const shapeClass = {
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
 // Placement snaps to a fixed lattice of slots instead of free pixels: easier to line
-// tables up, and a slot's size is the hard ceiling a table can be resized to within it.
-// 8x5 on the canvas's 16:10 aspect ratio makes every cell square in real pixels.
+// tables up. 8x5 on the canvas's 16:10 aspect ratio makes every cell square in real pixels.
 export const GRID_COLS = 8;
 export const GRID_ROWS = 5;
 export const CELL_W = 100 / GRID_COLS;
 export const CELL_H = 100 / GRID_ROWS;
-// A table sized to the full cell still has chairs sitting ~11-12% of its own size
-// beyond its edges (see chairLayout's ray-casting math), so the resize ceiling leaves
-// a margin inside the cell — otherwise a maxed-out table's chairs poke into the next slot.
-export const MAX_TABLE_W = CELL_W * 0.8;
-export const MAX_TABLE_H = CELL_H * 0.8;
+// A big table (large party, pushed-together tables) can grow across a few slots, not
+// just its own — capped at 3 cells so it still can't swallow the whole floor. A table
+// sized to N cells still has chairs sitting ~11-12% of its own size beyond its edges
+// (see chairLayout's ray-casting math), so the ceiling leaves that much margin inside
+// its span — otherwise a maxed-out table's chairs poke into the next untouched slot.
+export const MAX_TABLE_W = CELL_W * 3 * 0.8;
+export const MAX_TABLE_H = CELL_H * 3 * 0.8;
 const snapToCell = (v, cell) => clamp(Math.floor(v / cell) * cell + cell / 2, cell / 2, 100 - cell / 2);
 
 function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRotate, waiterName }) {
