@@ -552,7 +552,7 @@ function App({ user, onLogout }) {
           </div>
           <nav aria-label="Navigimi kryesor">
             {pages
-              .filter((p) => role === "Menaxher" || p.name === "Tavolinat")
+              .filter((p) => role === "Menaxher" || p.name === "Tavolinat" || p.name === "Porositë")
               .map((p) => (
                 <button
                   key={p.name}
