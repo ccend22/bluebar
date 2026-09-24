@@ -51,8 +51,9 @@ function PinLogin({ onSignedIn }) {
     ["manager", "Menaxher"],
   ];
   const blocked = mode === "waiter" && waiters && !waiters.allowed;
+  const selectedWaiter = waiters?.waiters.find((w) => String(w.id) === waiterId);
   return (
-    <main className="database-setup login-screen">
+    <main className={`database-setup login-screen ${mode === "waiter" && !blocked ? "with-waiters" : ""}`}>
       <span className="brand">BlueBar</span>
       <h1>{venue?.name || "Hyrje"}</h1>
       <p className="helper">Kodi i biznesit: <strong>{venueSlug}</strong> · <a href="/">Ndrysho biznesin</a></p>
@@ -71,23 +72,33 @@ function PinLogin({ onSignedIn }) {
       {blocked ? (
         <p>Kamarierët hyjnë vetëm nga rrjeti i lokalit. Menaxherët hyjnë nga skeda "Menaxher".</p>
       ) : (
-        <div className="stack-form">
-          {mode === "waiter" && (
-            <Field label="Kamarieri">
-              <select value={waiterId} onChange={(e) => {setWaiterId(e.target.value);setPin("");setError("")}} disabled={busy}>
-                {(waiters?.waiters ?? []).map((w) => (
-                  <option value={w.id} key={w.id}>
-                    {w.name}
-                  </option>
+        <div className={`stack-form login-content ${mode === "waiter" && waiters?.waiters.length ? "with-waiter-list" : ""}`}>
+          {mode === "waiter" && waiters?.waiters.length > 0 && (
+            <section className="login-waiters" aria-labelledby="login-waiters-title">
+              <h2 id="login-waiters-title">Kamarierët</h2>
+              <div className="login-waiter-list" role="group" aria-label="Zgjidhni kamarierin">
+                {waiters.waiters.map((w) => (
+                  <button
+                    type="button"
+                    key={w.id}
+                    aria-pressed={waiterId === String(w.id)}
+                    disabled={busy}
+                    onClick={() => { setWaiterId(String(w.id)); setPin(""); setError(""); }}
+                  >
+                    <span>{w.name}</span>
+                    {waiterId === String(w.id) && <span className="login-waiter-selected">Zgjedhur</span>}
+                  </button>
                 ))}
-              </select>
-            </Field>
+              </div>
+            </section>
           )}
-          {mode === "waiter" && waiters && !waiters.waiters.length ? (
+          {mode === "waiter" && !waiters ? (
+            <p role="status">Po ngarkohen kamarierët…</p>
+          ) : mode === "waiter" && !waiters.waiters.length ? (
             <p>Asnjë kamarier nuk ka PIN. Menaxheri e vendos te Kamarierët.</p>
           ) : (
             <fieldset className="pin-field" disabled={busy}>
-              <legend>PIN (6 shifra)</legend>
+              <legend>{selectedWaiter && mode === "waiter" ? `PIN-i për ${selectedWaiter.name} (6 shifra)` : "PIN (6 shifra)"}</legend>
               <PinPad value={pin} onChange={setPin} onComplete={submit} disabled={busy} />
             </fieldset>
           )}

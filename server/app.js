@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks } from "./tenants.js";
 import { AppError } from "./commands.js";
 import { readSnapshot, execute, executeOrderPatch } from "./repository.js";
+import { checkBlueBillConnection } from "./bluebill.js";
 import {
   cookieName,
   endSession,
@@ -28,6 +29,10 @@ export function buildApp({
   trustProxy = false,
   secureCookies = false,
   allowedHosts = ["localhost", "127.0.0.1"],
+  blueBill = {
+    token: process.env.BLUEBILL_API_TOKEN,
+    venueSlug: process.env.BLUEBILL_VENUE_SLUG,
+  },
 }) {
   const app = Fastify({
     logger: false,
@@ -133,6 +138,17 @@ export function buildApp({
     return start(request, reply, accountId);
   });
   app.get("/api/venue", async request => publicVenue(request.venue));
+  app.get("/api/integrations/bluebill/connection", {
+    preValidation: session("manager"),
+  }, async request => {
+    // A BlueBill token is scoped to one business. Never probe it from another tenant.
+    if (!blueBill.token || !blueBill.venueSlug || request.venue.slug !== blueBill.venueSlug)
+      return { configured: false, connected: false };
+    return {
+      configured: true,
+      ...await checkBlueBillConnection(blueBill.token, blueBill.fetchImpl),
+    };
+  });
   app.get("/api/venue/network", { preValidation: session("manager") }, async request => ({
     allowedIps: request.venue.use_legacy_network ? allowedIps : request.venue.allowed_ips,
     currentIp: request.ip.replace(/^::ffff:/i, ""),

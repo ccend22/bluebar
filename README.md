@@ -25,6 +25,12 @@ Migrimet në `server/migrations/` aplikohen në transaksion për çdo biznes. `s
 
 ## Ruajtja dhe rrjedhat
 
+### Lidhja BlueBill
+
+Vendosni `BLUEBILL_API_TOKEN` dhe `BLUEBILL_VENUE_SLUG` në konfigurimin **server-side** (`.env` lokalisht ose environment variables në host). Slug duhet të jetë kodi i biznesit BlueBar të cilit i përket token-i; për biznesin ekzistues është `bluebar`. Mos përdorni prefiksin `VITE_` për token-in.
+
+Një menaxher i hyrë mund të kontrollojë lidhjen me `GET /api/integrations/bluebill/connection`. Kërkesa dërgon vetëm `GET /invoices` te BlueBill dhe përgjigjja përmban `configured`, `connected` dhe, kur u mor përgjigje, `providerStatus`. Kjo lidhje nuk krijon ose fiskalizon fatura; pagesat në BlueBar vazhdojnë si më parë. Një token i vetëm konfigurohet për një biznes të vetëm.
+
 Frontend-i ngarkon `/api/state` dhe dërgon komanda të validuara te `/api/commands`. Serveri llogarit çmimet, rezervimet, pagesat dhe turnet nga gjendja e databazës. Pagesat dhe stoku ruhen në një transaksion; faturat ruajnë snapshot të çmimit. Versionimi refuzon ndryshimet mbi gjendje të vjetër. Çdo komandë ka UUID për deduplikim; kur mungon përgjigjja, “Verifiko veprimin” riprovon të njëjtën komandë, jo një pagesë të re.
 
 Gjendja rifreskohet çdo 10 sekonda dhe kur fokusohet dritarja. Të dhënat e vjetra `bluebar-demo-v1` në localStorage nuk lexohen, ndryshohen ose importohen. Vetëm kërkesa në pritje ruhet në sessionStorage për rikuperim pas rifreskimit. Nuk ka fallback offline që pretendon ruajtje në databazë.

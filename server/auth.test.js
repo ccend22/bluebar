@@ -82,6 +82,37 @@ test("manager signs in with a PIN; sessions are HttpOnly and revocable", async (
   }
 });
 
+test("BlueBill connection check is manager-only and bound to its configured business", async () => {
+  let calls = 0;
+  const blueBill = {
+    token: "test-secret",
+    venueSlug: "bluebar",
+    fetchImpl: async () => {
+      calls++;
+      return new Response("[]", { status: 200 });
+    },
+  };
+  const t = await setup({ blueBill });
+  try {
+    const path = "/api/integrations/bluebill/connection";
+    assert.equal((await t.call("GET", path)).statusCode, 401);
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("GET", path, { cookie: waiter })).statusCode, 403);
+    const manager = t.cookieOf(await t.managerLogin());
+    assert.deepEqual((await t.call("GET", path, { cookie: manager })).json(), {
+      configured: true, connected: true, providerStatus: 200,
+    });
+    assert.equal(calls, 1);
+    blueBill.venueSlug = "another-business";
+    assert.deepEqual((await t.call("GET", path, { cookie: manager })).json(), {
+      configured: false, connected: false,
+    });
+    assert.equal(calls, 1);
+  } finally {
+    await t.close();
+  }
+});
+
 test("waiters are pinned to the venue IP, limited to order commands and see trimmed data", async () => {
   const t = await setup();
   try {

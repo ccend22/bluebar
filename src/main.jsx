@@ -5,6 +5,7 @@ import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { FloorPlan, TableDetailPanel } from "./FloorPlan.jsx";
+import { ChoiceField } from "./ChoiceField.jsx";
 import { fetchSession, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
@@ -201,7 +202,8 @@ function App({ user, onLogout }) {
     [floorEditing, setFloorEditing] = useState(false),
     [floorDraft, setFloorDraft] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
-    [floorSaving, setFloorSaving] = useState(false);
+    [floorSaving, setFloorSaving] = useState(false),
+    [orderMode, setOrderMode] = useState("summary");
   const dialog = useRef(null),
     dialogTrigger = useRef(null),
     heading = useRef(null),
@@ -216,9 +218,10 @@ function App({ user, onLogout }) {
   }, [page]);
   useEffect(() => {
     if (!payment) return;
-    dialogTrigger.current = document.activeElement;
-    dialog.current.showModal();
-    return () => dialogTrigger.current?.focus();
+    if (!dialog.current?.open) {
+      dialogTrigger.current = document.activeElement;
+      dialog.current?.showModal();
+    }
   }, [payment]);
   useEffect(() => {
     if (selected !== null && window.matchMedia("(max-width: 760px)").matches) {
@@ -252,6 +255,7 @@ function App({ user, onLogout }) {
     setFloorEditing(false);
     setFloorDraft(null);
     setFloorSelected(null);
+    setOrderMode("summary");
     setTimeout(() => heading.current?.focus(), 0);
   };
   const startFloorEdit = () => {
@@ -280,6 +284,7 @@ function App({ user, onLogout }) {
   const selectTable = (t) => {
     setCancelling(false);
     setSelected(t.id);
+    setOrderMode(t.lines.length ? "summary" : "add");
     setQuery("");
     setCategory("Të gjitha");
     setNotice(null);
@@ -339,12 +344,22 @@ function App({ user, onLogout }) {
     setReceived("");
     setPayment(method);
   };
+  const pressReceivedKey = (key) => {
+    setReceived((current) => {
+      if (key === "clear") return "";
+      if (key === "back") return current.slice(0, -1);
+      const next = `${current}${key}`.replace(/^0+(?=\d)/, "");
+      return Number(next) <= 100000000 ? next : current;
+    });
+  };
   const cancelPayment = () => {
     dialog.current?.close();
     setPayment(null);
+    dialogTrigger.current?.focus({ preventScroll: true });
   };
   async function pay(e) {
     e.preventDefault();
+    if (payment !== "Cash" && payment !== "Kartë") return;
     if (payment === "Cash" && Number(received) < total(table.lines)) return;
     const command = {
       tableId: selected,
@@ -501,7 +516,7 @@ function App({ user, onLogout }) {
         Kalo te përmbajtja
       </a>
       <div
-        className="app"
+        className={`app ${page === "Tavolinat" && !manageTables ? "floor-app" : ""}`}
         inert={!!database.pending && !database.busy && !database.syncingOrders}
       >
         <aside className="sidebar">
@@ -595,6 +610,7 @@ function App({ user, onLogout }) {
                   manageTables ? (
                     <button
                       onClick={() => {
+                        cancelFloorEdit();
                         setManageTables(false);
                         setSelected(null);
                         setEditor(null);
@@ -603,33 +619,17 @@ function App({ user, onLogout }) {
                       <Icon name="tables" size={18} />
                       Shiko sallën
                     </button>
-                  ) : floorEditing ? (
-                    <div className="floor-edit-actions">
-                      <button onClick={cancelFloorEdit} disabled={floorSaving}>
-                        Anulo
-                      </button>
-                      <button className="primary" onClick={saveFloorLayout} disabled={floorSaving}>
-                        <Icon name="check" size={17} />
-                        {floorSaving ? "Po ruhet…" : "Ruaj planin"}
-                      </button>
-                    </div>
                   ) : (
-                    <div className="floor-edit-actions">
-                      <button
-                        onClick={() => {
-                          setManageTables(true);
-                          setSelected(null);
-                          setEditor(null);
-                        }}
-                      >
-                        <Icon name="edit" size={18} />
-                        Menaxho tavolinat
-                      </button>
-                      <button onClick={startFloorEdit} disabled={!activeTables.length}>
-                        <Icon name="rotate" size={18} />
-                        Rregullo planin
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => {
+                        setManageTables(true);
+                        setSelected(null);
+                        setEditor(null);
+                      }}
+                    >
+                      <Icon name="edit" size={18} />
+                      Menaxho sallën
+                    </button>
                   )
                 ) : (
                   <span className="date">
@@ -688,12 +688,53 @@ function App({ user, onLogout }) {
                       title="Tavolinat e lokalit"
                       description={`${state.tables.length} tavolina · ${activeTables.length} aktive`}
                     >
-                      <button className="primary" onClick={() => setEditor({})}>
-                        <Icon name="plus" size={18} />
-                        Shto tavolinë
-                      </button>
+                      <div className="floor-edit-actions">
+                        {floorEditing ? (
+                          <>
+                            <button onClick={cancelFloorEdit} disabled={floorSaving}>Anulo planin</button>
+                            <button className="primary" onClick={saveFloorLayout} disabled={floorSaving}>
+                              <Icon name="check" size={17} />
+                              {floorSaving ? "Po ruhet…" : "Ruaj planin"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={startFloorEdit} disabled={!activeTables.length}>
+                              <Icon name="location" size={17} />
+                              Vendos tavolinat në sallë
+                            </button>
+                            <button className="primary" onClick={() => setEditor({})}>
+                              <Icon name="plus" size={18} />
+                              Shto tavolinë
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </SectionHeading>
-                    {state.tables.length ? (
+                    {floorEditing ? (
+                      <div className="floor-management">
+                        <p className="floor-edit-hint">
+                          <Icon name="info" size={16} />
+                          Tërhiqni tavolinat për t’i vendosur. Zgjidhni një tavolinë për ta rrotulluar ose për t’i ndryshuar madhësinë.
+                        </p>
+                        <FloorPlan
+                          tables={floorTables}
+                          editing
+                          selected={floorSelected}
+                          waiters={state.waiters}
+                          onSelectTable={(t) => setFloorSelected(t?.id ?? null)}
+                          onLayoutChange={changeFloorLayout}
+                        />
+                        {floorSelected && (
+                          <div className="floor-selected-tools">
+                            <span>Tavolina {String(floorSelected).padStart(2, "0")} · {state.tables.find((t) => t.id === floorSelected)?.shape}</span>
+                            <button onClick={() => setEditor({ ...state.tables.find((t) => t.id === floorSelected) })}>
+                              Ndrysho formën dhe vendet
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : state.tables.length ? (
                       <div className="table-admin-grid">
                         {[...state.tables]
                           .sort((a, b) => a.id - b.id)
@@ -811,7 +852,7 @@ function App({ user, onLogout }) {
                             required
                           />
                           <p className="helper">
-                            Forma dhe vendet caktohen këtu; pozicioni në sallë vendoset te "Rregullo planin".
+                            Forma dhe vendet caktohen këtu; pozicioni vendoset te "Vendos tavolinat në sallë".
                           </p>
                           <button className="primary">
                             {editor.id ? "Ruaj ndryshimet" : "Shto tavolinë"}
@@ -870,15 +911,7 @@ function App({ user, onLogout }) {
                     className={`floor ${table ? "mobile-hidden" : ""}`}
                     aria-label="Tavolinat e lokalit"
                   >
-                    {floorEditing ? (
-                      <div className="floor-edit-hint">
-                        <Icon name="info" size={16} />
-                        <span>
-                          Tërhiqni për të lëvizur. Klikoni një tavolinë për ta rrotulluar ose ndryshuar madhësinë.
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="toolbar">
+                      <div className="toolbar floor-toolbar">
                         <div className="tabs" aria-label="Filtro zonën">
                           {areas.map((a) => (
                             <button
@@ -898,38 +931,28 @@ function App({ user, onLogout }) {
                             </button>
                           ))}
                         </div>
-                        <label className="compact-select">
-                          <span className="sr-only">Gjendja e tavolinës</span>
-                          <select
-                            value={status}
-                            onChange={(e) => setStatus(e.target.value)}
-                          >
-                            <option>Të gjitha</option>
-                            <option>Të lira</option>
-                            <option>Të zëna</option>
-                          </select>
-                        </label>
+                        <ChoiceField
+                          compact
+                          label="Gjendja"
+                          options={["Të gjitha", "Të lira", "Të zëna"].map((item) => ({ value: item, label: item }))}
+                          value={status}
+                          onChange={setStatus}
+                        />
                       </div>
-                    )}
                     {(() => {
-                      const visible = floorEditing
-                        ? floorTables
-                        : floorTables.filter(
-                            (t) =>
-                              (area === "Të gjitha" || t.area === area) &&
-                              (status === "Të gjitha" ||
-                                Boolean(t.lines.length) === (status === "Të zëna")),
-                          );
+                      const visible = activeTables.filter(
+                        (t) =>
+                          (area === "Të gjitha" || t.area === area) &&
+                          (status === "Të gjitha" ||
+                            Boolean(t.lines.length) === (status === "Të zëna")),
+                      );
                       return visible.length ? (
                         <FloorPlan
                           tables={visible}
-                          editing={floorEditing}
-                          selected={floorEditing ? floorSelected : selected}
+                          editing={false}
+                          selected={selected}
                           waiters={state.waiters}
-                          onSelectTable={(t) =>
-                            floorEditing ? setFloorSelected(t ? t.id : null) : t && selectTable(t)
-                          }
-                          onLayoutChange={changeFloorLayout}
+                          onSelectTable={(t) => t && selectTable(t)}
                         />
                       ) : (
                         <Empty
@@ -950,14 +973,6 @@ function App({ user, onLogout }) {
                         </Empty>
                       );
                     })()}
-                    {!floorEditing && (
-                      <div className="floor-help">
-                        <Icon name="info" size={16} />
-                        <span>
-                          Porositë ruhen kur shtoni produkte dhe qëndrojnë të hapura deri në pagesë ose anulim.
-                        </span>
-                      </div>
-                    )}
                   </section>
                   {table ? (
                     <section
@@ -995,32 +1010,26 @@ function App({ user, onLogout }) {
                             porosisë.
                           </p>
                         )}
-                        <Field label="Kamarieri">
-                          <select
-                            disabled={role === "Kamarier"}
-                            value={table.lines.length ? table.waiter : waiter}
-                            onChange={(e) => {
-                              const next = Number(e.target.value);
-                              setWaiter(next);
-                              update("order.assign", {
-                                tableId: selected,
-                                waiterId: next,
-                              });
-                            }}
-                          >
-                            {state.waiters
-                              .filter(
-                                (w) =>
-                                  w.active ||
-                                  (table.lines.length && w.id === table.waiter),
-                              )
-                              .map((w) => (
-                                <option value={w.id} key={w.id}>
-                                  {w.name}
-                                </option>
-                              ))}
-                          </select>
-                        </Field>
+                        <ChoiceField
+                          label="Kamarieri"
+                          disabled={role === "Kamarier"}
+                          value={table.lines.length ? table.waiter : waiter}
+                          options={state.waiters
+                            .filter((w) => w.active || (table.lines.length && w.id === table.waiter))
+                            .map((w) => ({ value: w.id, label: w.name }))}
+                          onChange={(next) => {
+                            setWaiter(next);
+                            update("order.assign", {
+                              tableId: selected,
+                              waiterId: next,
+                            });
+                          }}
+                        />
+                        <div className="order-mode-tabs" role="group" aria-label="Pamja e porosisë">
+                          <button aria-pressed={orderMode === "summary"} disabled={!table.lines.length} onClick={() => setOrderMode("summary")}>Porosia</button>
+                          <button aria-pressed={orderMode === "add"} onClick={() => setOrderMode("add")}><Icon name="plus" size={16} /> Shto artikuj</button>
+                        </div>
+                        {orderMode === "add" && <div className="order-add-products">
                         <Search
                           label="Kërko produkt për porosinë"
                           placeholder="Kërko një produkt…"
@@ -1075,10 +1084,11 @@ function App({ user, onLogout }) {
                             Nuk u gjet asnjë produkt. Provoni një emër tjetër.
                           </p>
                         )}
+                        </div>}
                         <div className="order-section-title">
                           <h3>Porosia aktuale</h3>
                           <span>
-                            {table.lines.reduce((s, l) => s + l.qty, 0)} artikuj
+                            {table.lines.reduce((s, l) => s + l.qty, 0)} {table.lines.reduce((s, l) => s + l.qty, 0) === 1 ? "artikull" : "artikuj"}
                           </span>
                         </div>
                         {!table.lines.length ? (
@@ -1131,8 +1141,7 @@ function App({ user, onLogout }) {
                             ))}
                           </div>
                         )}
-                      </div>
-                      {role === "Menaxher" && table.lines.length > 0 && (
+                        {role === "Menaxher" && table.lines.length > 0 && (
                         <div className="order-cancel">
                           {cancelling ? (
                             <form className="stack-form" onSubmit={async (e) => {
@@ -1155,7 +1164,8 @@ function App({ user, onLogout }) {
                             <button className="text-button" onClick={() => setCancelling(true)}>Anulo porosinë</button>
                           )}
                         </div>
-                      )}
+                        )}
+                      </div>
                       <div className="order-payment">
                         <div className="order-total">
                           <span>Totali për pagesë</span>
@@ -1163,19 +1173,19 @@ function App({ user, onLogout }) {
                         </div>
                         <div className="actions">
                           <button
-                            className="primary"
-                            disabled={!table.lines.length || !state.shift}
-                            onClick={() => startPayment("Cash")}
+                            onClick={() => setOrderMode(orderMode === "add" ? "summary" : "add")}
+                            disabled={orderMode === "add" && !table.lines.length}
                           >
-                            <Icon name="cash" size={17} />
-                            Paguaj cash
+                            <Icon name={orderMode === "add" ? "receipt" : "plus"} size={17} />
+                            {orderMode === "add" ? "Shiko porosinë" : "Shto artikuj"}
                           </button>
                           <button
+                            className="primary"
                             disabled={!table.lines.length || !state.shift}
-                            onClick={() => startPayment("Kartë")}
+                            onClick={() => startPayment("Zgjidh")}
                           >
-                            <Icon name="card" size={17} />
-                            Me kartë
+                            <Icon name="check" size={17} />
+                            Mbyll porosinë
                           </button>
                         </div>
                       </div>
@@ -1244,16 +1254,12 @@ function App({ user, onLogout }) {
                       value={query}
                       onChange={setQuery}
                     />
-                    <Field label="Mënyra e pagesës">
-                      <select
-                        value={paymentFilter}
-                        onChange={(e) => setPaymentFilter(e.target.value)}
-                      >
-                        {["Të gjitha", "Cash", "Kartë"].map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </Field>
+                    <ChoiceField
+                      label="Mënyra e pagesës"
+                      options={["Të gjitha", "Cash", "Kartë"].map((item) => ({ value: item, label: item }))}
+                      value={paymentFilter}
+                      onChange={setPaymentFilter}
+                    />
                   </div>
                   {filteredInvoices.length ? (
                     <div className="table-scroll">
@@ -1582,16 +1588,12 @@ function App({ user, onLogout }) {
                       value={query}
                       onChange={setQuery}
                     />
-                    <Field label="Kategoria">
-                      <select
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                      >
-                        {["Të gjitha", ...state.categories].map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </Field>
+                    <ChoiceField
+                      label="Kategoria"
+                      options={["Të gjitha", ...state.categories].map((item) => ({ value: item, label: item }))}
+                      value={category}
+                      onChange={setCategory}
+                    />
                   </div>
                   {filteredProducts.length ? (
                     <div className="table-scroll">
@@ -1680,18 +1682,12 @@ function App({ user, onLogout }) {
                           required
                           autoFocus
                         />
-                        <Field label="Kategoria">
-                          <select
-                            name="category"
-                            defaultValue={
-                              editor.category || state.categories[0]
-                            }
-                          >
-                            {state.categories.map((c) => (
-                              <option key={c}>{c}</option>
-                            ))}
-                          </select>
-                        </Field>
+                        <ChoiceField
+                          label="Kategoria"
+                          name="category"
+                          defaultValue={editor.category || state.categories[0]}
+                          options={state.categories.map((item) => ({ value: item, label: item }))}
+                        />
                         <Field
                           label="Çmimi (Lek)"
                           name="price"
@@ -2286,14 +2282,17 @@ function App({ user, onLogout }) {
                 <Icon name="close" />
               </button>
             </div>
-            <h2 id="payment-title">Konfirmo pagesën</h2>
+            <h2 id="payment-title">Mbyll porosinë</h2>
             <p>
-              Tavolina {String(table.id).padStart(2, "0")} ·{" "}
-              {payment === "Cash" ? "Pagesë cash" : "Pagesë me kartë"}
+              Tavolina {String(table.id).padStart(2, "0")} · Zgjidhni mënyrën e pagesës
             </p>
             <div className="payment-amount">
               <span>Për t’u paguar</span>
               <strong>{money(total(table.lines))}</strong>
+            </div>
+            <div className="payment-methods" role="group" aria-label="Mënyra e pagesës">
+              <button type="button" aria-pressed={payment === "Cash"} onClick={() => setPayment("Cash")}><Icon name="cash" size={18} /> Cash</button>
+              <button type="button" aria-pressed={payment === "Kartë"} onClick={() => setPayment("Kartë")}><Icon name="card" size={18} /> Kartë</button>
             </div>
             {payment === "Cash" ? (
               <>
@@ -2301,6 +2300,7 @@ function App({ user, onLogout }) {
                   label="Shuma e marrë (Lek)"
                   name="received"
                   type="number"
+                  inputMode="numeric"
                   min={total(table.lines)}
                   max="100000000"
                   step="1"
@@ -2309,6 +2309,19 @@ function App({ user, onLogout }) {
                   onChange={(e) => setReceived(e.target.value)}
                   placeholder={String(total(table.lines))}
                 />
+                <div className="cash-keypad" role="group" aria-label="Shuma e marrë">
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"].map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={key === "clear" || key === "back" ? !received : false}
+                      aria-label={key === "clear" ? "Pastro shumën" : key === "back" ? "Fshi shifrën e fundit" : `Shifra ${key}`}
+                      onClick={() => pressReceivedKey(key)}
+                    >
+                      {key === "clear" ? "Pastro" : key === "back" ? <Icon name="backspace" size={20} /> : key}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
                   className="text-button"
@@ -2323,7 +2336,7 @@ function App({ user, onLogout }) {
                   </strong>
                 </div>
               </>
-            ) : (
+            ) : payment === "Kartë" ? (
               <div className="info-note">
                 <Icon name="info" size={18} />
                 <p>
@@ -2331,8 +2344,8 @@ function App({ user, onLogout }) {
                   kartës.
                 </p>
               </div>
-            )}
-            <p className="helper">Pagesa mbyll porosinë dhe liron tavolinën.</p>
+            ) : null}
+            <p className="helper">Pagesa mbyll porosinë dhe liron tavolinën. Pas konfirmimit mund të printoni faturën.</p>
             <div className="dialog-actions">
               <button type="button" onClick={cancelPayment}>
                 Kthehu
@@ -2340,12 +2353,13 @@ function App({ user, onLogout }) {
               <button
                 className="primary"
                 disabled={
-                  payment === "Cash" &&
-                  (received === "" || Number(received) < total(table.lines))
+                  payment === "Zgjidh" ||
+                  (payment === "Cash" &&
+                    (received === "" || Number(received) < total(table.lines)))
                 }
               >
                 <Icon name="check" size={17} />
-                Konfirmo pagesën
+                Konfirmo dhe krijo faturën
               </button>
             </div>
           </form>

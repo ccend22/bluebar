@@ -31,6 +31,7 @@ const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
 function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRotate, waiterName }) {
   const occupied = t.lines.length > 0;
+  const itemCount = t.lines.reduce((sum, line) => sum + line.qty, 0);
   const ref = useRef(null);
   const drag = (start) => (e) => {
     if (!editing) return;
@@ -43,9 +44,12 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
     const up = () => {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
   };
   return (
     <div
@@ -61,7 +65,7 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
       onPointerDown={drag((ev, canvas) => onDrag(t.id, clamp(((ev.clientX - canvas.left) / canvas.width) * 100, 0, 100), clamp(((ev.clientY - canvas.top) / canvas.height) * 100, 0, 100)))}
       role="button"
       tabIndex={0}
-      aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? "e zënë" : "e lirë"}`}
+      aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? `e zënë, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(total(t.lines))}` : "e lirë"}`}
       aria-pressed={isSelected}
       onClick={(e) => {
         if (editing) e.stopPropagation();
@@ -75,10 +79,12 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
         ))}
       </div>
       <div className="fp-body" style={{ transform: `rotate(${-t.rotation}deg)` }}>
+        {occupied && <span className="fp-live-dot" aria-hidden="true" />}
         <strong>{String(t.id).padStart(2, "0")}</strong>
         {occupied && (
           <span className="fp-info">
-            {t.lines.reduce((s, l) => s + l.qty, 0)} artikuj · {money(total(t.lines))}
+            <span>{itemCount} {itemCount === 1 ? "artikull" : "artikuj"}</span>
+            <b>{money(total(t.lines))}</b>
           </span>
         )}
       </div>
@@ -128,23 +134,26 @@ export function FloorPlan({ tables, editing, selected, onSelectTable, onLayoutCh
   const canvasRef = useRef(null);
   const waiterName = (id) => waiters.find((w) => w.id === id)?.name.split(" ")[0];
   return (
-    <div className={`floor-plan ${editing ? "editing" : ""}`} ref={canvasRef} onClick={() => editing && onSelectTable(null)}>
-      {tables.map((t) => (
-        <FloorTable
-          key={t.id}
-          t={t}
-          editing={editing}
-          isSelected={selected === t.id}
-          onSelect={onSelectTable}
-          waiterName={waiterName(t.waiter)}
-          onDrag={(id, x, y) => onLayoutChange(id, { posX: x, posY: y })}
-          onResize={(id, w, h) => onLayoutChange(id, { width: w, height: h })}
-          onRotate={(id, deg) => onLayoutChange(id, { rotation: deg })}
-        />
-      ))}
-      {!tables.length && (
-        <p className="fp-empty helper">Shtoni tavolina te "Menaxho tavolinat" për t'i parë këtu.</p>
-      )}
+    <div className="floor-plan-viewport" role="region" aria-label="Plani i tavolinave" tabIndex={0}>
+      <div className={`floor-plan ${editing ? "editing" : ""} ${tables.length ? "" : "is-empty"}`} ref={canvasRef} onClick={() => editing && onSelectTable(null)}>
+        {tables.map((t) => (
+          <FloorTable
+            key={t.id}
+            t={t}
+            editing={editing}
+            isSelected={selected === t.id}
+            onSelect={onSelectTable}
+            waiterName={waiterName(t.waiter)}
+            onDrag={(id, x, y) => onLayoutChange(id, { posX: x, posY: y })}
+            onResize={(id, w, h) => onLayoutChange(id, { width: w, height: h })}
+            onRotate={(id, deg) => onLayoutChange(id, { rotation: deg })}
+          />
+        ))}
+        {!tables.length && (
+          <p className="fp-empty helper">Shtoni tavolina te "Menaxho tavolinat" për t'i parë këtu.</p>
+        )}
+      </div>
+      {tables.length > 0 && <p className="floor-scroll-hint">Rrëshqitni majtas ose djathtas për të parë të gjitha tavolinat.</p>}
     </div>
   );
 }
