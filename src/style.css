@@ -756,6 +756,28 @@ main {
   background: var(--green-soft);
   border-color: #bfd9cb;
 }
+/* Read as the same furniture shape chosen in the table editor, not one generic card. */
+.fp-table.shape-round,
+.fp-table.shape-oval {
+  border-radius: 50%;
+}
+.fp-table.shape-square {
+  border-radius: 10px;
+}
+.fp-table.shape-bar {
+  border-radius: 7px;
+}
+.fp-table.shape-bar::after {
+  content: "";
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  bottom: -4px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  opacity: 0.55;
+}
 .fp-table.selected {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
@@ -779,11 +801,17 @@ main {
 }
 .fp-chair {
   position: absolute;
+  width: 15px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 1.5px solid var(--line-strong);
+  transition: opacity 120ms var(--ease-out);
+}
+.fp-chair-round {
   width: 11px;
   height: 11px;
-  border-radius: 4px;
-  background: var(--line-strong);
-  transition: opacity 120ms var(--ease-out);
+  border-radius: 50%;
 }
 .fp-table.occupied .fp-chair {
   opacity: 0;

@@ -150,6 +150,9 @@ export function applyCommand(state, type, payload, actor = null) {
         existing = state.tables.find((x) => x.id === p.id);
         if (!existing) fail("Tavolina nuk ekziston.");
       }
+      // A bar counter reads as furniture only once it's wider than it is tall; a new
+      // table otherwise defaults to a plain square the manager can still resize freely.
+      const [defaultWidth, defaultHeight] = shapeValue === "Bar" ? [22, 8] : [12, 12];
       const row = {
         id: existing?.id || nextId(state.tables),
         area,
@@ -159,8 +162,8 @@ export function applyCommand(state, type, payload, actor = null) {
         lines: existing?.lines ?? [],
         posX: pct(p.posX, existing?.posX ?? 50),
         posY: pct(p.posY, existing?.posY ?? 50),
-        width: dim(p.width, existing?.width ?? 12),
-        height: dim(p.height, existing?.height ?? 12),
+        width: dim(p.width, existing?.width ?? defaultWidth),
+        height: dim(p.height, existing?.height ?? defaultHeight),
         rotation: rotation(p.rotation, existing?.rotation ?? 0),
         seats: seats(p.seats, existing?.seats ?? 4),
         occupiedSince: existing?.occupiedSince ?? null,

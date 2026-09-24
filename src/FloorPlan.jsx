@@ -8,7 +8,7 @@ import { Badge, Icon, TableSymbol } from "./components.jsx";
 export function chairLayout(shape, seatCount) {
   const n = Math.max(1, Math.min(12, seatCount || 4));
   if (shape === "Bar")
-    return Array.from({ length: n }, (_, i) => ({ x: ((i + 0.5) / n) * 100, y: 108, angle: 0 }));
+    return Array.from({ length: n }, (_, i) => ({ x: ((i + 0.5) / n) * 100, y: 108, angle: 0, round: true }));
   const round = shape === "Rreth" || shape === "Oval";
   return Array.from({ length: n }, (_, i) => {
     const theta = (i / n) * 2 * Math.PI - Math.PI / 2;
@@ -23,9 +23,18 @@ export function chairLayout(shape, seatCount) {
       rx = cos * t * 1.22;
       ry = sin * t * 1.22;
     }
-    return { x: (0.5 + rx) * 100, y: (0.5 + ry) * 100, angle: (theta * 180) / Math.PI + 90 };
+    return { x: (0.5 + rx) * 100, y: (0.5 + ry) * 100, angle: (theta * 180) / Math.PI + 90, round };
   });
 }
+
+// The floor tile itself should read as the same furniture shape a manager picked in
+// the table editor, not a generic card — otherwise every table looks identical.
+const shapeClass = {
+  Rreth: "shape-round",
+  Oval: "shape-oval",
+  Katror: "shape-square",
+  Bar: "shape-bar",
+};
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
@@ -54,7 +63,7 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
   return (
     <div
       ref={ref}
-      className={`fp-table ${occupied ? "occupied" : ""} ${isSelected ? "selected" : ""} ${editing ? "editing" : ""}`}
+      className={`fp-table ${shapeClass[t.shape] || "shape-rect"} ${occupied ? "occupied" : ""} ${isSelected ? "selected" : ""} ${editing ? "editing" : ""}`}
       style={{
         left: `${t.posX}%`,
         top: `${t.posY}%`,
@@ -75,7 +84,11 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
     >
       <div className="fp-chairs" aria-hidden={occupied || undefined}>
         {chairLayout(t.shape, t.seats).map((c, i) => (
-          <span key={i} className="fp-chair" style={{ left: `${c.x}%`, top: `${c.y}%`, transform: `translate(-50%,-50%) rotate(${c.angle}deg)` }} />
+          <span
+            key={i}
+            className={`fp-chair ${c.round ? "fp-chair-round" : ""}`}
+            style={{ left: `${c.x}%`, top: `${c.y}%`, transform: `translate(-50%,-50%) rotate(${c.angle}deg)` }}
+          />
         ))}
       </div>
       <div className="fp-body" style={{ transform: `rotate(${-t.rotation}deg)` }}>
