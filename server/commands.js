@@ -152,7 +152,8 @@ export function applyCommand(state, type, payload, actor = null) {
       }
       // A bar counter reads as furniture only once it's wider than it is tall; a new
       // table otherwise defaults to a plain square the manager can still resize freely.
-      const [defaultWidth, defaultHeight] = shapeValue === "Bar" ? [22, 8] : [12, 12];
+      // Kept within one placement-grid cell (see FloorPlan.jsx CELL_W/CELL_H, 12.5x20).
+      const [defaultWidth, defaultHeight] = shapeValue === "Bar" ? [12, 5] : [12, 12];
       const row = {
         id: existing?.id || nextId(state.tables),
         area,

@@ -716,6 +716,12 @@ main {
 }
 .floor-plan.editing {
   cursor: default;
+  /* Visible slots while arranging: tables snap to these lines on drag and cannot be
+     resized past one cell, so the grid shown here is the grid actually in effect. */
+  background-image:
+    linear-gradient(to right, var(--line-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line-strong) 1px, transparent 1px);
+  background-size: 12.5% 20%;
 }
 .fp-empty {
   position: absolute;

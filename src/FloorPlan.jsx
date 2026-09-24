@@ -38,6 +38,15 @@ const shapeClass = {
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
+// Placement snaps to a fixed lattice of slots instead of free pixels: easier to line
+// tables up, and a slot's size is the hard ceiling a table can be resized to within it.
+// 8x5 on the canvas's 16:10 aspect ratio makes every cell square in real pixels.
+export const GRID_COLS = 8;
+export const GRID_ROWS = 5;
+export const CELL_W = 100 / GRID_COLS;
+export const CELL_H = 100 / GRID_ROWS;
+const snapToCell = (v, cell) => clamp(Math.floor(v / cell) * cell + cell / 2, cell / 2, 100 - cell / 2);
+
 function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRotate, waiterName }) {
   const occupied = t.lines.length > 0;
   const itemCount = t.lines.reduce((sum, line) => sum + line.qty, 0);
@@ -71,7 +80,11 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
         height: `${t.height}%`,
         transform: `translate(-50%, -50%) rotate(${t.rotation}deg)`,
       }}
-      onPointerDown={drag((ev, canvas) => onDrag(t.id, clamp(((ev.clientX - canvas.left) / canvas.width) * 100, 0, 100), clamp(((ev.clientY - canvas.top) / canvas.height) * 100, 0, 100)))}
+      onPointerDown={drag((ev, canvas) => {
+        const x = clamp(((ev.clientX - canvas.left) / canvas.width) * 100, 0, 100);
+        const y = clamp(((ev.clientY - canvas.top) / canvas.height) * 100, 0, 100);
+        onDrag(t.id, snapToCell(x, CELL_W), snapToCell(y, CELL_H));
+      })}
       role="button"
       tabIndex={0}
       aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? `e zënë, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(total(t.lines))}` : "e lirë"}`}
@@ -132,8 +145,8 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
               const dx = ev.clientX - cx, dy = ev.clientY - cy;
               const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
               const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
-              const w = clamp(((localX * 2) / canvas.width) * 100, 4, 60);
-              const h = clamp(((localY * 2) / canvas.height) * 100, 4, 60);
+              const w = clamp(((localX * 2) / canvas.width) * 100, 4, CELL_W);
+              const h = clamp(((localY * 2) / canvas.height) * 100, 4, CELL_H);
               onResize(t.id, w, h);
             })}
           />
