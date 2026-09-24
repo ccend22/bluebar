@@ -1576,6 +1576,92 @@ td small {
     grid-template-columns: 1fr;
   }
 }
+.orders-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.orders-list {
+  display: grid;
+  gap: 10px;
+  max-height: 70vh;
+  overflow: auto;
+}
+.orders-list-item {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-subtle);
+}
+.orders-list-item.selected {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+.orders-list-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.orders-list-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.orders-list-item-total {
+  font-size: 15px;
+}
+.orders-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+.orders-detail-head h2 {
+  margin: 2px 0 0;
+  font-size: 27px;
+  font-variant-numeric: tabular-nums;
+}
+.orders-detail-meta {
+  margin: 6px 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.orders-detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.orders-item-table td,
+.orders-item-table th {
+  vertical-align: middle;
+}
+.orders-detail-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+}
+.orders-detail-total strong {
+  font-size: 20px;
+}
+@media (max-width: 900px) {
+  .orders-layout {
+    grid-template-columns: 1fr;
+  }
+  .orders-list {
+    max-height: none;
+  }
+}
 .empty {
   text-align: center;
   padding: 46px 20px;

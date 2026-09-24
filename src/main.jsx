@@ -7,6 +7,7 @@ import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { FloorPlan, TableDetailPanel } from "./FloorPlan.jsx";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { Reports } from "./Reports.jsx";
+import { Orders } from "./Orders.jsx";
 import { fetchSession, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
@@ -26,6 +27,11 @@ const pages = [
     icon: "tables",
     description:
       "Salla juaj, në një vështrim. Zgjidhni një tavolinë për të nisur.",
+  },
+  {
+    name: "Porositë",
+    icon: "list",
+    description: "Porositë e hapura, si listë, gati për t'u mbyllur.",
   },
   {
     name: "Faturat",
@@ -295,6 +301,16 @@ function App({ user, onLogout }) {
     setQuery("");
     setCategory("Të gjitha");
     setNotice(null);
+  };
+  // The Porositë (Orders) list is a second entry point into the same order/payment
+  // flow the floor plan already has — jump to it instead of rebuilding it.
+  const openOrderTable = (t) => {
+    setPage("Tavolinat");
+    selectTable(t);
+  };
+  const closeOrderTable = (t) => {
+    setSelected(t.id);
+    startPayment("Zgjidh");
   };
   // Deactivated tables ("Menaxho tavolinat") drop off the floor but stay listed there for reactivation.
   const activeTables = state.tables.filter((t) => t.active),
@@ -1280,6 +1296,17 @@ function App({ user, onLogout }) {
                 </div>
                 </>
               ))}
+
+            {page === "Porositë" && (
+              <Orders
+                state={state}
+                selected={selected}
+                onSelect={setSelected}
+                onModify={openOrderTable}
+                onClose={closeOrderTable}
+                time={time}
+              />
+            )}
 
             {page === "Faturat" && (
               <div

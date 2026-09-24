@@ -115,6 +115,12 @@ const paths = {
       <path d="M3 20h18" />
     </>
   ),
+  list: (
+    <>
+      <path d="M9 6h12M9 12h12M9 18h12" />
+      <path d="M4 6h.01M4 12h.01M4 18h.01" />
+    </>
+  ),
 };
 export function Icon({ name, size = 20, ...props }) {
   return (
