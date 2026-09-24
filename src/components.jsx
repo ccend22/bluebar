@@ -109,6 +109,12 @@ const paths = {
       <path d="M3 21v-6h6" />
     </>
   ),
+  chart: (
+    <>
+      <path d="M4 20V10M12 20V4M20 20v-7" />
+      <path d="M3 20h18" />
+    </>
+  ),
 };
 export function Icon({ name, size = 20, ...props }) {
   return (

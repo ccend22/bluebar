@@ -265,6 +265,7 @@ export function buildApp({
                 "order.cancel",
                 "table.save",
                 "table.toggle",
+                "table.delete",
                 "table.layout",
                 "product.save",
                 "category.create",

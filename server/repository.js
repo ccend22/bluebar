@@ -185,6 +185,10 @@ export async function persist(client, previous, next) {
         [t.id, l.id, l.name, l.price, l.qty],
       );
   }
+  // table.delete already refused a table with any order_lines/invoices history, so this
+  // is safe against dining_tables' non-cascading FKs from those two tables.
+  for (const t of previous.tables.filter((t) => !next.tables.some((x) => x.id === t.id)))
+    await client.query("DELETE FROM bluebar.dining_tables WHERE id=$1", [t.id]);
   for (const i of next.invoices.filter(
     (i) => !previous.invoices.some((x) => x.id === i.id),
   )) {

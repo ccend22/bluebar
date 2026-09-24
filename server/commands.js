@@ -206,6 +206,19 @@ export function applyCommand(state, type, payload, actor = null) {
       };
       break;
     }
+    case "table.delete": {
+      integer(p.id);
+      const t = state.tables.find((x) => x.id === p.id);
+      if (!t) fail("Tavolina nuk ekziston.");
+      if (t.lines.length) fail("Nuk mund të fshini një tavolinë me porosi të hapura.");
+      // dining_tables is referenced by invoices/order_lines history with no cascade
+      // (see 003_table_management.sql), so a table that has ever taken an order stays
+      // soft-removed via table.toggle instead; only a never-used table can be deleted.
+      if (state.invoices.some((inv) => inv.table === p.id))
+        fail("Kjo tavolinë ka histori faturash; çaktivizojeni në vend të fshirjes.");
+      next = { ...state, tables: state.tables.filter((x) => x.id !== p.id) };
+      break;
+    }
     case "table.layout": {
       if (!Array.isArray(p.tables) || !p.tables.length || p.tables.length > 200)
         fail("Vendosni pozicionet e tavolinave.");

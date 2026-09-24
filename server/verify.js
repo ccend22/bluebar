@@ -67,6 +67,18 @@ export async function verifyEmptyDatabase(pool) {
   );
   await send("table.toggle", { id: 13 });
   assert.equal(data.state.tables.find((t) => t.id === 13).active, false);
+  // Deleting: refused with an open order, allowed once a table has neither an open
+  // order nor any invoice history.
+  await rejected("table.delete", { id: 2 }, /porosi të hapura/);
+  await send("table.save", { area: "Përkohshme" });
+  const scratch = data.state.tables.find((t) => t.area === "Përkohshme").id;
+  await send("table.delete", { id: scratch });
+  assert.equal(data.state.tables.some((t) => t.id === scratch), false);
+  assert.equal(
+    (await readSnapshot(pool)).state.tables.some((t) => t.id === scratch),
+    false,
+  );
+  await rejected("table.delete", { id: 999 }, /ekziston/);
   // Floor plan: bulk position/size/rotation save, and the fields survive a fresh read.
   await send("table.layout", {
     tables: [
@@ -125,6 +137,7 @@ export async function verifyEmptyDatabase(pool) {
   });
   assert.equal(data.state.invoices[0].total, 100);
   assert.equal(data.state.tables[0].occupiedSince, null, "paying clears occupiedSince");
+  await rejected("table.delete", { id: 1 }, /histori faturash/);
   const replay = await execute(pool, cmd);
   assert.equal(replay.replayed, true);
   assert.equal(replay.state.invoices.length, 1);

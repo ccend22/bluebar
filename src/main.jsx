@@ -6,6 +6,7 @@ import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { FloorPlan, TableDetailPanel } from "./FloorPlan.jsx";
 import { ChoiceField } from "./ChoiceField.jsx";
+import { Reports } from "./Reports.jsx";
 import { fetchSession, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
@@ -50,6 +51,11 @@ const pages = [
     name: "Turnet",
     icon: "clock",
     description: "Nga fondi fillestar te numërimi përfundimtar i arkës.",
+  },
+  {
+    name: "Raportet",
+    icon: "chart",
+    description: "Të ardhurat, produktet dhe kamarierët më të mirë.",
   },
 ];
 const matches = (text, query) =>
@@ -199,6 +205,7 @@ function App({ user, onLogout }) {
     [manageTables, setManageTables] = useState(false),
     [report, setReport] = useState(null),
     [cancelling, setCancelling] = useState(false),
+    [deleteConfirmId, setDeleteConfirmId] = useState(null),
     [floorEditing, setFloorEditing] = useState(false),
     [floorDraft, setFloorDraft] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
@@ -800,6 +807,46 @@ function App({ user, onLogout }) {
                                   Ka porosi të hapura
                                 </small>
                               )}
+                              {(() => {
+                                const hasHistory = state.invoices.some((inv) => inv.table === t.id);
+                                const blocked = t.lines.length > 0 || hasHistory;
+                                if (deleteConfirmId === t.id)
+                                  return (
+                                    <div className="table-admin-actions">
+                                      <button className="text-button" onClick={() => setDeleteConfirmId(null)}>
+                                        Anulo
+                                      </button>
+                                      <button
+                                        className="danger-button"
+                                        onClick={async () => {
+                                          if (await update("table.delete", { id: t.id }, "Tavolina u fshi."))
+                                            setDeleteConfirmId(null);
+                                        }}
+                                      >
+                                        Fshi përfundimisht
+                                      </button>
+                                    </div>
+                                  );
+                                return (
+                                  <>
+                                    <button
+                                      className="text-button table-admin-delete"
+                                      disabled={blocked}
+                                      aria-describedby={blocked ? `table-delete-help-${t.id}` : undefined}
+                                      onClick={() => setDeleteConfirmId(t.id)}
+                                    >
+                                      Fshi tavolinën
+                                    </button>
+                                    {blocked && (
+                                      <small className="table-admin-help" id={`table-delete-help-${t.id}`}>
+                                        {t.lines.length > 0
+                                          ? "Ka porosi të hapura"
+                                          : "Ka histori faturash; përdorni çaktivizimin"}
+                                      </small>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </article>
                           ))}
                       </div>
@@ -2249,6 +2296,7 @@ function App({ user, onLogout }) {
                 </aside>
               </div>
             )}
+            {page === "Raportet" && <Reports state={state} />}
           </fieldset>
           </main>
           <footer>
