@@ -45,6 +45,11 @@ export const GRID_COLS = 8;
 export const GRID_ROWS = 5;
 export const CELL_W = 100 / GRID_COLS;
 export const CELL_H = 100 / GRID_ROWS;
+// A table sized to the full cell still has chairs sitting ~11-12% of its own size
+// beyond its edges (see chairLayout's ray-casting math), so the resize ceiling leaves
+// a margin inside the cell — otherwise a maxed-out table's chairs poke into the next slot.
+export const MAX_TABLE_W = CELL_W * 0.8;
+export const MAX_TABLE_H = CELL_H * 0.8;
 const snapToCell = (v, cell) => clamp(Math.floor(v / cell) * cell + cell / 2, cell / 2, 100 - cell / 2);
 
 function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRotate, waiterName }) {
@@ -145,8 +150,8 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
               const dx = ev.clientX - cx, dy = ev.clientY - cy;
               const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
               const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
-              const w = clamp(((localX * 2) / canvas.width) * 100, 4, CELL_W);
-              const h = clamp(((localY * 2) / canvas.height) * 100, 4, CELL_H);
+              const w = clamp(((localX * 2) / canvas.width) * 100, 4, MAX_TABLE_W);
+              const h = clamp(((localY * 2) / canvas.height) * 100, 4, MAX_TABLE_H);
               onResize(t.id, w, h);
             })}
           />

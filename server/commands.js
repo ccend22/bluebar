@@ -19,6 +19,20 @@ const name = (v, max = 80) => {
   return v.trim();
 };
 const nextId = (items) => Math.max(0, ...items.map((x) => x.id)) + 1;
+// Mirrors FloorPlan.jsx's GRID_COLS/GRID_ROWS (8x5) — keep both in sync if either changes.
+const GRID_COLS = 8, GRID_ROWS = 5, CELL_W = 100 / GRID_COLS, CELL_H = 100 / GRID_ROWS;
+// A new table lands in the first empty slot instead of always stacking at dead-center,
+// so adding tables one after another fills out the room instead of piling them up.
+function firstOpenSlot(tables) {
+  const occupied = new Set(
+    tables.map((t) => `${Math.floor(t.posX / CELL_W)},${Math.floor(t.posY / CELL_H)}`),
+  );
+  for (let row = 0; row < GRID_ROWS; row++)
+    for (let col = 0; col < GRID_COLS; col++)
+      if (!occupied.has(`${col},${row}`))
+        return { posX: (col + 0.5) * CELL_W, posY: (row + 0.5) * CELL_H };
+  return { posX: 50, posY: 50 };
+}
 const TABLE_SHAPES = ["Rreth", "Katror", "Drejtkëndësh", "Bar", "Oval"];
 const shape = (v) => {
   if (v === undefined || v === null || v === "") return null;
@@ -152,8 +166,10 @@ export function applyCommand(state, type, payload, actor = null) {
       }
       // A bar counter reads as furniture only once it's wider than it is tall; a new
       // table otherwise defaults to a plain square the manager can still resize freely.
-      // Kept within one placement-grid cell (see FloorPlan.jsx CELL_W/CELL_H, 12.5x20).
-      const [defaultWidth, defaultHeight] = shapeValue === "Bar" ? [12, 5] : [12, 12];
+      // Kept within FloorPlan.jsx's MAX_TABLE_W/MAX_TABLE_H (80% of one grid cell, so
+      // chairs have room without reaching into the next slot).
+      const [defaultWidth, defaultHeight] = shapeValue === "Bar" ? [9, 4] : [9, 9];
+      const slot = existing ? null : firstOpenSlot(state.tables);
       const row = {
         id: existing?.id || nextId(state.tables),
         area,
@@ -161,8 +177,8 @@ export function applyCommand(state, type, payload, actor = null) {
         active: existing?.active ?? true,
         waiter: existing?.waiter ?? null,
         lines: existing?.lines ?? [],
-        posX: pct(p.posX, existing?.posX ?? 50),
-        posY: pct(p.posY, existing?.posY ?? 50),
+        posX: pct(p.posX, existing?.posX ?? slot?.posX ?? 50),
+        posY: pct(p.posY, existing?.posY ?? slot?.posY ?? 50),
         width: dim(p.width, existing?.width ?? defaultWidth),
         height: dim(p.height, existing?.height ?? defaultHeight),
         rotation: rotation(p.rotation, existing?.rotation ?? 0),
