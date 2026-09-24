@@ -2288,7 +2288,18 @@ function App({ user, onLogout }) {
             </p>
             <div className="payment-amount">
               <span>Për t’u paguar</span>
-              <strong>{money(total(table.lines))}</strong>
+              {payment === "Cash" ? (
+                <button
+                  type="button"
+                  className="payment-amount-fill"
+                  onClick={() => setReceived(String(total(table.lines)))}
+                  aria-label={`Vendos shumën e saktë, ${money(total(table.lines))}`}
+                >
+                  {money(total(table.lines))}
+                </button>
+              ) : (
+                <strong>{money(total(table.lines))}</strong>
+              )}
             </div>
             <div className="payment-methods" role="group" aria-label="Mënyra e pagesës">
               <button type="button" aria-pressed={payment === "Cash"} onClick={() => setPayment("Cash")}><Icon name="cash" size={18} /> Cash</button>
@@ -2322,13 +2333,6 @@ function App({ user, onLogout }) {
                     </button>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => setReceived(String(total(table.lines)))}
-                >
-                  Shuma e saktë
-                </button>
                 <div className="change-due">
                   <span>Kusuri</span>
                   <strong>

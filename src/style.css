@@ -2074,6 +2074,24 @@ td small {
   color: var(--blue);
   letter-spacing: -0.03em;
 }
+.payment-amount-fill {
+  font: inherit;
+  font-size: 27px;
+  font-weight: 600;
+  color: var(--blue);
+  letter-spacing: -0.03em;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  text-decoration: underline dashed;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1.5px;
+}
+.payment-amount-fill:hover,
+.payment-amount-fill:focus-visible {
+  text-decoration-style: solid;
+}
 .change-due {
   display: flex;
   align-items: center;
@@ -2826,7 +2844,8 @@ footer > span:last-child {
     font-size: 12px;
     padding: 12px;
   }
-  .payment-amount strong {
+  .payment-amount strong,
+  .payment-amount-fill {
     font-size: 26px;
   }
   footer {
