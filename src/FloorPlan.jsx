@@ -151,8 +151,12 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
               const dx = ev.clientX - cx, dy = ev.clientY - cy;
               const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
               const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
-              const w = clamp(((localX * 2) / canvas.width) * 100, 4, MAX_TABLE_W);
-              const h = clamp(((localY * 2) / canvas.height) * 100, 4, MAX_TABLE_H);
+              // A table near an edge can't grow all the way to MAX_TABLE_W/H without
+              // pushing past the canvas boundary — cap it to what actually still fits.
+              const maxW = Math.min(MAX_TABLE_W, 2 * Math.min(t.posX, 100 - t.posX));
+              const maxH = Math.min(MAX_TABLE_H, 2 * Math.min(t.posY, 100 - t.posY));
+              const w = clamp(((localX * 2) / canvas.width) * 100, 4, maxW);
+              const h = clamp(((localY * 2) / canvas.height) * 100, 4, maxH);
               onResize(t.id, w, h);
             })}
           />
