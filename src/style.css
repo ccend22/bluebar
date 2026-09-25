@@ -1028,6 +1028,27 @@ main {
 .field > span {
   line-height: 1.5;
 }
+.claim-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.claim-row strong {
+  font-weight: 600;
+  color: #1d1d1f;
+}
+.claim-row button {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+}
 .order-body > .search {
   margin-top: 18px;
 }
@@ -3380,12 +3401,14 @@ footer > span:last-child {
   .receipt-brand {
     font-size: 24px;
     color: black;
+    margin: 0 0 3mm;
   }
   .receipt p {
     text-align: center;
     color: black;
     font-size: 9px;
-    line-height: 1.6;
+    line-height: 1.5;
+    margin: 1.5mm 0;
   }
   .receipt-meta {
     font-size: 10px;
@@ -3398,9 +3421,10 @@ footer > span:last-child {
   }
   .receipt hr {
     border-color: black;
+    margin: 2.5mm 0;
   }
   .receipt-line {
-    margin: 3mm 0;
+    margin: 1.5mm 0;
   }
 }
 

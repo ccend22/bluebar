@@ -339,3 +339,42 @@ test("only managers cancel open orders, with an audit record and safe retries", 
     await t.close();
   }
 });
+
+test("a waiter can only pay off their own table, until they claim it via order.assign", async () => {
+  const t = await setup();
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 10 });
+    // Both tables start out belonging to waiter 1 (Arben K.).
+    await t.send("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    await t.send("order.add", { tableId: 2, productId: 1, waiterId: 1 });
+    const managerCookie = t.cookieOf(await t.managerLogin());
+    const currentVersion = async () => (await t.call("GET", "/api/state", { cookie: managerCookie })).json().version;
+    const otherWaiter = t.cookieOf(await t.waiterLogin(2, "739105"));
+    const ownerWaiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const pay = (tableId, v) => ({
+      id: randomUUID(), version: v, type: "order.pay",
+      payload: { tableId, method: "Kartë" },
+    });
+    const blocked = await t.call("POST", "/api/commands", { cookie: otherWaiter, body: pay(1, await currentVersion()) });
+    assert.equal(blocked.statusCode, 400);
+    assert.match(blocked.json().error, /caktuar tek një kamarier tjetër/);
+    // The assigned waiter can still pay it off directly.
+    const paidByOwner = await t.call("POST", "/api/commands", { cookie: ownerWaiter, body: pay(1, await currentVersion()) });
+    assert.equal(paidByOwner.statusCode, 200);
+    // Table 2: waiter 2 claims it via order.assign, then can pay it.
+    const claim = await t.call("POST", "/api/commands", {
+      cookie: otherWaiter,
+      body: { id: randomUUID(), version: await currentVersion(), type: "order.assign", payload: { tableId: 2, waiterId: 2 } },
+    });
+    assert.equal(claim.statusCode, 200);
+    const paidAfterClaim = await t.call("POST", "/api/commands", {
+      cookie: otherWaiter,
+      body: pay(2, await currentVersion()),
+    });
+    assert.equal(paidAfterClaim.statusCode, 200);
+  } finally {
+    await t.close();
+  }
+});

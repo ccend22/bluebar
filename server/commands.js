@@ -145,6 +145,10 @@ export function applyCommand(state, type, payload, actor = null) {
     }
     case "order.pay": {
       const t = table();
+      // A waiter closes their own table; picking up someone else's first goes
+      // through order.assign ("Merre tavolinën"), which is itself self-only.
+      if (actor?.role === "waiter" && t.waiter !== actor.waiterId)
+        fail("Kjo tavolinë është caktuar tek një kamarier tjetër. Merreni tavolinën për ta mbyllur.");
       if (p.method === "Cash") integer(p.received, 0, 100000000);
       if (
         p.method === "Cash" &&

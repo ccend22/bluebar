@@ -82,7 +82,7 @@ const time = (value) =>
     minute: "2-digit",
     hour12: false,
   });
-function Receipt({ invoice, venueName }) {
+function Receipt({ invoice, venueName, waiterName }) {
   return (
     <>
       <div className="receipt-brand">
@@ -91,10 +91,11 @@ function Receipt({ invoice, venueName }) {
       <p>KOPJE DEMO · JO FATURË FISKALE</p>
       <div className="receipt-meta">
         <span>Fatura D-{invoice.id}</span>
-        <span>Tavolina {invoice.table}</span>
+        <span>Tavolina {String(invoice.table).padStart(2, "0")}</span>
       </div>
       <p>
         {date(invoice.date)} · {time(invoice.date)}
+        {waiterName ? ` · ${waiterName}` : ""}
       </p>
       <hr />
       {invoice.lines.map((l) => (
@@ -679,7 +680,7 @@ function App({ user, onLogout }) {
                   size={18}
                 />
                 <span>{notice.text}</span>
-                {page === "Tavolinat" &&
+                {(page === "Tavolinat" || page === "Porositë") &&
                   receipt &&
                   notice.tone === "success" && (
                     <button onClick={() => print(receipt)}>
@@ -1079,21 +1080,38 @@ function App({ user, onLogout }) {
                             porosisë.
                           </p>
                         )}
-                        <ChoiceField
-                          label="Kamarieri"
-                          disabled={role === "Kamarier"}
-                          value={table.lines.length ? table.waiter : waiter}
-                          options={state.waiters
-                            .filter((w) => w.active || (table.lines.length && w.id === table.waiter))
-                            .map((w) => ({ value: w.id, label: w.name }))}
-                          onChange={(next) => {
-                            setWaiter(next);
-                            update("order.assign", {
-                              tableId: selected,
-                              waiterId: next,
-                            });
-                          }}
-                        />
+                        {role === "Kamarier" && table.lines.length && table.waiter !== user.waiterId ? (
+                          <div className="field claim-field">
+                            <span>Kamarieri</span>
+                            <div className="claim-row">
+                              <strong>{state.waiters.find((w) => w.id === table.waiter)?.name || "—"}</strong>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  update("order.assign", { tableId: selected, waiterId: user.waiterId })
+                                }
+                              >
+                                Merre tavolinën
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <ChoiceField
+                            label="Kamarieri"
+                            disabled={role === "Kamarier"}
+                            value={table.lines.length ? table.waiter : waiter}
+                            options={state.waiters
+                              .filter((w) => w.active || (table.lines.length && w.id === table.waiter))
+                              .map((w) => ({ value: w.id, label: w.name }))}
+                            onChange={(next) => {
+                              setWaiter(next);
+                              update("order.assign", {
+                                tableId: selected,
+                                waiterId: next,
+                              });
+                            }}
+                          />
+                        )}
                         <div className="order-mode-tabs" role="group" aria-label="Pamja e porosisë">
                           <button aria-pressed={orderMode === "summary"} disabled={!table.lines.length} onClick={() => setOrderMode("summary")}>Porosia</button>
                           <button aria-pressed={orderMode === "add"} onClick={() => setOrderMode("add")}><Icon name="plus" size={16} /> Shto artikuj</button>
@@ -1451,7 +1469,7 @@ function App({ user, onLogout }) {
                       </button>
                     </div>
                     <article className="receipt-paper">
-                      <Receipt invoice={receipt} venueName={user.venue?.name} />
+                      <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} />
                     </article>
                     <button
                       className="primary full-width"
@@ -2452,7 +2470,7 @@ function App({ user, onLogout }) {
       </dialog>
       {receipt && (
         <article className="receipt print-only">
-          <Receipt invoice={receipt} venueName={user.venue?.name} />
+          <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} />
         </article>
       )}
       {report && (
