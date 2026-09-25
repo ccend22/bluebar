@@ -101,7 +101,7 @@ export function checkout(state, tableId, method) {
     if (state.products.find((p) => p.id === line.id).stock < line.qty)
       throw Error("Stok i pamjaftueshëm.");
   const invoice = {
-    id: state.invoices.length + 1,
+    id: Math.max(0, ...state.invoices.map((i) => i.id)) + 1,
     table: tableId,
     waiter: table.waiter,
     lines: structuredClone(table.lines),
