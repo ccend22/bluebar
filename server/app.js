@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks } from "./tenants.js";
 import { AppError } from "./commands.js";
-import { readSnapshot, execute, executeOrderPatch } from "./repository.js";
-import { checkBlueBillConnection } from "./bluebill.js";
+import { readSnapshot, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
+import { checkBlueBillConnection, fiscalizeInvoice } from "./bluebill.js";
 import {
   cookieName,
   endSession,
@@ -114,6 +114,36 @@ export function buildApp({
       },
       provider,
     };
+  };
+  // Best-effort enrichment of an already-paid invoice, called from a dedicated endpoint
+  // (never chained into order.pay itself) so a slow or unreachable BlueBill delays
+  // fiscalization — retryable via the same endpoint — without ever affecting the payment.
+  const blueBillReady = (request) =>
+    Boolean(blueBill.token && blueBill.venueSlug && request.venue.slug === blueBill.venueSlug);
+  const fiscalizeInvoiceInState = async (request, invoiceId, result) => {
+    if (!invoiceId || !blueBillReady(request)) return result;
+    const invoice = result.state.invoices.find((i) => i.id === invoiceId);
+    if (!invoice || invoice.fiscalStatus === "fiskalizuar") return result;
+    const withInvoice = (patch) => ({
+      ...result,
+      state: {
+        ...result.state,
+        invoices: result.state.invoices.map((i) => (i.id === invoiceId ? { ...i, ...patch } : i)),
+      },
+    });
+    try {
+      const fiscal = await fiscalizeInvoice(
+        blueBill.token, invoice, `bluebar-${request.venue.slug}-${invoiceId}`, blueBill.fetchImpl,
+      );
+      await setInvoiceFiscalResult(request.db, invoiceId, { status: "fiskalizuar", ...fiscal });
+      return withInvoice({
+        fiscalStatus: "fiskalizuar", fiscalIic: fiscal.iic, fiscalFic: fiscal.fic,
+        fiscalVerificationUrl: fiscal.verificationUrl,
+      });
+    } catch {
+      await setInvoiceFiscalResult(request.db, invoiceId, { status: "dështoi" }).catch(() => {});
+      return withInvoice({ fiscalStatus: "dështoi" });
+    }
   };
   const start = async (request, reply, accountId) => {
     const token = await issueSession(request.db, accountId);
@@ -244,6 +274,23 @@ export function buildApp({
     present(await readSnapshot(request.db), request.user, request.db),
   );
   app.post(
+    "/api/invoices/:id/fiscalize",
+    {
+      // Any authenticated session, matching order.pay: a waiter fiscalizes the sale
+      // they just closed, a manager retries one later from Faturat.
+      preValidation: session(),
+      schema: { params: { type: "object", properties: { id: { type: "integer", minimum: 1 } } } },
+    },
+    async (request) => {
+      if (!blueBillReady(request)) throw new AppError("BlueBill nuk është konfiguruar për këtë biznes.", 503);
+      const snapshot = await readSnapshot(request.db);
+      if (!snapshot.state.invoices.some((i) => i.id === request.params.id))
+        throw new AppError("Fatura nuk ekziston.", 404);
+      const result = await fiscalizeInvoiceInState(request, request.params.id, snapshot);
+      return present(result, request.user, request.db);
+    },
+  );
+  app.post(
     "/api/commands",
     {
       preValidation: session(),
@@ -290,6 +337,11 @@ export function buildApp({
         if (!WAITER_COMMANDS.has(body.type) || !own)
           throw new AppError("Nuk keni leje për këtë veprim.", 403);
       }
+      // Fiscalization is a separate request the client fires right after a successful
+      // payment (see /api/invoices/:id/fiscalize below) — not chained into order.pay
+      // itself. BlueBill's fiscalize call can take several seconds for a real tax-
+      // authority round trip; a slow BlueBill must never make a completed payment look
+      // like it failed, or race the server's own request timeout.
       const result = ["order.add", "order.remove"].includes(body.type)
         ? await executeOrderPatch(request.db, body)
         : await execute(request.db, body, user);

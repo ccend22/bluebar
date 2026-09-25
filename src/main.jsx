@@ -8,7 +8,7 @@ import { FloorPlan, TableDetailPanel } from "./FloorPlan.jsx";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { Reports } from "./Reports.jsx";
 import { Orders } from "./Orders.jsx";
-import { fetchSession, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
+import { fetchSession, fiscalizeInvoice, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
   Search,
@@ -83,12 +83,13 @@ const time = (value) =>
     hour12: false,
   });
 function Receipt({ invoice, venueName, waiterName }) {
+  const fiscalized = invoice.fiscalStatus === "fiskalizuar" && invoice.fiscalIic;
   return (
     <>
       <div className="receipt-brand">
         {venueName || "BlueBar"}<span>BAR & KAFE</span>
       </div>
-      <p>KOPJE DEMO · JO FATURË FISKALE</p>
+      <p>{fiscalized ? "FATURË E FISKALIZUAR" : "KOPJE DEMO · JO FATURË FISKALE"}</p>
       <div className="receipt-meta">
         <span>Fatura D-{invoice.id}</span>
         <span>Tavolina {String(invoice.table).padStart(2, "0")}</span>
@@ -113,6 +114,16 @@ function Receipt({ invoice, venueName, waiterName }) {
         <strong>{money(invoice.total)}</strong>
       </div>
       <p>Pagesa: {invoice.method}</p>
+      {fiscalized && (
+        <>
+          <hr />
+          <p className="receipt-fiscal">NIVF: {invoice.fiscalIic}</p>
+          <p className="receipt-fiscal">NSLF: {invoice.fiscalFic}</p>
+          {invoice.fiscalVerificationUrl && (
+            <p className="receipt-fiscal-url">{invoice.fiscalVerificationUrl}</p>
+          )}
+        </>
+      )}
       <p>Faleminderit për vizitën!</p>
     </>
   );
@@ -401,6 +412,15 @@ function App({ user, onLogout }) {
       notify(
         `Pagesa u regjistrua. Fatura D-${invoice.id} · ${money(invoice.total)}`,
       );
+      // Best-effort and non-blocking: the sale is already done. A real tax-authority
+      // round trip can take a few seconds, so this updates the receipt once it resolves
+      // rather than making the customer wait before the payment even looks finished.
+      fiscalizeInvoice(invoice.id)
+        .then((data) => {
+          const fiscalized = data.state.invoices.find((i) => i.id === invoice.id);
+          if (fiscalized) setReceipt((current) => (current?.id === invoice.id ? fiscalized : current));
+        })
+        .catch(() => {});
     }
   }
   async function saveProduct(e) {
@@ -1380,6 +1400,24 @@ function App({ user, onLogout }) {
                               <td data-label="Fatura">
                                 <strong>D-{i.id}</strong>
                                 <small className="positive">Paguar</small>
+                                {i.fiscalStatus === "fiskalizuar" ? (
+                                  <small className="positive">Fiskalizuar</small>
+                                ) : (
+                                  <button
+                                    className="text-button"
+                                    onClick={async () => {
+                                      try {
+                                        await fiscalizeInvoice(i.id);
+                                        await database.refresh();
+                                        notify(`Fatura D-${i.id} u fiskalizua.`);
+                                      } catch (e) {
+                                        notify(e.message, "error");
+                                      }
+                                    }}
+                                  >
+                                    {i.fiscalStatus === "dështoi" ? "Dështoi · Riprovo" : "Fiskalizo"}
+                                  </button>
+                                )}
                               </td>
                               <td data-label="Tavolina">
                                 {String(i.table).padStart(2, "0")}

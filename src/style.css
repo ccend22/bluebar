@@ -2262,6 +2262,14 @@ td small {
   gap: 7px;
   font-size: 9px;
 }
+.receipt-fiscal {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.receipt-fiscal-url {
+  overflow-wrap: anywhere;
+  font-size: 8px;
+}
 .receipt-paper hr,
 .receipt hr {
   border: 0;

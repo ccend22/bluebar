@@ -113,6 +113,68 @@ test("BlueBill connection check is manager-only and bound to its configured busi
   }
 });
 
+test("invoice fiscalization: not manager-only, best-effort, persisted, and idempotent on retry", async () => {
+  let calls = 0;
+  const blueBill = {
+    token: "test-secret",
+    venueSlug: "bluebar",
+    fetchImpl: async (url) => {
+      calls++;
+      if (url.endsWith("/invoices"))
+        return new Response(JSON.stringify({ data: { id: "bb-1", status: "draft" }, meta: {} }), { status: 201 });
+      return new Response(
+        JSON.stringify({
+          data: { id: "bb-1", status: "fiscalized", fiscal: { iic: "IIC-1", fic: "FIC-1", eic: null, verificationUrl: "https://tatime.gov.al/verify", error: null } },
+          meta: { alreadyFiscalized: false },
+        }),
+        { status: 200 },
+      );
+    },
+  };
+  const t = await setup({ blueBill });
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 10 });
+    await t.send("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    const manager = t.cookieOf(await t.managerLogin());
+    const pay = await t.call("POST", "/api/commands", {
+      cookie: manager,
+      body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: manager })).json().version, type: "order.pay", payload: { tableId: 1, method: "Cash", received: 100 } },
+    });
+    const invoiceId = pay.json().result.invoiceId;
+    // order.pay itself never calls BlueBill.
+    assert.equal(calls, 0);
+    const path = `/api/invoices/${invoiceId}/fiscalize`;
+    assert.equal((await t.call("POST", path)).statusCode, 401);
+    // A waiter (not just a manager) can fiscalize — matches order.pay's own permission.
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const fiscalized = await t.call("POST", path, { cookie: waiter });
+    assert.equal(fiscalized.statusCode, 200);
+    const invoice = fiscalized.json().state.invoices.find((i) => i.id === invoiceId);
+    assert.equal(invoice.fiscalStatus, "fiskalizuar");
+    assert.equal(invoice.fiscalIic, "IIC-1");
+    assert.equal(invoice.fiscalFic, "FIC-1");
+    assert.equal(invoice.fiscalVerificationUrl, "https://tatime.gov.al/verify");
+    assert.equal(calls, 2, "one create call, one fiscalize call");
+    // Persisted, not just returned in the response.
+    const after = (await t.call("GET", "/api/state", { cookie: manager })).json();
+    assert.equal(after.state.invoices.find((i) => i.id === invoiceId).fiscalIic, "IIC-1");
+    // Already fiscalized: a retry is a silent no-op, no second BlueBill call.
+    await t.call("POST", path, { cookie: manager });
+    assert.equal(calls, 2);
+    // Missing invoice.
+    assert.equal((await t.call("POST", "/api/invoices/9999/fiscalize", { cookie: manager })).statusCode, 404);
+    // Not configured for this venue: refused up front, no BlueBill call.
+    blueBill.venueSlug = "another-business";
+    const unconfigured = await t.call("POST", path, { cookie: manager });
+    assert.equal(unconfigured.statusCode, 503);
+    assert.equal(calls, 2);
+  } finally {
+    await t.close();
+  }
+});
+
 test("waiters are pinned to the venue IP, limited to order commands and see trimmed data", async () => {
   const t = await setup();
   try {

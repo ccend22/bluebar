@@ -70,6 +70,10 @@ export async function loadState(client) {
       method: i.method,
       date: iso(i.created_at),
       status: i.status,
+      fiscalStatus: i.fiscal_status,
+      fiscalIic: i.fiscal_iic,
+      fiscalFic: i.fiscal_fic,
+      fiscalVerificationUrl: i.fiscal_verification_url,
       lines: invoiceLines
         .filter((l) => l.invoice_id === i.id)
         .sort((a, b) => a.product_id - b.product_id)
@@ -432,4 +436,16 @@ export async function execute(pool, command, actor = null) {
   } finally {
     client.release();
   }
+}
+
+// Fiscalization is a best-effort enrichment of an already-committed payment, run after
+// order.pay's own transaction, so it never rolls back a sale that already succeeded.
+// This does not bump bluebar.control's version — it's the same invoice, not a new command.
+export async function setInvoiceFiscalResult(pool, invoiceId, { status, iic = null, fic = null, verificationUrl = null }) {
+  await pool.query(
+    `UPDATE bluebar.invoices
+     SET fiscal_status = $2, fiscal_iic = $3, fiscal_fic = $4, fiscal_verification_url = $5
+     WHERE id = $1`,
+    [invoiceId, status, iic, fic, verificationUrl],
+  );
 }

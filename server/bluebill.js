@@ -21,3 +21,69 @@ export async function checkBlueBillConnection(token, fetchImpl = fetch) {
     return { connected: false, providerStatus: null };
   }
 }
+
+// Albania's standard VAT rate. BlueBar doesn't track VAT anywhere else (no fiscalization
+// otherwise), and bar/restaurant food & beverage sales are uniformly standard-rate —
+// unlike the reduced 6% rate, which applies specifically to hotel accommodation, not F&B.
+const VAT_RATE = 20;
+// "XPP" (Albania's "Copë" / piece unit) fits every BlueBar line item: drinks and food are
+// always sold as whole units, never weighed or metered.
+const UNIT_CODE = "XPP";
+
+// invoice: the app's own invoice record (see repository.js loadState) — {id, method, lines}.
+export function buildBlueBillPayload(invoice) {
+  return {
+    externalId: `bluebar-${invoice.id}`,
+    guestName: "Klient",
+    paymentMethod: invoice.method === "Kartë" ? "Card" : "Cash",
+    lines: invoice.lines.map((l) => ({
+      name: l.name,
+      unitCode: UNIT_CODE,
+      quantity: l.qty,
+      totalAfterVat: l.price * l.qty,
+      vatRate: VAT_RATE,
+    })),
+  };
+}
+
+async function blueBillRequest(url, token, options, idempotencyKey) {
+  const response = await options.fetchImpl(url, {
+    method: options.method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      ...(options.body && { "Content-Type": "application/json" }),
+      ...(idempotencyKey && { "Idempotency-Key": idempotencyKey }),
+    },
+    ...(options.body && { body: JSON.stringify(options.body) }),
+    // create+fiscalize run sequentially in one request; each gets a slice of the
+    // server's own 20s requestTimeout (app.js), with margin for the rest of the request.
+    signal: AbortSignal.timeout(8000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.data)
+    throw new Error(`BlueBill request failed (${response.status})`);
+  return body.data;
+}
+
+// Creates a draft invoice, then fiscalizes it. idempotencyKey should be derived from
+// BlueBar's own invoice id, so a retry (manual or automatic) never double-files it.
+export async function fiscalizeInvoice(token, invoice, idempotencyKey, fetchImpl = fetch) {
+  const created = await blueBillRequest(
+    `${BLUEBILL_API}/invoices`,
+    token,
+    { method: "POST", body: buildBlueBillPayload(invoice), fetchImpl },
+    idempotencyKey,
+  );
+  const fiscalized = await blueBillRequest(
+    `${BLUEBILL_API}/invoices/${created.id}/fiscalize`,
+    token,
+    { method: "POST", fetchImpl },
+    `${idempotencyKey}-fiscalize`,
+  );
+  return {
+    iic: fiscalized.fiscal?.iic ?? null,
+    fic: fiscalized.fiscal?.fic ?? null,
+    verificationUrl: fiscalized.fiscal?.verificationUrl ?? null,
+  };
+}

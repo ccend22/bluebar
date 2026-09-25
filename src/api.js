@@ -34,6 +34,9 @@ async function request(path, options = {}) {
   return body;
 }
 export const fetchState = () => request("/state");
+// Best-effort; call after a payment succeeds. Safe to ignore failures — a manager can
+// retry the same invoice later from Faturat, and this never blocks the sale itself.
+export const fiscalizeInvoice = (id) => send("POST", `/invoices/${id}/fiscalize`);
 export const sendCommand = (command) =>
   request("/commands", { method: "POST", body: JSON.stringify(command) });
 const send = (method, path, body) =>
