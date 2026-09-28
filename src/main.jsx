@@ -1470,7 +1470,7 @@ function App({ user, onLogout }) {
                         <Icon name="receipt" />
                         <span>
                           Paguani dhe printoni
-                          <small>Cash ose kartë · format 80mm</small>
+                          <small>Cash ose kartë · format 88mm</small>
                         </span>
                       </div>
                       <div className="guide-footer">
@@ -1707,7 +1707,7 @@ function App({ user, onLogout }) {
                       </button>
                     </div>
                     <p className="helper">
-                      Zgjidhni letër 80mm dhe hiqni header/footer në dialogun e
+                      Zgjidhni letër 88mm dhe hiqni header/footer në dialogun e
                       printimit.
                     </p>
                   </aside>
@@ -2822,7 +2822,7 @@ function App({ user, onLogout }) {
           </article>
         ))}
       {receipt && !ticketPrint && (
-        <article className="receipt print-only">
+        <article className="receipt print-only invoice-print">
           <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} />
         </article>
       )}

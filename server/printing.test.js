@@ -2,11 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { migrate } from "./migrate.js";
 import { buildApp } from "./app.js";
 import { execute, readSnapshot } from "./repository.js";
+import { applyCommand } from "./commands.js";
 import { createManager, setWaiterPin } from "./auth.js";
+import { initialState } from "../src/domain.js";
 import { encode, runOnce, textBytes } from "../public/bluebar-print.mjs";
 
 // A network receipt printer: accepts raw ESC/POS on TCP and keeps what it received.
@@ -28,7 +31,36 @@ test("encode wraps to the paper width and keeps Albanian letters in code page 85
   assert.ok(bytes.includes(Buffer.from([0x89])), "ë is 0x89 in CP850");
   const lines = bytes.toString("latin1").split("\n").filter((l) => l.includes("Lek") || l.includes("Pic"));
   assert.ok(lines.every((l) => l.replace(/^[\x00-\x1f\x1b@t\x02]+/, "").length <= 32));
+  assert.ok(encode([{ type: "rule" }], 56).includes(Buffer.from("-".repeat(56))), "88 mm receipts use 56 columns");
   assert.deepEqual(textBytes("Ëmbëltore", true), [...Buffer.from("Embeltore")]);
+});
+
+test("cashier printers default to 88 mm while station printers keep 80 mm", () => {
+  const cashier = applyCommand(initialState(), "printer.save", {
+    name: "Arka", host: "127.0.0.1", departments: [], receipts: true,
+  }).state;
+  const station = applyCommand(cashier, "printer.save", {
+    name: "Bari", host: "127.0.0.1", departments: ["Tjetër"], receipts: false,
+  }).state;
+  assert.equal(station.printers.find((p) => p.name === "Arka").width, 56);
+  assert.equal(station.printers.find((p) => p.name === "Bari").width, 48);
+});
+
+test("88 mm migration upgrades existing cashier printers without widening station printers", async () => {
+  const db = new PGlite();
+  const query = (sql, params) => (params ? db.query(sql, params) : db.exec(sql).then((r) => r.at(-1) || { rows: [] }));
+  const pool = { query, connect: async () => ({ query, release() {} }) };
+  try {
+    await migrate(pool);
+    await pool.query("INSERT INTO bluebar.printers(name,host,width,receipts) VALUES ('Bari','127.0.0.1',48,false),('Arka','127.0.0.1',48,true)");
+    await pool.query("ALTER TABLE bluebar.printers DROP CONSTRAINT printers_width_check");
+    await pool.query("ALTER TABLE bluebar.printers ADD CONSTRAINT printers_width_check CHECK (width IN (32,42,48))");
+    await pool.query(await readFile(new URL("./migrations/010_receipt_88mm.sql", import.meta.url), "utf8"));
+    const { rows } = await pool.query("SELECT name,width FROM bluebar.printers ORDER BY name");
+    assert.deepEqual(rows, [{ name: "Arka", width: 56 }, { name: "Bari", width: 48 }]);
+  } finally {
+    await db.close();
+  }
 });
 
 test("print agent: each department's ticket reaches its own network printer; the full invoice reaches the cashier", async () => {
@@ -75,6 +107,9 @@ test("print agent: each department's ticket reaches its own network printer; the
     await cmd(boss, "printer.save", { name: "Bari", host: "127.0.0.1", port: bar.port, departments: ["Bar"] });
     await cmd(boss, "printer.save", { name: "Kuzhina", host: "127.0.0.1", port: kitchen.port, width: 32, departments: ["Restorant", "Ëmbëltore"] });
     await cmd(boss, "printer.save", { name: "Arka", host: "127.0.0.1", port: cashier.port, departments: [], receipts: true });
+    const printers = (await readSnapshot(pool)).state.printers;
+    assert.equal(printers.find((p) => p.name === "Arka").width, 56);
+    assert.equal(printers.find((p) => p.name === "Bari").width, 48);
     assert.equal((await call("POST", "/api/print/key", { cookie: ana })).status, 403, "only a manager creates the agent key");
     const { key } = await (await call("POST", "/api/print/key", { cookie: boss })).json();
     assert.equal((await call("GET", "/api/print/jobs")).status, 401);
@@ -100,6 +135,7 @@ test("print agent: each department's ticket reaches its own network printer; the
     assert.equal(await runOnce(agent), 1);
     assert.ok(has(cashier.jobs[0], "FATURË E FISKALIZUAR") && has(cashier.jobs[0], "NIVF: IIC-9"));
     assert.ok(has(cashier.jobs[0], "TOTALI") && has(cashier.jobs[0], "600 Lek"));
+    assert.ok(cashier.jobs[0].includes(Buffer.from("-".repeat(56))), "cashier receipt spans 56 columns on 88 mm paper");
 
     // A printer that's off loses nothing: the ticket prints once it's back.
     await cmd(boss, "printer.save", { id: 1, name: "Bari", host: "127.0.0.1", port: 1, departments: ["Bar"] });

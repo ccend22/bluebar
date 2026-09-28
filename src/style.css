@@ -3277,6 +3277,10 @@ footer > span:last-child {
       monospace;
     color: black;
   }
+  /* Receipt content plus 4 mm on each side fits an 88 mm paper roll. */
+  .print-only.invoice-print {
+    width: 80mm;
+  }
   .receipt-brand {
     font-size: 24px;
     color: black;

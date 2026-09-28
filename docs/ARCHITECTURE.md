@@ -48,9 +48,9 @@ Besim vetëm te proxy të përcaktuar; blloko hyrjen direkte në API. Proxy duhe
 
 Roli kontrollohet në server për çdo endpoint dhe çdo objekt: kamarieri sheh/ndryshon tavolinat e veta sipas politikës së lokalit; vetëm menaxheri menaxhon përdoruesit, IP-të, çmimet, stokun dhe dokumentet korrigjuese. Ndërruesi i rolit në demo është vetëm pamje, jo kontroll sigurie.
 
-## Printera 80mm
+## Printera 88mm
 
-MVP: HTML receipt i veçantë + print CSS + window.print. Letra 80mm dhe përmbajtja rreth 72mm; zgjidh driver-in, çaktivizo header/footer dhe shkallëzimin. `@page size:auto` respekton letrën e zgjedhur në driver; nuk pretendon se ndryshon konfigurimin fizik të printerit. Testo ë/ç, emra të gjatë, prerje, margjina, faturë të gjatë dhe telefonin real. Dialogu i printimit nuk provon se letra u printua. [MDN print](https://developer.mozilla.org/en-US/docs/Web/API/Window/print), [CSS print](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Media_queries/Printing).
+MVP: HTML receipt i veçantë + print CSS + window.print. Letra e faturës është 88mm dhe përmbajtja 80mm me margjina 4mm; zgjidh driver-in, çaktivizo header/footer dhe shkallëzimin. `@page size:auto` respekton letrën e zgjedhur në driver; nuk ndryshon konfigurimin fizik të printerit. Testo ë/ç, emra të gjatë, prerje, margjina, faturë të gjatë dhe telefonin real. Dialogu i printimit nuk provon se letra u printua. [MDN print](https://developer.mozilla.org/en-US/docs/Web/API/Window/print), [CSS print](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Media_queries/Printing).
 
 Printim automatik: agent lokal i autentikuar që tërheq print_jobs përmes TLS dhe flet ESC/POS me USB/LAN, ose SDK e prodhuesit kur modeli e mbështet. Agent me origin allowlist, payload të kufizuar, identitet printeri dhe pa port publik të hapur. Mbaj status queued/claimed/sent/failed/unknown, timeout dhe retry manual për gjendje të paqartë: dërgimi i përsëritur mund të printojë dy kopje. Rishkrimi shënon KOPJE; dështimi i printerit nuk anulon pagesën. Epson ka SDK JavaScript për modele të caktuara TM; nuk vlen për çdo printer 80mm. [Epson SDK](https://download3.ebz.epson.net/dsc/f/03/00/14/80/61/a342aeb40e985cce04f8b8f105d7995f145e54d3/ov_ePOS_SDK_JavaScript_v2.24.0a.pdf).
 

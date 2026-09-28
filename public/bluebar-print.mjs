@@ -61,8 +61,8 @@ const pair = (left, right, width) => {
 };
 
 // document: the block list BlueBar's /api/print/jobs returns. width: characters per line
-// in the normal font (48 on 80mm paper, 32 on 58mm).
-export function encode(document, width = 48, { ascii = false } = {}) {
+// in the normal font (56 on 88mm paper, 48 on 80mm, 32 on 58mm).
+export function encode(document, width = 56, { ascii = false } = {}) {
   const out = [ESC, 0x40, ESC, 0x74, 0x02]; // init, code page 850
   const text = (t) => out.push(...textBytes(t, ascii), 0x0a);
   const align = (n) => out.push(ESC, 0x61, n);

@@ -1,6 +1,6 @@
 # BlueBar
 ## Product
-A bar/restaurant operations tool for waiters and managers. Albanian interface. User requires inventory, waiter management, tables, products and categories, 80mm receipts, shifts, manager invoice management and secure IP-restricted waiter login.
+A bar/restaurant operations tool for waiters and managers. Albanian interface. User requires inventory, waiter management, tables, products and categories, 88mm receipts, shifts, manager invoice management and secure IP-restricted waiter login.
 ## Platform
 Web, desktop and mobile.
 ## Stack

@@ -48,7 +48,7 @@ Testet përdorin PostgreSQL të integruar (PGlite) vetëm në zhvillim, për ske
 
 Janë implementuar hyrja me PIN, sesionet HttpOnly, autorizimi menaxher/kamarier, ndarja mes bizneseve dhe IP restriction për çdo lokal. Ende nuk ka fiskalizim, reçeta përbërësish, printim automatik ose rikuperim PIN-i me email. Rikuperimi bëhet nga administratori me komandën e dokumentuar më poshtë. Historia lexohet e plotë brenda biznesit; pagination nevojitet për volum të madh.
 
-Faturat shënohen JO FATURË FISKALE. Për printim vendosni letër 80mm në driver, scale 100% dhe hiqni header/footer; përmbajtja përdor 72mm. Testimi fizik kërkon printerin real.
+Për faturat e printuara nga shfletuesi vendosni letër 88mm në driver, scale 100% dhe hiqni header/footer; përmbajtja përdor 80mm me margjina 4mm. Printeri i rrjetit për fatura përdor 56 shenja për rresht në formatin 88mm. Testimi fizik kërkon printerin real.
 
 Propozimi për fazat pasuese dhe sigurinë: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

@@ -169,8 +169,8 @@ export function applyCommand(state, type, payload, actor = null) {
       const printerName = name(p.name, 40);
       const host = printerHost(p.host);
       const port = p.port === undefined ? 9100 : integer(p.port, 1, 65535);
-      const width = p.width === undefined ? 48 : p.width;
-      if (![32, 42, 48].includes(width)) fail("Gjerësia e letrës është e pavlefshme.");
+      const width = p.width === undefined ? (p.receipts === true ? 56 : 48) : p.width;
+      if (![32, 42, 48, 56].includes(width)) fail("Gjerësia e letrës është e pavlefshme.");
       const known = [...state.departments, "Tjetër"];
       if (!Array.isArray(p.departments) || p.departments.some((d) => !known.includes(d)))
         fail("Zgjidhni repartet e printerit.");

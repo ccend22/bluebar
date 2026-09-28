@@ -3,7 +3,9 @@ import { createPrintKey, fetchPrintStatus, testPrinter, venueSlug } from "./api.
 import { Badge, DepartmentTag, Field, Icon, SectionHeading } from "./components.jsx";
 
 const PAPER = [
+  { width: 56, label: "88 mm" },
   { width: 48, label: "80 mm" },
+  { width: 42, label: "80 mm (42 shenja)" },
   { width: 32, label: "58 mm" },
 ];
 const online = (status) => status?.lastSeen && Date.now() - new Date(status.lastSeen) < 15000;
@@ -50,7 +52,7 @@ export function NetworkPrinters({ state, update, notify }) {
           description="Çdo repart printon te printeri i vet; arka printon faturën e plotë."
         >
           {!editing && (
-            <button onClick={() => setEditing({ width: 48, departments: [], receipts: false })}>
+            <button onClick={() => setEditing({ width: 56, departments: [], receipts: false })}>
               <Icon name="plus" size={16} /> Shto
             </button>
           )}
@@ -66,7 +68,7 @@ export function NetworkPrinters({ state, update, notify }) {
               <legend>Letra</legend>
               {PAPER.map((p) => (
                 <label key={p.width}>
-                  <input type="radio" name="width" value={p.width} defaultChecked={(editing.width || 48) === p.width} />
+                  <input type="radio" name="width" value={p.width} defaultChecked={(editing.width ?? 56) === p.width} />
                   {p.label}
                 </label>
               ))}
@@ -97,7 +99,7 @@ export function NetworkPrinters({ state, update, notify }) {
                 <div>
                   <strong>{p.name}</strong>
                   <small>
-                    {p.host}:{p.port} · {p.width === 32 ? "58 mm" : "80 mm"}
+                    {p.host}:{p.port} · {PAPER.find((paper) => paper.width === p.width)?.label || `${p.width} shenja`}
                   </small>
                   <div className="printer-targets">
                     {p.departments.map((d) => (
