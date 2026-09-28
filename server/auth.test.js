@@ -235,6 +235,57 @@ test("manager can switch waiter login mode; pin_only lets a waiter sign in by PI
   }
 });
 
+test("manager sets waiter patterns before enabling pattern login", async () => {
+  const t = await setup();
+  try {
+    const manager = t.cookieOf(await t.managerLogin());
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const path = "/api/accounts/waiters/1/pattern";
+    const pattern = [1, 2, 5, 8];
+    assert.equal((await t.call("PUT", path, { body: { pattern } })).statusCode, 401);
+    assert.equal((await t.call("PUT", path, { cookie: waiter, body: { pattern } })).statusCode, 403);
+    assert.equal((await t.call("PUT", path, { cookie: manager, body: { pattern: [1, 2, 2, 3] } })).statusCode, 400);
+    assert.equal((await t.call("PUT", path, { cookie: manager, body: { pattern } })).statusCode, 200);
+    const stored = (await t.pool.query("SELECT pattern_hash FROM bluebar.accounts WHERE waiter_id = 1")).rows[0];
+    assert.ok(stored.pattern_hash.startsWith("s1$"));
+    assert.ok(!stored.pattern_hash.includes(pattern.join("-")));
+    const state = (await t.call("GET", "/api/state", { cookie: manager })).json();
+    assert.equal(state.state.waiters[0].hasPattern, true);
+    assert.equal(state.state.waiters[1].hasPattern, false);
+    assert.equal((await t.call("PUT", "/api/venue/login-mode", { cookie: manager, body: { loginMode: "pattern" } })).statusCode, 400);
+    assert.equal((await t.call("PUT", "/api/accounts/waiters/2/pattern", { cookie: manager, body: { pattern: [3, 2, 5, 8] } })).statusCode, 200);
+    assert.equal((await t.call("PUT", "/api/venue/login-mode", { cookie: manager, body: { loginMode: "pattern" } })).statusCode, 200);
+    assert.equal((await t.call("POST", "/api/auth/waiter-login", { body: { waiterId: 1, pin: "482913" } })).statusCode, 403);
+    assert.equal((await t.call("POST", "/api/auth/waiter-pattern", { body: { waiterId: 1, pattern: [1, 2, 5, 9] } })).statusCode, 401);
+    assert.equal((await t.call("POST", "/api/auth/waiter-pattern", { body: { waiterId: 1, pattern }, ip: OUTSIDE })).statusCode, 403);
+    const signedIn = await t.call("POST", "/api/auth/waiter-pattern", { body: { waiterId: 1, pattern } });
+    assert.equal(signedIn.statusCode, 200);
+    assert.equal(signedIn.json().waiterId, 1);
+    assert.equal((await t.call("GET", "/api/auth/waiters")).json().waiters.every((w) => w.hasPattern), true);
+    await t.pool.query("UPDATE bluebar.accounts SET secret_hash = NULL WHERE waiter_id = 1");
+    assert.equal((await t.call("PUT", "/api/venue/login-mode", { cookie: manager, body: { loginMode: "name_pin" } })).statusCode, 400);
+    assert.equal((await t.call("PUT", "/api/accounts/waiters/1/pin", { cookie: manager, body: { pin: "482913" } })).statusCode, 200);
+    assert.equal((await t.call("PUT", "/api/venue/login-mode", { cookie: manager, body: { loginMode: "name_pin" } })).statusCode, 200);
+    assert.equal((await t.call("POST", "/api/auth/waiter-pattern", { body: { waiterId: 1, pattern } })).statusCode, 403);
+  } finally {
+    await t.close();
+  }
+});
+
+test("legacy fingerprint preview returns to working PIN login during migration", async () => {
+  const t = await setup();
+  try {
+    await t.pool.query("ALTER TABLE bluebar_catalog.venues DROP CONSTRAINT venues_login_mode_check");
+    await t.pool.query("ALTER TABLE bluebar_catalog.venues ADD CONSTRAINT venues_login_mode_check CHECK (login_mode IN ('name_pin', 'pin_only', 'fingerprint'))");
+    await t.pool.query("UPDATE bluebar_catalog.venues SET login_mode = 'fingerprint' WHERE slug = 'bluebar'");
+    await migrate(t.pool);
+    assert.equal((await t.pool.query("SELECT login_mode FROM bluebar_catalog.venues WHERE slug = 'bluebar'")).rows[0].login_mode, "name_pin");
+    assert.equal((await t.waiterLogin(1, "482913")).statusCode, 200);
+  } finally {
+    await t.close();
+  }
+});
+
 test("order.send gives each department its own ticket; stations mark them done; tickets outlive payment", async () => {
   const t = await setup();
   try {

@@ -56,7 +56,7 @@ Propozimi për fazat pasuese dhe sigurinë: [docs/ARCHITECTURE.md](docs/ARCHITEC
 
 1. `npm run db:migrate` krijon tabelat e llogarive dhe sesioneve.
 2. `npm run auth:manager -- emri kodi-biznesit` krijon menaxherin (ose e rivendos) dhe shfaq një herë PIN-in 6-shifror. Nëse kodi mungon, përdoret `bluebar`. Menaxheri fillestar i një biznesi të krijuar nga faqja quhet `manager`.
-3. Menaxheri vendos PIN 6-shifror për çdo kamarier te Kamarierët. Pas 5 përpjekjeve të gabuara llogaria bllokohet 15 minuta.
+3. Menaxheri vendos PIN 6-shifror ose pattern për çdo kamarier te **Kamarierët**. Pattern-i vizatohet dhe konfirmohet në rrjetën 3×3; mënyra e hyrjes me pattern aktivizohet vetëm pasi të gjithë kamarierët aktivë ta kenë vendosur. Pas 5 përpjekjeve të gabuara llogaria bllokohet 15 minuta.
 4. Menaxheri vendos IP/CIDR te **Kamarierët → Rrjeti i lokalit**. Bizneset e reja refuzojnë hyrjen e kamarierëve derisa të konfigurohet rrjeti. `WAITER_ALLOWED_IPS` përdoret vetëm si konfigurim fillestar i biznesit legacy `bluebar`; ruajtja nga UI e zëvendëson. Pas proxy-t lokal vendosni `TRUST_PROXY` sipas rrjetit real.
 
 

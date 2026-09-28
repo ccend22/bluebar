@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchLoginWaiters, loginWaiter, loginManager, venueSlug, fetchVenue, registerVenue, openBusiness } from "./api.js";
-import { Field, Icon, PinPad } from "./components.jsx";
+import { fetchLoginWaiters, loginWaiter, loginWaiterPattern, loginManager, venueSlug, fetchVenue, registerVenue, openBusiness } from "./api.js";
+import { Field, PinPad } from "./components.jsx";
+import { PatternPad } from "./PatternPad.jsx";
 
 function PinLogin({ onSignedIn }) {
   const [mode, setMode] = useState("waiter"),
@@ -8,10 +9,7 @@ function PinLogin({ onSignedIn }) {
     [waiterId, setWaiterId] = useState(""),
     [pin, setPin] = useState(""),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    // Only meaningful in fingerprint login mode: lets a waiter drop back to the
-    // real (name + PIN) flow, since the fingerprint screen is a visual preview only.
-    [fingerprintFallback, setFingerprintFallback] = useState(false);
+    [busy, setBusy] = useState(false);
   const [venue, setVenue] = useState(null);
   const submitting = useRef(false);
   useEffect(() => {
@@ -30,28 +28,16 @@ function PinLogin({ onSignedIn }) {
     setMode(id);
     setError("");
     setPin("");
-    setFingerprintFallback(false);
   };
   const loginMode = venue?.loginMode || "name_pin";
-  // What the waiter tab actually renders: fingerprint mode falls back to name_pin
-  // once the waiter taps "Hyr me PIN", since fingerprint login isn't wired up yet.
-  const waiterFlow =
-    loginMode === "fingerprint" && !fingerprintFallback
-      ? "fingerprint"
-      : loginMode === "pin_only"
-        ? "pin_only"
-        : "name_pin";
-  async function submit(enteredPin) {
+  const waiterFlow = loginMode === "pattern" || loginMode === "pin_only" ? loginMode : "name_pin";
+  async function authenticate(action) {
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
     setError("");
     try {
-      onSignedIn(
-        mode === "waiter"
-          ? await loginWaiter(waiterFlow === "pin_only" ? undefined : Number(waiterId), enteredPin)
-          : await loginManager({ pin: enteredPin }),
-      );
+      onSignedIn(await action());
     } catch (err) {
       setError(err.message);
       setPin("");
@@ -59,13 +45,17 @@ function PinLogin({ onSignedIn }) {
       setBusy(false);
     }
   }
+  const submit = (enteredPin) => authenticate(() => mode === "waiter"
+    ? loginWaiter(waiterFlow === "pin_only" ? undefined : Number(waiterId), enteredPin)
+    : loginManager({ pin: enteredPin }));
+  const submitPattern = (pattern) => authenticate(() => loginWaiterPattern(Number(waiterId), pattern));
   const tabs = [
     ["waiter", "Kamarier"],
     ["manager", "Menaxher"],
   ];
   const blocked = mode === "waiter" && waiters && !waiters.allowed;
   const selectedWaiter = waiters?.waiters.find((w) => String(w.id) === waiterId);
-  const showWaiterList = mode === "waiter" && waiterFlow === "name_pin" && waiters?.waiters.length > 0;
+  const showWaiterList = mode === "waiter" && waiterFlow !== "pin_only" && (waiters?.waiters.length ?? 0) > 0;
   return (
     <main className={`database-setup login-screen ${mode === "waiter" && !blocked && showWaiterList ? "with-waiters" : ""}`}>
       <span className="brand">BlueBar</span>
@@ -85,17 +75,6 @@ function PinLogin({ onSignedIn }) {
       )}
       {blocked ? (
         <p>Kamarierët hyjnë vetëm nga rrjeti i lokalit. Menaxherët hyjnë nga skeda "Menaxher".</p>
-      ) : mode === "waiter" && waiterFlow === "fingerprint" ? (
-        <div className="stack-form fingerprint-preview">
-          <span className="fingerprint-scan">
-            <Icon name="fingerprint" size={44} />
-          </span>
-          <p>Prekni skanerin e gjurmës së gishtit</p>
-          <p className="helper">Pamje paraprake — hyrja me gjurmë gishti nuk është ende aktive.</p>
-          <button type="button" className="text-button" onClick={() => setFingerprintFallback(true)}>
-            Hyr me PIN në vend të kësaj
-          </button>
-        </div>
       ) : (
         <div className={`stack-form login-content ${showWaiterList ? "with-waiter-list" : ""}`}>
           {showWaiterList && (
@@ -120,11 +99,20 @@ function PinLogin({ onSignedIn }) {
           {mode === "waiter" && !waiters ? (
             <p role="status">Po ngarkohen kamarierët…</p>
           ) : mode === "waiter" && !waiters.waiters.length ? (
-            <p>Asnjë kamarier nuk ka PIN. Menaxheri e vendos te Kamarierët.</p>
+            <p>Asnjë kamarier nuk ka hyrje të konfiguruar. Menaxheri e vendos te Kamarierët.</p>
+          ) : mode === "waiter" && waiterFlow === "pattern" ? (
+            selectedWaiter?.hasPattern ? (
+              <div className="login-pattern">
+                <p>Vizato pattern-in e {selectedWaiter.name} duke lidhur pikat.</p>
+                <PatternPad key={waiterId} label={`Pattern i ${selectedWaiter.name}`} onComplete={submitPattern} disabled={busy} />
+              </div>
+            ) : (
+              <p className="notice warning">Pattern-i i {selectedWaiter?.name} nuk është vendosur ende. Njoftoni menaxherin.</p>
+            )
           ) : (
             <fieldset className="pin-field" disabled={busy}>
               <legend>
-                {selectedWaiter && waiterFlow === "name_pin"
+                {mode === "waiter" && selectedWaiter && waiterFlow === "name_pin"
                   ? `PIN-i për ${selectedWaiter.name} (6 shifra)`
                   : "PIN (6 shifra)"}
               </legend>

@@ -11,10 +11,16 @@ CREATE TABLE IF NOT EXISTS bluebar_catalog.venues (
 INSERT INTO bluebar_catalog.venues(slug, name, schema_name, use_legacy_network)
 VALUES ('bluebar', 'BlueBar', 'bluebar', true) ON CONFLICT DO NOTHING;
 -- How waiters sign in on this venue's PIN screen: name_pin (pick a name, then PIN — the
--- original flow), pin_only (unique PIN alone identifies the waiter), or fingerprint
--- (visual preview only, see Login.jsx — falls back to name_pin for the real sign-in).
+-- original flow), pin_only (unique PIN alone identifies the waiter), or pattern (pick a
+-- name, then draw a 3x3 pattern).
 ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS login_mode text NOT NULL DEFAULT 'name_pin'
-  CHECK (login_mode IN ('name_pin', 'pin_only', 'fingerprint'));
+  CHECK (login_mode IN ('name_pin', 'pin_only', 'pattern'));
+-- Existing fingerprint previews had no pattern credential. Keep those venues on
+-- working PIN login until a manager sets patterns and opts into the new mode.
+ALTER TABLE bluebar_catalog.venues DROP CONSTRAINT IF EXISTS venues_login_mode_check;
+UPDATE bluebar_catalog.venues SET login_mode = 'name_pin' WHERE login_mode = 'fingerprint';
+ALTER TABLE bluebar_catalog.venues ADD CONSTRAINT venues_login_mode_check
+  CHECK (login_mode IN ('name_pin', 'pin_only', 'pattern'));
 -- Database-backed registration budget shared by all serverless instances.
 CREATE TABLE IF NOT EXISTS bluebar_catalog.registration_limits (
   ip_hash text PRIMARY KEY,

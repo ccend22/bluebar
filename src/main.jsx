@@ -5,6 +5,7 @@ import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { LoginModeSettings } from "./LoginModeSettings.jsx";
+import { WaiterPatternEditor } from "./PatternPad.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
 import { arrange, collisions, sizeFor, spanOf } from "./floorGeometry.js";
 import { ChoiceField } from "./ChoiceField.jsx";
@@ -289,6 +290,7 @@ function App({ user, onLogout }) {
     [query, setQuery] = useState("");
   const [notice, setNotice] = useState(null),
     [pinFor, setPinFor] = useState(null),
+    [patternFor, setPatternFor] = useState(null),
     [waiter, setWaiter] = useState(
       () => user.waiterId ?? state.waiters.find((w) => w.active)?.id,
     );
@@ -2233,9 +2235,10 @@ function App({ user, onLogout }) {
                               <div>
                                 <strong>{w.name}</strong>
                                 <small>
-                                  {w.hasPin
-                                    ? "Kamarier · Hyn me PIN"
-                                    : "Kamarier · Pa PIN, nuk mund të hyjë"}
+                                  {w.hasPin && w.hasPattern ? "Kamarier · PIN dhe pattern"
+                                    : w.hasPin ? "Kamarier · Hyn me PIN"
+                                    : w.hasPattern ? "Kamarier · Hyn me pattern"
+                                    : "Kamarier · Pa hyrje"}
                                 </small>
                               </div>
                             </div>
@@ -2316,11 +2319,15 @@ function App({ user, onLogout }) {
                                   </button>
                                 </form>
                               ) : (
-                                <button onClick={() => setPinFor(w.id)}>
+                                <button onClick={() => { setPatternFor(null); setPinFor(w.id); }}>
                                   {w.hasPin ? "Ndrysho PIN" : "Vendos PIN"}
                                 </button>
                               )}
+                              <button type="button" onClick={() => { setPinFor(null); setPatternFor(patternFor === w.id ? null : w.id); }}>
+                                {w.hasPattern ? "Ndrysho pattern" : "Vendos pattern"}
+                              </button>
                             </div>
+                            {patternFor === w.id && <WaiterPatternEditor key={w.id} waiter={w} onCancel={() => setPatternFor(null)} onSaved={async () => { await database.refresh(); setPatternFor(null); notify("Pattern-i u ruajt."); }} />}
                           </div>
                         );
                       })}
@@ -2333,7 +2340,7 @@ function App({ user, onLogout }) {
                 </section>
                 <aside className="management-aside">
                   <BusinessNetwork venue={user.venue} />
-                  <LoginModeSettings venue={user.venue} />
+                  <LoginModeSettings venue={user.venue} waiters={state.waiters} />
                   <section className="panel">
                     <SectionHeading
                       title="Shto në ekip"
@@ -2387,11 +2394,11 @@ function App({ user, onLogout }) {
                   <div className="info-note">
                     <Icon name="info" />
                     <div>
-                      <strong>PIN-i i kamarierit</strong>
+                      <strong>Hyrja e kamarierit</strong>
                       <p>
-                        Çdo kamarier hyn me një PIN 6-shifror që vendosni ju.
+                        Vendosni PIN ose pattern për çdo kamarier dhe zgjidhni mënyrën e hyrjes më sipër.
                         Pas 5 përpjekjeve të gabuara llogaria bllokohet për 15
-                        minuta; vendosja e një PIN-i të ri e zhbllokon. Kamarierët
+                        minuta; vendosja e një PIN-i ose pattern-i të ri e zhbllokon. Kamarierët
                         hyjnë vetëm nga rrjeti i lokalit.
                       </p>
                     </div>

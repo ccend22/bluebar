@@ -45,9 +45,11 @@ const send = (method, path, body) =>
 export const fetchSession = () => request("/auth/session");
 export const fetchLoginWaiters = () => request("/auth/waiters");
 export const loginWaiter = (waiterId, pin) => send("POST", "/auth/waiter-login", { waiterId, pin });
+export const loginWaiterPattern = (waiterId, pattern) => send("POST", "/auth/waiter-pattern", { waiterId, pattern });
 export const loginManager = (body) => send("POST", "/auth/manager-login", body);
 export const logout = () => send("POST", "/auth/logout");
 export const setWaiterPin = (id, pin) => send("PUT", `/accounts/waiters/${id}/pin`, { pin });
+export const setWaiterPattern = (id, pattern) => send("PUT", `/accounts/waiters/${id}/pattern`, { pattern });
 
 export const fetchVenue = () => request("/venue");
 export const registerVenue = (body) => send("POST", "/venues/register", body);

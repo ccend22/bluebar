@@ -24,6 +24,14 @@ export async function verifySecret(secret, stored) {
 let decoy;
 const decoyHash = async () => (decoy ??= await hashSecret("decoy"));
 
+// A pattern: 4-9 distinct dots of the 3x3 grid (1-9, row by row), in drawing order.
+export const validPattern = (p) =>
+  Array.isArray(p) &&
+  p.length >= 4 &&
+  p.length <= 9 &&
+  p.every((d) => Number.isInteger(d) && d >= 1 && d <= 9) &&
+  new Set(p).size === p.length;
+const patternSecret = (p) => p.join("-");
 export const validPin = (p) =>
   /^\d{6}$/.test(p) && !/^(\d)\1{5}$/.test(p) && !"01234567890".includes(p) && !"09876543210".includes(p);
 
@@ -112,13 +120,32 @@ const reserve = async (pool, waiterId, username) =>
        WHERE ((a.role = 'waiter' AND a.waiter_id = $1) OR (a.role = 'manager' AND a.username = $2))
          AND a.active AND (a.locked_until IS NULL OR a.locked_until <= now())
          AND (a.role = 'manager' OR EXISTS (SELECT 1 FROM bluebar.waiters w WHERE w.id = a.waiter_id AND w.active))
-       RETURNING a.id, a.secret_hash`,
+       RETURNING a.id, a.secret_hash, a.pattern_hash`,
       [waiterId, username],
     )
   ).rows[0];
 const clear = (pool, id) =>
   pool.query("UPDATE bluebar.accounts SET failed_attempts = 0, locked_until = NULL WHERE id = $1", [id]);
 
+export async function loginWaiterPattern(pool, { waiterId, pattern }) {
+  const a = await reserve(pool, waiterId, null);
+  const ok = await verifySecret(validPattern(pattern) ? patternSecret(pattern) : "invalid", a?.pattern_hash ?? (await decoyHash()));
+  if (!a || !a.pattern_hash || !ok) throw bad();
+  await clear(pool, a.id);
+  return a.id;
+}
+export async function setWaiterPattern(pool, waiterId, pattern) {
+  if (!validPattern(pattern)) throw new AppError("Lidhni të paktën 4 pika të ndryshme.");
+  const r = await pool.query(
+    `INSERT INTO bluebar.accounts(role, waiter_id, pattern_hash)
+     SELECT 'waiter', w.id, $2 FROM bluebar.waiters w WHERE w.id = $1
+     ON CONFLICT (waiter_id) DO UPDATE SET pattern_hash = $2, failed_attempts = 0, locked_until = NULL
+     RETURNING id`,
+    [waiterId, await hashSecret(patternSecret(pattern))],
+  );
+  if (!r.rows[0]) throw new AppError("Kamarieri nuk ekziston.", 404);
+  await pool.query("DELETE FROM bluebar.sessions WHERE account_id = $1", [r.rows[0].id]);
+}
 export async function loginWaiter(pool, { waiterId, pin }) {
   const a = await reserve(pool, waiterId, null);
   const ok = await verifySecret(pin, a?.secret_hash ?? (await decoyHash()));
@@ -173,7 +200,7 @@ const reserveWaitersByPin = async (pool) =>
 export async function loginWaiterByPin(pool, pin) {
   const candidates = await reserveWaitersByPin(pool);
   for (const c of candidates)
-    if (await verifySecret(pin, c.secret_hash)) {
+    if (await verifySecret(pin, c.secret_hash ?? (await decoyHash()))) {
       await clear(pool, c.id);
       return c.id;
     }

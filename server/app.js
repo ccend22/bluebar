@@ -21,6 +21,8 @@ import {
   loginManager,
   loginWaiter,
   loginWaiterByPin,
+  loginWaiterPattern,
+  setWaiterPattern,
   readCookie,
   sessionCookie,
   setWaiterPin,
@@ -30,6 +32,7 @@ import {
 const WAITER_COMMANDS = new Set(["order.add", "order.remove", "order.assign", "order.send", "order.pay", "ticket.done"]);
 const publicUser = ({ role, waiterId, name }) => ({ role, waiterId, name });
 const pin = { type: "string", pattern: "^[0-9]{6}$" };
+const pattern = { type: "array", minItems: 4, maxItems: 9, items: { type: "integer", minimum: 1, maximum: 9 } };
 
 export function buildApp({
   pool,
@@ -103,12 +106,19 @@ export function buildApp({
     if (data.patch) return { ...data, provider };
     const { state } = data;
     if (user.role === "manager") {
-      const pins = new Set(
-        (await db.query("SELECT waiter_id FROM bluebar.accounts WHERE role = 'waiter'")).rows.map(
-          (r) => r.waiter_id,
-        ),
+      const secrets = new Map(
+        (
+          await db.query(
+            `SELECT waiter_id, secret_hash IS NOT NULL AS pin, pattern_hash IS NOT NULL AS pattern
+             FROM bluebar.accounts WHERE role = 'waiter'`,
+          )
+        ).rows.map((r) => [r.waiter_id, r]),
       );
-      const waiters = state.waiters.map((w) => ({ ...w, hasPin: pins.has(w.id) }));
+      const waiters = state.waiters.map((w) => ({
+        ...w,
+        hasPin: Boolean(secrets.get(w.id)?.pin),
+        hasPattern: Boolean(secrets.get(w.id)?.pattern),
+      }));
       return { ...data, state: { ...state, waiters }, provider };
     }
     const shift = state.shift && { id: state.shift.id, opened: state.shift.opened };
@@ -248,8 +258,25 @@ export function buildApp({
   app.put("/api/venue/login-mode", {
     preValidation: session("manager"),
     schema: { body: { type: "object", additionalProperties: false, required: ["loginMode"],
-      properties: { loginMode: { type: "string", enum: ["name_pin", "pin_only", "fingerprint"] } } } },
+      properties: { loginMode: { type: "string", enum: ["name_pin", "pin_only", "pattern"] } } } },
   }, async request => {
+    if (request.body.loginMode === "pattern") {
+      const missing = await request.db.query(
+        `SELECT count(*)::integer AS count FROM bluebar.waiters w
+         LEFT JOIN bluebar.accounts a ON a.waiter_id = w.id AND a.active
+         WHERE w.active AND a.pattern_hash IS NULL`,
+      );
+      if (missing.rows[0].count)
+        throw new AppError(`Vendosni pattern për ${missing.rows[0].count} kamarierë aktivë para se të ndryshoni hyrjen.`, 400);
+    } else {
+      const missing = await request.db.query(
+        `SELECT count(*)::integer AS count FROM bluebar.waiters w
+         LEFT JOIN bluebar.accounts a ON a.waiter_id = w.id AND a.active
+         WHERE w.active AND a.secret_hash IS NULL`,
+      );
+      if (missing.rows[0].count)
+        throw new AppError(`Vendosni PIN për ${missing.rows[0].count} kamarierë aktivë para se të ndryshoni hyrjen.`, 400);
+    }
     await pool.query("UPDATE bluebar_catalog.venues SET login_mode=$1 WHERE slug=$2", [request.body.loginMode, request.venue.slug]);
     return { loginMode: request.body.loginMode };
   });
@@ -264,7 +291,8 @@ export function buildApp({
     requireDb();
     if (!waiterIpOk(request)) return { allowed: false, waiters: [] };
     const { rows } = await request.db.query(
-      `SELECT w.id, w.name FROM bluebar.waiters w JOIN bluebar.accounts a ON a.waiter_id = w.id
+      `SELECT w.id, w.name, a.secret_hash IS NOT NULL AS "hasPin", a.pattern_hash IS NOT NULL AS "hasPattern"
+       FROM bluebar.waiters w JOIN bluebar.accounts a ON a.waiter_id = w.id
        WHERE w.active AND a.active ORDER BY w.name`,
     );
     return { allowed: true, waiters: rows };
@@ -287,6 +315,8 @@ export function buildApp({
       if (!waiterIpOk(request))
         throw new AppError("Kamarierët hyjnë vetëm nga rrjeti i lokalit.", 403);
       attempt(request);
+      if (request.venue.login_mode === "pattern")
+        throw new AppError("Përdorni pattern për të hyrë.", 403);
       const accountId = request.body.waiterId
         ? await loginWaiter(request.db, request.body)
         : await loginWaiterByPin(request.db, request.body.pin);
@@ -333,6 +363,42 @@ export function buildApp({
     async (request) => {
       await setWaiterPin(request.db, request.params.id, request.body.pin);
       return { ok: true };
+    },
+  );
+  app.put(
+    "/api/accounts/waiters/:id/pattern",
+    {
+      preValidation: session("manager"),
+      schema: {
+        params: { type: "object", properties: { id: { type: "integer", minimum: 1 } } },
+        body: { type: "object", additionalProperties: false, required: ["pattern"], properties: { pattern } },
+      },
+    },
+    async (request) => {
+      await setWaiterPattern(request.db, request.params.id, request.body.pattern);
+      return { ok: true };
+    },
+  );
+  app.post(
+    "/api/auth/waiter-pattern",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["waiterId", "pattern"],
+          properties: { waiterId: { type: "integer", minimum: 1 }, pattern },
+        },
+      },
+    },
+    async (request, reply) => {
+      requireDb();
+      if (!waiterIpOk(request))
+        throw new AppError("Kamarierët hyjnë vetëm nga rrjeti i lokalit.", 403);
+      attempt(request);
+      if (request.venue.login_mode !== "pattern")
+        throw new AppError("Hyrja me pattern nuk është aktive për këtë lokal.", 403);
+      return start(request, reply, await loginWaiterPattern(request.db, request.body));
     },
   );
   app.get("/api/state", { preValidation: session() }, async (request) =>

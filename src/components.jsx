@@ -109,15 +109,6 @@ const paths = {
       <path d="M3 21v-6h6" />
     </>
   ),
-  fingerprint: (
-    <>
-      <path d="M12 3a8 8 0 0 1 8 8v2.5a5 5 0 0 1-5 5" />
-      <path d="M12 3a8 8 0 0 0-8 8v3.5" />
-      <path d="M12 7a4 4 0 0 1 4 4v3a3 3 0 0 1-1.2 2.4" />
-      <path d="M12 7a4 4 0 0 0-4 4v6" />
-      <path d="M12 11v5" />
-    </>
-  ),
   more: (
     <>
       <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />

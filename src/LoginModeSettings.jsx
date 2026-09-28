@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { saveLoginMode } from "./api.js";
-import { SectionHeading, Icon } from "./components.jsx";
+import { SectionHeading } from "./components.jsx";
 
 const MODES = [
   {
@@ -14,9 +14,9 @@ const MODES = [
     description: "Kamarieri fut direkt PIN-in e tij unik, pa zgjedhur emrin.",
   },
   {
-    id: "fingerprint",
-    title: "Gjurmë gishti",
-    description: "Hyrje me prekje gishti, si në telefon. Pamje paraprake — hyrja reale bëhet ende me PIN.",
+    id: "pattern",
+    title: "Pattern",
+    description: "Kamarieri zgjedh emrin dhe lidh pikat sipas pattern-it të vet.",
   },
 ];
 
@@ -31,11 +31,11 @@ function LoginModePreview({ mode }) {
         </div>
       </div>
     );
-  if (mode === "fingerprint")
+  if (mode === "pattern")
     return (
       <div className="login-mode-preview">
-        <span className="preview-fingerprint">
-          <Icon name="fingerprint" size={24} />
+        <span className="preview-pattern" aria-hidden="true">
+          {Array.from({ length: 9 }, (_, i) => <i key={i} className={i === 0 || i === 4 || i === 8 ? "selected" : ""} />)}
         </span>
       </div>
     );
@@ -54,11 +54,13 @@ function LoginModePreview({ mode }) {
   );
 }
 
-export function LoginModeSettings({ venue }) {
+export function LoginModeSettings({ venue, waiters = [] }) {
   const [mode, setMode] = useState(venue?.loginMode || "name_pin");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const missingPatterns = waiters.filter((waiter) => waiter.active && !waiter.hasPattern).length;
+  const missingPins = waiters.filter((waiter) => waiter.active && !waiter.hasPin).length;
 
   async function choose(id) {
     if (id === mode || busy) return;
@@ -80,7 +82,7 @@ export function LoginModeSettings({ venue }) {
     <section className="panel">
       <SectionHeading
         title="Hyrja e kamarierëve"
-        description="Zgjidhni si do të hyjnë kamarierët në ekranin e PIN-it."
+        description="Zgjidhni si do të hyjnë kamarierët në ekranin e hyrjes."
       />
       {error && (
         <p className="notice error" role="alert">
@@ -99,7 +101,7 @@ export function LoginModeSettings({ venue }) {
             type="button"
             className={`login-mode-card ${mode === m.id ? "selected" : ""}`}
             aria-pressed={mode === m.id}
-            disabled={busy}
+            disabled={busy || (m.id === "pattern" ? missingPatterns > 0 : missingPins > 0)}
             onClick={() => choose(m.id)}
           >
             <LoginModePreview mode={m.id} />
@@ -108,6 +110,8 @@ export function LoginModeSettings({ venue }) {
           </button>
         ))}
       </div>
+      {missingPatterns > 0 && <p className="helper">Për të aktivizuar pattern-in, vendoseni për të gjithë {missingPatterns} kamarierët aktivë te lista e ekipit.</p>}
+      {missingPins > 0 && <p className="helper">Për hyrjen me PIN, vendoseni për të gjithë {missingPins} kamarierët aktivë te lista e ekipit.</p>}
     </section>
   );
 }
