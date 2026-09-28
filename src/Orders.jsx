@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { money, total } from "./domain.js";
-import { Badge, Empty, Icon, SectionHeading } from "./components.jsx";
+import { Badge, DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
 
-export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
+export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, onSend, onReprintTicket, time }) {
   const [area, setArea] = useState("Të gjitha");
+  const [fiscalizeChoice, setFiscalizeChoice] = useState(false);
   const waiterName = (id) => state.waiters.find((w) => w.id === id)?.name;
+  useEffect(() => setFiscalizeChoice(false), [selected]);
 
   const openTables = useMemo(
     () =>
@@ -24,6 +26,20 @@ export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
     [state.tables],
   );
   const table = state.tables.find((t) => t.id === selected && t.lines.length > 0);
+  const pending = table ? table.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0) : 0;
+  const tickets = table
+    ? state.tickets.filter((k) => k.table === table.id && !k.invoice && !k.cancelledAt)
+    : [];
+  const ticketGroups = useMemo(() => {
+    if (!table) return [];
+    const byDept = new Map();
+    for (const l of table.lines) {
+      const dept = state.products.find((p) => p.id === l.id)?.department || "Tjetër";
+      if (!byDept.has(dept)) byDept.set(dept, []);
+      byDept.get(dept).push(l);
+    }
+    return [...byDept.entries()];
+  }, [table, state.products]);
 
   return (
     <div className="orders-layout">
@@ -91,43 +107,112 @@ export function Orders({ state, selected, onSelect, onModify, onClose, time }) {
             <p className="orders-detail-meta">
               {waiterName(table.waiter) || "Pa kamarier"} · {table.seats} vende · Nisi {time(table.occupiedSince)}
             </p>
-            <div className="table-scroll">
-              <table className="responsive-table orders-item-table">
-                <thead>
-                  <tr>
-                    <th>Produkti</th>
-                    <th className="numeric">Sasia</th>
-                    <th className="numeric">Çmimi</th>
-                    <th className="numeric">Totali</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {table.lines.map((l) => (
-                    <tr key={l.id}>
-                      <td data-label="Produkti">{l.name}</td>
-                      <td data-label="Sasia" className="numeric">
-                        {l.qty}
-                      </td>
-                      <td data-label="Çmimi" className="numeric">
-                        {money(l.price)}
-                      </td>
-                      <td data-label="Totali" className="numeric">
-                        {money(l.price * l.qty)}
-                      </td>
-                    </tr>
+            <div className="receipt-paper order-ticket">
+              {ticketGroups.map(([dept, lines]) => (
+                <div className="receipt-department" key={dept}>
+                  <div className="receipt-department-head">
+                    <DepartmentTag name={dept} />
+                  </div>
+                  {lines.map((l) => (
+                    <div className="receipt-line" key={l.id}>
+                      <span>
+                        {l.qty} × {l.name}
+                        <small>
+                          {money(l.price)} / copë
+                          {l.qty > (l.sent || 0) && (
+                            <span className="pending-mark"> · {l.qty - (l.sent || 0)} pa dërguar</span>
+                          )}
+                        </small>
+                      </span>
+                      <b>{money(l.qty * l.price)}</b>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              ))}
             </div>
+            {tickets.length > 0 && (
+              <div className="sent-tickets">
+                <h3>Dërguar në repartet</h3>
+                {tickets.map((k) => (
+                  <div className="sent-ticket" key={k.id}>
+                    <DepartmentTag name={k.department} />
+                    <span>
+                      Raundi {k.round} · {time(k.date)} ·{" "}
+                      {k.lines.map((l) => `${l.qty}× ${l.name}`).join(", ")}
+                    </span>
+                    {k.doneAt ? (
+                      <span className="sent-mark">
+                        <Icon name="check" size={12} /> Gati
+                      </span>
+                    ) : (
+                      <span className="pending-mark">Në përgatitje</span>
+                    )}
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={`Riprinto ${k.department}, raundi ${k.round}`}
+                      onClick={() => onReprintTicket(k)}
+                    >
+                      <Icon name="print" size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="orders-detail-total">
               <span>Totali</span>
               <strong>{money(total(table.lines))}</strong>
             </div>
-            <div className="orders-detail-payment">
-              <button className="primary" onClick={() => onClose(table, "Kartë")}>
-                Paguaj me kartë
+            <div className="receipt-actions">
+              {pending > 0 && (
+                <button className="primary full-width" onClick={() => onSend(table)}>
+                  <Icon name="arrow" size={18} />
+                  Dërgo në repartet ({pending})
+                </button>
+              )}
+              <button className="full-width" onClick={() => onPrint(table)}>
+                <Icon name="print" size={18} />
+                Printo faturën
               </button>
-              <button onClick={() => onClose(table, "Cash")}>Paguaj cash</button>
+              {fiscalizeChoice ? (
+                <div className="fiscalize-choice">
+                  <span>Si po paguhet?</span>
+                  <div className="payment-methods">
+                    <button
+                      onClick={() => {
+                        setFiscalizeChoice(false);
+                        onClose(table, "Cash");
+                      }}
+                    >
+                      <Icon name="cash" size={16} />
+                      Cash
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFiscalizeChoice(false);
+                        onClose(table, "Kartë");
+                      }}
+                    >
+                      <Icon name="card" size={16} />
+                      Kartë
+                    </button>
+                  </div>
+                  <button className="text-button full-width" onClick={() => setFiscalizeChoice(false)}>
+                    Anulo
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className={`full-width ${pending ? "" : "primary"}`}
+                  onClick={() => setFiscalizeChoice(true)}
+                >
+                  <Icon name="receipt" size={18} />
+                  Fiskalizo Faturën
+                </button>
+              )}
+              <button className="full-width" onClick={() => onSelect(null)}>
+                Mbyll
+              </button>
             </div>
           </>
         ) : (

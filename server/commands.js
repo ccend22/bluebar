@@ -1,4 +1,5 @@
 import { addItem, checkout, closeShift } from "../src/domain.js";
+import { cellsOf, centerOf, footprint, freeSpot, sizeFor } from "../src/floorGeometry.js";
 export class AppError extends Error {
   constructor(message, statusCode = 400) {
     super(message);
@@ -19,19 +20,24 @@ const name = (v, max = 80) => {
   return v.trim();
 };
 const nextId = (items) => Math.max(0, ...items.map((x) => x.id)) + 1;
-// Mirrors FloorPlan.jsx's GRID_COLS/GRID_ROWS (8x5) — keep both in sync if either changes.
-const GRID_COLS = 8, GRID_ROWS = 5, CELL_W = 100 / GRID_COLS, CELL_H = 100 / GRID_ROWS;
-// A new table lands in the first empty slot instead of always stacking at dead-center,
-// so adding tables one after another fills out the room instead of piling them up.
-function firstOpenSlot(tables) {
-  const occupied = new Set(
-    tables.map((t) => `${Math.floor(t.posX / CELL_W)},${Math.floor(t.posY / CELL_H)}`),
-  );
-  for (let row = 0; row < GRID_ROWS; row++)
-    for (let col = 0; col < GRID_COLS; col++)
-      if (!occupied.has(`${col},${row}`))
-        return { posX: (col + 0.5) * CELL_W, posY: (row + 0.5) * CELL_H };
-  return { posX: 50, posY: 50 };
+// The print agent opens a raw TCP connection to this address from inside the venue,
+// so only LAN addresses are accepted — never a public host.
+const printerHost = (v) => {
+  const host = typeof v === "string" ? v.trim().toLowerCase() : "";
+  const ip = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)?.slice(1).map(Number);
+  const lan =
+    ip &&
+    ip.every((n) => n <= 255) &&
+    (ip[0] === 10 || ip[0] === 127 || (ip[0] === 172 && ip[1] >= 16 && ip[1] <= 31) || (ip[0] === 192 && ip[1] === 168));
+  if (!lan && !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.(local|lan)$/.test(host))
+    fail("Vendosni IP-në lokale të printerit, p.sh. 192.168.1.50.");
+  return host;
+};
+// A new table lands on the first free block of cells (same geometry the floor plan
+// uses), so tables added one after another fill the room instead of piling up.
+function firstOpenSlot(tables, table) {
+  const block = freeSpot(footprint(table), tables.map((t) => cellsOf(t)));
+  return block ? centerOf(block) : { posX: 50, posY: 50 };
 }
 const TABLE_SHAPES = ["Rreth", "Katror", "Drejtkëndësh", "Bar", "Oval"];
 const shape = (v) => {
@@ -62,6 +68,15 @@ const unique = (items, value, except) => {
   )
     fail("Ky emër ekziston tashmë.");
 };
+// A table's current order's tickets: not yet closed by payment or cancellation.
+const openTickets = (tickets, tableId) =>
+  tickets.filter((k) => k.table === tableId && !k.invoice && !k.cancelledAt);
+// Closing an order: finished tickets are done with; unfinished ones stay on the
+// station's screen, marked paid (invoice) or cancelled so the station knows.
+export const closeTickets = (tickets, tableId, patch) =>
+  tickets.flatMap((k) =>
+    k.table !== tableId || k.invoice || k.cancelledAt ? [k] : k.doneAt ? [] : [{ ...k, ...patch }],
+  );
 export function applyCommand(state, type, payload, actor = null) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
     fail("Kërkesë e pavlefshme.");
@@ -92,22 +107,115 @@ export function applyCommand(state, type, payload, actor = null) {
       if (!state.shift) fail("Turni është i mbyllur.");
       const t = table();
       integer(p.productId);
-      if (!t.lines.some((l) => l.id === p.productId))
-        fail("Produkti nuk është në porosi.");
+      const line = t.lines.find((l) => l.id === p.productId);
+      if (!line) fail("Produkti nuk është në porosi.");
+      if (actor?.role === "waiter" && (line.sent || 0) >= line.qty)
+        fail("Ky artikull është dërguar tashmë në repart. Vetëm menaxheri mund ta heqë.");
+      const lines = t.lines
+        .map((l) =>
+          l.id === p.productId
+            ? { ...l, qty: l.qty - 1, sent: Math.min(l.sent || 0, l.qty - 1) }
+            : l,
+        )
+        .filter((l) => l.qty > 0);
       next = {
         ...state,
-        tables: state.tables.map((t) =>
-          t.id === p.tableId
-            ? {
-                ...t,
-                lines: t.lines
-                  .map((l) =>
-                    l.id === p.productId ? { ...l, qty: l.qty - 1 } : l,
-                  )
-                  .filter((l) => l.qty > 0),
-              }
-            : t,
+        tables: state.tables.map((x) => (x.id === t.id ? { ...x, lines } : x)),
+        tickets: lines.length ? state.tickets : closeTickets(state.tickets, t.id, { cancelledAt: new Date().toISOString() }),
+      };
+      break;
+    }
+    case "order.send": {
+      if (!state.shift) fail("Turni është i mbyllur.");
+      const t = table();
+      if (actor?.role === "waiter" && t.waiter !== actor.waiterId)
+        fail("Kjo tavolinë është caktuar tek një kamarier tjetër. Merreni tavolinën për ta dërguar.");
+      const pending = t.lines.filter((l) => l.qty > (l.sent || 0));
+      if (!pending.length) fail("Nuk ka artikuj të rinj për t'u dërguar.");
+      // One ticket per station for this round; a product with no department still
+      // has to reach someone, so it goes out as "Tjetër".
+      const byDept = new Map();
+      for (const l of pending) {
+        const dept =
+          state.products.find((x) => x.id === l.id)?.department || "Tjetër";
+        if (!byDept.has(dept)) byDept.set(dept, []);
+        byDept.get(dept).push({ id: l.id, name: l.name, qty: l.qty - (l.sent || 0) });
+      }
+      const round = Math.max(0, ...openTickets(state.tickets, t.id).map((k) => k.round)) + 1;
+      const date = new Date().toISOString();
+      const tickets = [...byDept].map(([department, lines]) => ({
+        id: crypto.randomUUID(),
+        table: t.id,
+        invoice: null,
+        round,
+        department,
+        waiter: t.waiter,
+        date,
+        lines,
+        doneAt: null,
+        cancelledAt: null,
+      }));
+      next = {
+        ...state,
+        tables: state.tables.map((x) =>
+          x.id === t.id ? { ...x, lines: x.lines.map((l) => ({ ...l, sent: l.qty })) } : x,
         ),
+        tickets: [...state.tickets, ...tickets],
+      };
+      result = { round, tickets };
+      break;
+    }
+    case "printer.save": {
+      const printerName = name(p.name, 40);
+      const host = printerHost(p.host);
+      const port = p.port === undefined ? 9100 : integer(p.port, 1, 65535);
+      const width = p.width === undefined ? 48 : p.width;
+      if (![32, 42, 48].includes(width)) fail("Gjerësia e letrës është e pavlefshme.");
+      const known = [...state.departments, "Tjetër"];
+      if (!Array.isArray(p.departments) || p.departments.some((d) => !known.includes(d)))
+        fail("Zgjidhni repartet e printerit.");
+      const departments = [...new Set(p.departments)];
+      const receipts = p.receipts === true;
+      if (!departments.length && !receipts) fail("Zgjidhni të paktën një repart ose faturat.");
+      let existing;
+      if (p.id !== undefined) {
+        integer(p.id);
+        existing = state.printers.find((x) => x.id === p.id);
+        if (!existing) fail("Printeri nuk ekziston.");
+      }
+      const printer = { id: existing?.id || nextId(state.printers), name: printerName, host, port, width, departments, receipts };
+      // A department (and the cashier's invoices) prints on exactly one printer:
+      // assigning it here takes it away from wherever it was before.
+      const others = state.printers
+        .filter((x) => x.id !== printer.id)
+        .map((x) => ({
+          ...x,
+          departments: x.departments.filter((d) => !departments.includes(d)),
+          receipts: receipts ? false : x.receipts,
+        }));
+      next = { ...state, printers: [...others, printer].sort((a, b) => a.id - b.id) };
+      break;
+    }
+    case "printer.delete": {
+      integer(p.id);
+      if (!state.printers.some((x) => x.id === p.id)) fail("Printeri nuk ekziston.");
+      next = { ...state, printers: state.printers.filter((x) => x.id !== p.id) };
+      break;
+    }
+    case "ticket.done": {
+      // "Gati" from the station. A ticket whose order is already closed (paid or
+      // cancelled) has nothing left to report to the waiter, so it's simply removed.
+      if (typeof p.id !== "string") fail("Fleta nuk ekziston.");
+      const k = state.tickets.find((x) => x.id === p.id);
+      if (!k) fail("Fleta nuk ekziston.");
+      next = {
+        ...state,
+        tickets:
+          k.invoice || k.cancelledAt
+            ? state.tickets.filter((x) => x.id !== k.id)
+            : state.tickets.map((x) =>
+                x.id === k.id ? { ...x, doneAt: x.doneAt || new Date().toISOString() } : x,
+              ),
       };
       break;
     }
@@ -140,6 +248,7 @@ export function applyCommand(state, type, payload, actor = null) {
         tables: state.tables.map((x) =>
           x.id === t.id ? { ...x, lines: [], waiter: null } : x,
         ),
+        tickets: closeTickets(state.tickets, t.id, { cancelledAt: new Date().toISOString() }),
       };
       break;
     }
@@ -156,6 +265,13 @@ export function applyCommand(state, type, payload, actor = null) {
       )
         fail("Shuma e marrë nuk mbulon pagesën.");
       next = checkout(state, p.tableId, p.method);
+      next = {
+        ...next,
+        // Not stored: tells the print queue to hold the cashier's copy until the
+        // fiscalization (fired by the client right after) has added its NIVF/NSLF.
+        invoices: next.invoices.map((i, n) => (n === 0 && p.fiscalize === true ? { ...i, fiscalRequested: true } : i)),
+        tickets: closeTickets(state.tickets, p.tableId, { invoice: next.invoices[0].id }),
+      };
       result = { invoiceId: next.invoices[0].id };
       break;
     }
@@ -168,11 +284,15 @@ export function applyCommand(state, type, payload, actor = null) {
         existing = state.tables.find((x) => x.id === p.id);
         if (!existing) fail("Tavolina nuk ekziston.");
       }
-      // A bar counter reads as furniture only once it's wider than it is tall; a new
-      // table otherwise defaults to a single-slot square the manager can resize up to
-      // a few grid cells (see FloorPlan.jsx's MAX_TABLE_W/MAX_TABLE_H) for a big party.
-      const [defaultWidth, defaultHeight] = shapeValue === "Bar" ? [9, 4] : [9, 9];
-      const slot = existing ? null : firstOpenSlot(state.tables);
+      // A new table starts as one cell (a bar: one cell wide, counter-thin); the
+      // manager can grow it up to a few cells for a big party on the floor plan.
+      const { width: defaultWidth, height: defaultHeight } = sizeFor(shapeValue, 1, 1);
+      const slot = existing
+        ? null
+        : firstOpenSlot(
+            state.tables.filter((t) => t.active),
+            { shape: shapeValue, width: p.width ?? defaultWidth, height: p.height ?? defaultHeight, rotation: 0 },
+          );
       const row = {
         id: existing?.id || nextId(state.tables),
         area,
@@ -194,6 +314,14 @@ export function applyCommand(state, type, payload, actor = null) {
           ? state.tables.map((x) => (x.id === existing.id ? row : x))
           : [...state.tables, row],
       };
+      break;
+    }
+    case "tables.save": {
+      // Several table.save changes (new tables, edits, positions) confirmed at once:
+      // all or nothing, each item validated exactly like a single table.save.
+      if (!Array.isArray(p.tables) || !p.tables.length || p.tables.length > 100)
+        fail("Nuk ka ndryshime për t'u ruajtur.");
+      next = p.tables.reduce((current, item) => applyCommand(current, "table.save", item, actor).state, state);
       break;
     }
     case "table.toggle": {
@@ -218,7 +346,7 @@ export function applyCommand(state, type, payload, actor = null) {
       // dining_tables is referenced by invoices/order_lines history with no cascade
       // (see 003_table_management.sql), so a table that has ever taken an order stays
       // soft-removed via table.toggle instead; only a never-used table can be deleted.
-      if (state.invoices.some((inv) => inv.table === p.id))
+      if (state.invoices.some((inv) => inv.table === p.id) || state.tickets.some((k) => k.table === p.id))
         fail("Kjo tavolinë ka histori faturash; çaktivizojeni në vend të fshirjes.");
       next = { ...state, tables: state.tables.filter((x) => x.id !== p.id) };
       break;
@@ -251,6 +379,13 @@ export function applyCommand(state, type, payload, actor = null) {
         price = integer(p.price, 1, 1000000),
         category = name(p.category, 40);
       if (!state.categories.includes(category)) fail("Kategoria nuk ekziston.");
+      // Department (which station prepares it) is optional — a manager can leave
+      // existing products unrouted, or route them later once departments exist.
+      let department = null;
+      if (p.department !== undefined && p.department !== null && p.department !== "") {
+        department = name(p.department, 40);
+        if (!state.departments.includes(department)) fail("Nënkategoria nuk ekziston.");
+      }
       let existing;
       if (p.id !== undefined) {
         integer(p.id);
@@ -263,6 +398,7 @@ export function applyCommand(state, type, payload, actor = null) {
         name: productName,
         price,
         category,
+        department: department ?? existing?.department ?? null,
         stock: existing?.stock || 0,
       };
       next = {
@@ -282,6 +418,17 @@ export function applyCommand(state, type, payload, actor = null) {
       )
         fail("Kategoria ekziston.");
       next = { ...state, categories: [...state.categories, category] };
+      break;
+    }
+    case "department.create": {
+      const department = name(p.name, 40);
+      if (
+        state.departments.some(
+          (d) => d.toLocaleLowerCase() === department.toLocaleLowerCase(),
+        )
+      )
+        fail("Nënkategoria ekziston.");
+      next = { ...state, departments: [...state.departments, department] };
       break;
     }
     case "stock.receive": {

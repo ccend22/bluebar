@@ -1,11 +1,12 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { applyCommand, AppError } from "./commands.js";
 const iso = (v) => (v == null ? null : new Date(v).toISOString());
 export async function loadState(client) {
   // One database round trip, within the caller's transaction snapshot.
   const names = [
-    "control", "categories", "products", "waiters", "order_lines",
+    "control", "categories", "departments", "products", "waiters", "order_lines",
     "dining_tables", "shifts", "invoice_lines", "invoices", "stock_movements",
+    "station_tickets", "printers",
   ];
   // Identifiers come only from the fixed list above, never request data.
   const query = "SELECT jsonb_build_object(" + names.map((name) =>
@@ -15,9 +16,11 @@ export async function loadState(client) {
   const rows = (name) => data[name];
   const control = (rows("control"))[0];
   const categories = (rows("categories")).map((r) => r.name).sort();
+  const departments = (rows("departments")).map((r) => r.name).sort();
   const products = (rows("products")).sort((a, b) => a.id - b.id);
   const waiters = (rows("waiters")).sort((a, b) => a.id - b.id);
   const lines = rows("order_lines");
+  const tickets = rows("station_tickets");
   const tables = (rows("dining_tables"))
     .sort((a, b) => a.id - b.id)
     .map((t) => ({
@@ -41,6 +44,7 @@ export async function loadState(client) {
           name: l.name,
           price: l.price,
           qty: l.qty,
+          sent: l.sent,
         })),
     }));
   const shifts = (rows("shifts"))
@@ -96,11 +100,37 @@ export async function loadState(client) {
     version: control.version,
     state: {
       categories,
+      departments,
       products,
       waiters,
       tables,
       invoices,
       movements,
+      printers: rows("printers")
+        .sort((a, b) => a.id - b.id)
+        .map((x) => ({
+          id: x.id,
+          name: x.name,
+          host: x.host,
+          port: x.port,
+          width: x.width,
+          departments: x.departments,
+          receipts: x.receipts,
+        })),
+      tickets: tickets
+        .map((k) => ({
+          id: k.id,
+          table: k.table_id,
+          invoice: k.invoice_id,
+          round: k.round,
+          department: k.department,
+          waiter: k.waiter_id,
+          date: iso(k.created_at),
+          lines: k.lines,
+          doneAt: iso(k.done_at),
+          cancelledAt: iso(k.cancelled_at),
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date) || a.department.localeCompare(b.department)),
       shift: shifts.find((s) => !s.closed) || null,
       shifts: shifts.filter((s) => s.closed),
     },
@@ -114,6 +144,12 @@ export async function persist(client, previous, next) {
     await client.query("INSERT INTO bluebar.categories(name) VALUES($1)", [
       category,
     ]);
+  for (const department of next.departments.filter(
+    (d) => !previous.departments.includes(d),
+  ))
+    await client.query("INSERT INTO bluebar.departments(name) VALUES($1)", [
+      department,
+    ]);
   for (const p of next.products.filter((p) =>
     changed(
       previous.products.find((x) => x.id === p.id),
@@ -121,8 +157,8 @@ export async function persist(client, previous, next) {
     ),
   ))
     await client.query(
-      "INSERT INTO bluebar.products(id,name,category,price,stock) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,category=$3,price=$4,stock=$5",
-      [p.id, p.name, p.category, p.price, p.stock],
+      "INSERT INTO bluebar.products(id,name,category,price,stock,department) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=$2,category=$3,price=$4,stock=$5,department=$6",
+      [p.id, p.name, p.category, p.price, p.stock, p.department || null],
     );
   for (const w of next.waiters.filter((w) =>
     changed(
@@ -185,8 +221,8 @@ export async function persist(client, previous, next) {
     ]);
     for (const l of t.lines)
       await client.query(
-        "INSERT INTO bluebar.order_lines(table_id,product_id,name,price,qty) VALUES($1,$2,$3,$4,$5)",
-        [t.id, l.id, l.name, l.price, l.qty],
+        "INSERT INTO bluebar.order_lines(table_id,product_id,name,price,qty,sent) VALUES($1,$2,$3,$4,$5,$6)",
+        [t.id, l.id, l.name, l.price, l.qty, l.sent || 0],
       );
   }
   // table.delete already refused a table with any order_lines/invoices history, so this
@@ -206,6 +242,43 @@ export async function persist(client, previous, next) {
         [i.id, l.id, l.name, l.price, l.qty],
       );
   }
+  for (const k of previous.tickets.filter((k) => !next.tickets.some((x) => x.id === k.id)))
+    await client.query("DELETE FROM bluebar.station_tickets WHERE id=$1", [k.id]);
+  for (const k of next.tickets.filter((k) =>
+    changed(previous.tickets.find((x) => x.id === k.id), k),
+  ))
+    await client.query(
+      `INSERT INTO bluebar.station_tickets(id,table_id,invoice_id,round,department,waiter_id,lines,created_at,done_at,cancelled_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT(id) DO UPDATE SET invoice_id=$3, done_at=$9, cancelled_at=$10`,
+      [k.id, k.table, k.invoice || null, k.round, k.department, k.waiter || null,
+        JSON.stringify(k.lines), k.date, k.doneAt || null, k.cancelledAt || null],
+    );
+  for (const x of previous.printers.filter((x) => !next.printers.some((y) => y.id === x.id)))
+    await client.query("DELETE FROM bluebar.printers WHERE id=$1", [x.id]);
+  for (const x of next.printers.filter((x) => changed(previous.printers.find((y) => y.id === x.id), x)))
+    await client.query(
+      `INSERT INTO bluebar.printers(id,name,host,port,width,departments,receipts) VALUES($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT(id) DO UPDATE SET name=$2,host=$3,port=$4,width=$5,departments=$6,receipts=$7`,
+      [x.id, x.name, x.host, x.port, x.width, x.departments, x.receipts],
+    );
+  // Print jobs follow from what just changed, in the same transaction: a sale can't
+  // exist without its cashier job, nor a station ticket without its printer job.
+  const enqueue = (printer, kind, ref, waitFiscal = false) =>
+    printer &&
+    client.query(
+      "INSERT INTO bluebar.print_jobs(id,printer_id,kind,ref,wait_fiscal) VALUES($1,$2,$3,$4,$5)",
+      [randomUUID(), printer.id, kind, String(ref), waitFiscal],
+    );
+  const stationPrinter = (department) => next.printers.find((x) => x.departments.includes(department));
+  for (const k of next.tickets) {
+    const before = previous.tickets.find((x) => x.id === k.id);
+    if (!before) await enqueue(stationPrinter(k.department), "ticket", k.id);
+    else if (!before.cancelledAt && k.cancelledAt) await enqueue(stationPrinter(k.department), "cancel", k.id);
+  }
+  const cashier = next.printers.find((x) => x.receipts);
+  for (const i of next.invoices.filter((i) => !previous.invoices.some((x) => x.id === i.id)))
+    await enqueue(cashier, "invoice", i.id, Boolean(i.fiscalRequested));
   for (const m of next.movements.slice(previous.movements.length))
     await client.query(
       "INSERT INTO bluebar.stock_movements(product,qty,reason,created_at) VALUES($1,$2,$3,$4)",
@@ -234,7 +307,7 @@ async function readOrderTable(client, tableId) {
         t.pos_x, t.pos_y, t.width, t.height, t.rotation, t.seats, t.occupied_since,
         COALESCE(
           jsonb_agg(jsonb_build_object(
-            'id', l.product_id, 'name', l.name, 'price', l.price, 'qty', l.qty
+            'id', l.product_id, 'name', l.name, 'price', l.price, 'qty', l.qty, 'sent', l.sent
           ) ORDER BY l.product_id) FILTER (WHERE l.product_id IS NOT NULL),
           '[]'::jsonb
         ) AS lines
@@ -265,7 +338,7 @@ async function readOrderTable(client, tableId) {
 
 // The high-frequency POS path reads and returns only the affected order.
 // Full snapshots remain the source of truth for initial load and management actions.
-export async function executeOrderPatch(pool, command) {
+export async function executeOrderPatch(pool, command, actor = null) {
   if (!["order.add", "order.remove"].includes(command.type))
     throw new AppError("Veprimi i porosisë është i pavlefshëm.");
   const { tableId, productId, waiterId } = command.payload || {};
@@ -288,7 +361,7 @@ export async function executeOrderPatch(pool, command) {
           w.active AS waiter_active,
           p.name AS product_name, p.price AS product_price, p.stock AS product_stock,
           COALESCE((SELECT sum(qty) FROM bluebar.order_lines WHERE product_id = $4), 0)::integer AS reserved,
-          line.qty AS line_qty,
+          line.qty AS line_qty, line.sent AS line_sent,
           (SELECT count(*) FROM bluebar.order_lines WHERE table_id = $2)::integer AS table_line_count
          FROM bluebar.control c
          LEFT JOIN bluebar.commands cmd ON cmd.id = $1
@@ -340,21 +413,37 @@ export async function executeOrderPatch(pool, command) {
       );
     } else {
       if (!context.line_qty) throw new AppError("Produkti nuk është në porosi.");
+      // A unit the station already got is being prepared; only a manager may void it.
+      if (actor?.role === "waiter" && context.line_sent >= context.line_qty)
+        throw new AppError("Ky artikull është dërguar tashmë në repart. Vetëm menaxheri mund ta heqë.", 403);
       await client.query(
         `WITH removed AS (
            DELETE FROM bluebar.order_lines
            WHERE table_id = $1 AND product_id = $2 AND qty = 1
            RETURNING 1
          )
-         UPDATE bluebar.order_lines SET qty = qty - 1
+         UPDATE bluebar.order_lines SET qty = qty - 1, sent = LEAST(sent, qty - 1)
          WHERE table_id = $1 AND product_id = $2 AND qty > 1`,
         [tableId, productId],
       );
       // Data-modifying CTEs in one statement share a snapshot and can't see each
       // other's writes, so "is the table empty now" is computed here from the
       // counts already read under FOR UPDATE, not re-queried after the delete.
-      if (context.line_qty === 1 && context.table_line_count === 1)
+      if (context.line_qty === 1 && context.table_line_count === 1) {
         await client.query("UPDATE bluebar.dining_tables SET occupied_since = NULL WHERE id = $1", [tableId]);
+        // Same as order.cancel: the order is gone, so stations drop finished tickets
+        // and see unfinished ones as cancelled.
+        await client.query(
+          `DELETE FROM bluebar.station_tickets
+           WHERE table_id = $1 AND invoice_id IS NULL AND cancelled_at IS NULL AND done_at IS NOT NULL`,
+          [tableId],
+        );
+        await client.query(
+          `UPDATE bluebar.station_tickets SET cancelled_at = now()
+           WHERE table_id = $1 AND invoice_id IS NULL AND cancelled_at IS NULL`,
+          [tableId],
+        );
+      }
     }
 
     const version = (

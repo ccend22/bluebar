@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS bluebar_catalog.venues (
 );
 INSERT INTO bluebar_catalog.venues(slug, name, schema_name, use_legacy_network)
 VALUES ('bluebar', 'BlueBar', 'bluebar', true) ON CONFLICT DO NOTHING;
+-- How waiters sign in on this venue's PIN screen: name_pin (pick a name, then PIN — the
+-- original flow), pin_only (unique PIN alone identifies the waiter), or fingerprint
+-- (visual preview only, see Login.jsx — falls back to name_pin for the real sign-in).
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS login_mode text NOT NULL DEFAULT 'name_pin'
+  CHECK (login_mode IN ('name_pin', 'pin_only', 'fingerprint'));
 -- Database-backed registration budget shared by all serverless instances.
 CREATE TABLE IF NOT EXISTS bluebar_catalog.registration_limits (
   ip_hash text PRIMARY KEY,

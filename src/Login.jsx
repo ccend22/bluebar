@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { fetchLoginWaiters, loginWaiter, loginManager, venueSlug, fetchVenue, registerVenue, openBusiness } from "./api.js";
-import { Field, PinPad } from "./components.jsx";
+import { Field, Icon, PinPad } from "./components.jsx";
 
 function PinLogin({ onSignedIn }) {
   const [mode, setMode] = useState("waiter"),
@@ -8,7 +8,10 @@ function PinLogin({ onSignedIn }) {
     [waiterId, setWaiterId] = useState(""),
     [pin, setPin] = useState(""),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    // Only meaningful in fingerprint login mode: lets a waiter drop back to the
+    // real (name + PIN) flow, since the fingerprint screen is a visual preview only.
+    [fingerprintFallback, setFingerprintFallback] = useState(false);
   const [venue, setVenue] = useState(null);
   const submitting = useRef(false);
   useEffect(() => {
@@ -27,7 +30,17 @@ function PinLogin({ onSignedIn }) {
     setMode(id);
     setError("");
     setPin("");
+    setFingerprintFallback(false);
   };
+  const loginMode = venue?.loginMode || "name_pin";
+  // What the waiter tab actually renders: fingerprint mode falls back to name_pin
+  // once the waiter taps "Hyr me PIN", since fingerprint login isn't wired up yet.
+  const waiterFlow =
+    loginMode === "fingerprint" && !fingerprintFallback
+      ? "fingerprint"
+      : loginMode === "pin_only"
+        ? "pin_only"
+        : "name_pin";
   async function submit(enteredPin) {
     if (submitting.current) return;
     submitting.current = true;
@@ -36,7 +49,7 @@ function PinLogin({ onSignedIn }) {
     try {
       onSignedIn(
         mode === "waiter"
-          ? await loginWaiter(Number(waiterId), enteredPin)
+          ? await loginWaiter(waiterFlow === "pin_only" ? undefined : Number(waiterId), enteredPin)
           : await loginManager({ pin: enteredPin }),
       );
     } catch (err) {
@@ -52,8 +65,9 @@ function PinLogin({ onSignedIn }) {
   ];
   const blocked = mode === "waiter" && waiters && !waiters.allowed;
   const selectedWaiter = waiters?.waiters.find((w) => String(w.id) === waiterId);
+  const showWaiterList = mode === "waiter" && waiterFlow === "name_pin" && waiters?.waiters.length > 0;
   return (
-    <main className={`database-setup login-screen ${mode === "waiter" && !blocked ? "with-waiters" : ""}`}>
+    <main className={`database-setup login-screen ${mode === "waiter" && !blocked && showWaiterList ? "with-waiters" : ""}`}>
       <span className="brand">BlueBar</span>
       <h1>{venue?.name || "Hyrje"}</h1>
       <p className="helper">Kodi i biznesit: <strong>{venueSlug}</strong> · <a href="/">Ndrysho biznesin</a></p>
@@ -71,9 +85,20 @@ function PinLogin({ onSignedIn }) {
       )}
       {blocked ? (
         <p>Kamarierët hyjnë vetëm nga rrjeti i lokalit. Menaxherët hyjnë nga skeda "Menaxher".</p>
+      ) : mode === "waiter" && waiterFlow === "fingerprint" ? (
+        <div className="stack-form fingerprint-preview">
+          <span className="fingerprint-scan">
+            <Icon name="fingerprint" size={44} />
+          </span>
+          <p>Prekni skanerin e gjurmës së gishtit</p>
+          <p className="helper">Pamje paraprake — hyrja me gjurmë gishti nuk është ende aktive.</p>
+          <button type="button" className="text-button" onClick={() => setFingerprintFallback(true)}>
+            Hyr me PIN në vend të kësaj
+          </button>
+        </div>
       ) : (
-        <div className={`stack-form login-content ${mode === "waiter" && waiters?.waiters.length ? "with-waiter-list" : ""}`}>
-          {mode === "waiter" && waiters?.waiters.length > 0 && (
+        <div className={`stack-form login-content ${showWaiterList ? "with-waiter-list" : ""}`}>
+          {showWaiterList && (
             <section className="login-waiters" aria-labelledby="login-waiters-title">
               <h2 id="login-waiters-title">Kamarierët</h2>
               <div className="login-waiter-list" role="group" aria-label="Zgjidhni kamarierin">
@@ -98,7 +123,11 @@ function PinLogin({ onSignedIn }) {
             <p>Asnjë kamarier nuk ka PIN. Menaxheri e vendos te Kamarierët.</p>
           ) : (
             <fieldset className="pin-field" disabled={busy}>
-              <legend>{selectedWaiter && mode === "waiter" ? `PIN-i për ${selectedWaiter.name} (6 shifra)` : "PIN (6 shifra)"}</legend>
+              <legend>
+                {selectedWaiter && waiterFlow === "name_pin"
+                  ? `PIN-i për ${selectedWaiter.name} (6 shifra)`
+                  : "PIN (6 shifra)"}
+              </legend>
               <PinPad value={pin} onChange={setPin} onComplete={submit} disabled={busy} />
             </fieldset>
           )}

@@ -46,6 +46,10 @@ test("buildBlueBillPayload maps a BlueBar invoice to the documented BlueBill sha
     ],
   });
   assert.equal(buildBlueBillPayload({ ...sampleInvoice, method: "Cash" }).paymentMethod, "Cash");
+  // A manager can report a different method to BlueBill than what's on BlueBar's own
+  // record — BlueBar's invoice.method itself never changes, only what's sent upstream.
+  assert.equal(buildBlueBillPayload(sampleInvoice, "Cash").paymentMethod, "Cash");
+  assert.equal(buildBlueBillPayload({ ...sampleInvoice, method: "Cash" }, "Kartë").paymentMethod, "Card");
 });
 
 test("fiscalizeInvoice creates then fiscalizes, and extracts iic/fic/verificationUrl", async () => {

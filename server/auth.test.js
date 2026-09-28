@@ -65,7 +65,7 @@ test("manager signs in with a PIN; sessions are HttpOnly and revocable", async (
     );
     const ok = await t.managerLogin();
     assert.equal(ok.statusCode, 200);
-    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss", venue: { slug: "bluebar", name: "BlueBar" } });
+    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss", venue: { slug: "bluebar", name: "BlueBar", loginMode: "name_pin" } });
     const setCookie = ok.headers["set-cookie"];
     assert.match(setCookie, /HttpOnly/);
     assert.match(setCookie, /SameSite=Strict/);
@@ -170,6 +170,138 @@ test("invoice fiscalization: not manager-only, best-effort, persisted, and idemp
     const unconfigured = await t.call("POST", path, { cookie: manager });
     assert.equal(unconfigured.statusCode, 503);
     assert.equal(calls, 2);
+  } finally {
+    await t.close();
+  }
+});
+
+test("fiscalize can report a different payment method to BlueBill than the invoice's own record", async () => {
+  const payloads = [];
+  const blueBill = {
+    token: "test-secret",
+    venueSlug: "bluebar",
+    fetchImpl: async (url, options) => {
+      if (url.endsWith("/invoices")) {
+        payloads.push({ idempotencyKey: options.headers["Idempotency-Key"], body: JSON.parse(options.body) });
+        return new Response(JSON.stringify({ data: { id: "bb-1", status: "draft" }, meta: {} }), { status: 201 });
+      }
+      return new Response(
+        JSON.stringify({
+          data: { id: "bb-1", status: "fiscalized", fiscal: { iic: "IIC-1", fic: "FIC-1", eic: null, verificationUrl: "url", error: null } },
+          meta: {},
+        }),
+        { status: 200 },
+      );
+    },
+  };
+  const t = await setup({ blueBill });
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 10 });
+    await t.send("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    const manager = t.cookieOf(await t.managerLogin());
+    const pay = await t.call("POST", "/api/commands", {
+      cookie: manager,
+      body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: manager })).json().version, type: "order.pay", payload: { tableId: 1, method: "Cash", received: 100 } },
+    });
+    const invoiceId = pay.json().result.invoiceId;
+    const fiscalized = await t.call("POST", `/api/invoices/${invoiceId}/fiscalize`, { cookie: manager, body: { method: "Kartë" } });
+    assert.equal(fiscalized.statusCode, 200);
+    assert.equal(payloads[0].body.paymentMethod, "Card", "invoice was paid Cash, but the override reports Card to BlueBill");
+    assert.match(payloads[0].idempotencyKey, /-Kartë$/);
+  } finally {
+    await t.close();
+  }
+});
+
+test("manager can switch waiter login mode; pin_only lets a waiter sign in by PIN alone", async () => {
+  const t = await setup();
+  try {
+    const manager = t.cookieOf(await t.managerLogin());
+    assert.equal((await t.call("PUT", "/api/venue/login-mode", { body: { loginMode: "pin_only" } })).statusCode, 401);
+    const waiterCookie = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("PUT", "/api/venue/login-mode", { cookie: waiterCookie, body: { loginMode: "pin_only" } })).statusCode, 403);
+    const saved = await t.call("PUT", "/api/venue/login-mode", { cookie: manager, body: { loginMode: "pin_only" } });
+    assert.equal(saved.statusCode, 200);
+    assert.deepEqual(saved.json(), { loginMode: "pin_only" });
+    assert.equal((await t.call("GET", "/api/auth/session", { cookie: manager })).json().venue.loginMode, "pin_only");
+    // A waiter can now sign in with just their PIN, no waiterId.
+    assert.equal((await t.call("POST", "/api/auth/waiter-login", { body: { pin: "482913" } })).statusCode, 200);
+    assert.equal((await t.call("POST", "/api/auth/waiter-login", { body: { pin: "000000" } })).statusCode, 401);
+    assert.equal((await t.call("PUT", "/api/venue/login-mode", { cookie: manager, body: { loginMode: "carrier-pigeon" } })).statusCode, 400);
+  } finally {
+    await t.close();
+  }
+});
+
+test("order.send gives each department its own ticket; stations mark them done; tickets outlive payment", async () => {
+  const t = await setup();
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Macchiato", price: 120, category: "Kafe", department: "Bar" });
+    await t.send("product.save", { name: "Tiramisu", price: 300, category: "Ushqim", department: "Ëmbëltore" });
+    await t.send("product.save", { name: "Picë", price: 600, category: "Ushqim", department: "Restorant" });
+    for (const id of [1, 2, 3]) await t.send("stock.receive", { productId: id, qty: 10 });
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const manager = t.cookieOf(await t.managerLogin());
+    const cmd = async (cookie, type, payload) => {
+      const version = (await t.call("GET", "/api/state", { cookie: manager })).json().version;
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const add = (productId) => cmd(waiter, "order.add", { tableId: 1, productId, waiterId: 1 });
+    const state = async () => (await t.call("GET", "/api/state", { cookie: manager })).json().state;
+
+    // One order with three stations' items -> three separate tickets, one per station.
+    await add(1); await add(1); await add(2); await add(3);
+    const first = await cmd(waiter, "order.send", { tableId: 1 });
+    assert.equal(first.statusCode, 200, first.body);
+    assert.deepEqual(
+      first.json().result.tickets.map((k) => [k.round, k.department, k.lines.map((l) => [l.name, l.qty])]),
+      [[1, "Bar", [["Macchiato", 2]]], [1, "Ëmbëltore", [["Tiramisu", 1]]], [1, "Restorant", [["Picë", 1]]]],
+    );
+    assert.deepEqual((await state()).tables[0].lines.map((l) => [l.qty, l.sent]), [[2, 2], [1, 1], [1, 1]]);
+    assert.equal((await cmd(waiter, "order.send", { tableId: 1 })).statusCode, 400, "nothing new to send");
+
+    // Already sent: a waiter can't quietly take it off the bill; an unsent unit they can.
+    assert.equal((await cmd(waiter, "order.remove", { tableId: 1, productId: 1 })).statusCode, 403);
+    await add(1);
+    assert.equal((await cmd(waiter, "order.remove", { tableId: 1, productId: 1 })).statusCode, 200);
+
+    // Round 2 carries only the new unit, only to its own station.
+    await add(1);
+    const second = (await cmd(waiter, "order.send", { tableId: 1 })).json().result;
+    assert.deepEqual(second.tickets.map((k) => [k.round, k.department, k.lines[0].qty]), [[2, "Bar", 1]]);
+
+    // The bar finishes both of its tickets (a waiter account on the bar's device).
+    const tickets = (await state()).tickets;
+    assert.equal(tickets.length, 4);
+    for (const k of tickets.filter((k) => k.department === "Bar"))
+      assert.equal((await cmd(waiter, "ticket.done", { id: k.id })).statusCode, 200);
+
+    // The customer pays before the pizza is made: one full invoice of everything,
+    // finished bar tickets are gone, but the kitchen and pastry still see theirs.
+    const pay = await cmd(manager, "order.pay", { tableId: 1, method: "Kartë" });
+    const invoiceId = pay.json().result.invoiceId;
+    const invoice = pay.json().state.invoices.find((i) => i.id === invoiceId);
+    assert.deepEqual(invoice.lines.map((l) => [l.name, l.qty]), [["Macchiato", 3], ["Tiramisu", 1], ["Picë", 1]]);
+    const after = (await state()).tickets;
+    assert.deepEqual(after.map((k) => [k.department, k.invoice]), [["Ëmbëltore", invoiceId], ["Restorant", invoiceId]]);
+
+    // The next customer at the same table starts again at round 1.
+    await add(2);
+    const next = (await cmd(waiter, "order.send", { tableId: 1 })).json().result;
+    assert.equal(next.round, 1);
+
+    // Finishing a paid ticket removes it from the station.
+    for (const k of after) await cmd(waiter, "ticket.done", { id: k.id });
+    assert.deepEqual((await state()).tickets.map((k) => [k.department, k.round, k.invoice]), [["Ëmbëltore", 1, null]]);
+
+    // Cancelling an order leaves the unfinished ticket on the station, marked cancelled.
+    await cmd(manager, "order.cancel", { tableId: 1, reason: "Klienti iku" });
+    const cancelled = (await state()).tickets;
+    assert.equal(cancelled.length, 1);
+    assert.ok(cancelled[0].cancelledAt);
   } finally {
     await t.close();
   }

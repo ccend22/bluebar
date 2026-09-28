@@ -109,6 +109,22 @@ const paths = {
       <path d="M3 21v-6h6" />
     </>
   ),
+  fingerprint: (
+    <>
+      <path d="M12 3a8 8 0 0 1 8 8v2.5a5 5 0 0 1-5 5" />
+      <path d="M12 3a8 8 0 0 0-8 8v3.5" />
+      <path d="M12 7a4 4 0 0 1 4 4v3a3 3 0 0 1-1.2 2.4" />
+      <path d="M12 7a4 4 0 0 0-4 4v6" />
+      <path d="M12 11v5" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </>
+  ),
   chart: (
     <>
       <path d="M4 20V10M12 20V4M20 20v-7" />
@@ -177,6 +193,20 @@ export function Empty({ icon = "search", title, children, action }) {
       <p>{children}</p>
       {action}
     </div>
+  );
+}
+// Each department gets a stable colour from its name, so a new "Grill" is tagged
+// without anyone picking a colour.
+const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+export function DepartmentTag({ name }) {
+  if (!name) return null;
+  return (
+    <span
+      className={`dept-tag ${name === "Tjetër" ? "neutral" : ""}`}
+      style={{ "--tag-hue": hue(name) }}
+    >
+      {name}
+    </span>
   );
 }
 export function Badge({ children, tone = "" }) {
@@ -384,7 +414,9 @@ export function TableSymbol({ shape }) {
 }
 
 const tableShapeOptions = ["Rreth", "Katror", "Drejtkëndësh", "Oval", "Bar"];
-export function TableShapePicker({ defaultValue = "Drejtkëndësh" }) {
+// Controlled: every click reports the shape straight away, so the table being edited
+// can preview it before anything is saved.
+export function TableShapePicker({ value = "Drejtkëndësh", onChange }) {
   return (
     <fieldset className="shape-picker">
       <legend>Forma e tavolinës</legend>
@@ -395,7 +427,8 @@ export function TableShapePicker({ defaultValue = "Drejtkëndësh" }) {
               type="radio"
               name="shape"
               value={shape}
-              defaultChecked={shape === (defaultValue || "Drejtkëndësh")}
+              checked={shape === (value || "Drejtkëndësh")}
+              onChange={() => onChange(shape)}
             />
             <TableSymbol shape={shape} />
             <span>{shape}</span>

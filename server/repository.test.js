@@ -110,3 +110,55 @@ test("server validates product, stock, category and staff inputs", () => {
     applyCommand(s, "waiter.create", { name: "Ardit Hoxha" }),
   );
 });
+test("departments route products by station, orthogonally to category", () => {
+  const s = { ...initialState(), departments: ["Bar"] };
+  // Case-insensitive duplicate, like categories.
+  assert.throws(() => applyCommand(s, "department.create", { name: "bar" }));
+  // Referencing a department that doesn't exist yet is rejected.
+  assert.throws(() =>
+    applyCommand(s, "product.save", {
+      name: "Pica",
+      price: 500,
+      category: "Ushqim",
+      department: "Kuzhinë",
+    }),
+  );
+  const withDept = applyCommand(s, "product.save", {
+    name: "Shpritz",
+    price: 350,
+    category: "Pije",
+    department: "Bar",
+  }).state;
+  assert.equal(withDept.products.find((x) => x.name === "Shpritz").department, "Bar");
+  // Omitting department on an existing product preserves it, matching how price/category
+  // are updated without needing every field re-sent.
+  const productId = withDept.products.find((x) => x.name === "Shpritz").id;
+  const updated = applyCommand(withDept, "product.save", {
+    id: productId,
+    name: "Shpritz",
+    price: 400,
+    category: "Pije",
+  }).state;
+  assert.equal(updated.products.find((x) => x.id === productId).department, "Bar");
+  const created = applyCommand(s, "department.create", { name: "Kuzhinë" }).state;
+  assert.deepEqual(created.departments, ["Bar", "Kuzhinë"]);
+});
+test("tables.save confirms several new/edited/moved tables at once, all or nothing", () => {
+  const s = initialState();
+  const next = applyCommand(s, "tables.save", {
+    tables: [
+      { area: "Tarraca", shape: "Rreth", seats: 2 },
+      { area: "Tarraca", shape: "Rreth", seats: 2 },
+      { id: 1, area: "Salla", shape: "Oval", seats: 8, posX: 40, posY: 60 },
+    ],
+  }).state;
+  const added = next.tables.slice(-2);
+  assert.deepEqual(added.map((t) => [t.area, t.shape, t.seats]), [["Tarraca", "Rreth", 2], ["Tarraca", "Rreth", 2]]);
+  assert.notDeepEqual([added[0].posX, added[0].posY], [added[1].posX, added[1].posY], "each new table gets its own spot");
+  const edited = next.tables.find((t) => t.id === 1);
+  assert.deepEqual([edited.shape, edited.seats, edited.posX, edited.posY], ["Oval", 8, 40, 60]);
+  assert.throws(() =>
+    applyCommand(s, "tables.save", { tables: [{ area: "Tarraca", shape: "Rreth" }, { area: "Salla", shape: "Trekëndësh" }] }),
+  );
+  assert.throws(() => applyCommand(s, "tables.save", { tables: [] }));
+});

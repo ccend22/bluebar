@@ -4,11 +4,15 @@ import { money, total } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
-import { FloorPlan, TableDetailPanel } from "./FloorPlan.jsx";
+import { LoginModeSettings } from "./LoginModeSettings.jsx";
+import { FloorPlan } from "./FloorPlan.jsx";
+import { arrange, collisions, sizeFor, spanOf } from "./floorGeometry.js";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { Reports } from "./Reports.jsx";
 import { Orders } from "./Orders.jsx";
-import { fetchSession, fiscalizeInvoice, logout, setUnauthorizedHandler, setWaiterPin } from "./api.js";
+import { Stations, useStationPrinting } from "./Stations.jsx";
+import { TableOrder } from "./TableOrder.jsx";
+import { fetchSession, fiscalizeInvoice, logout, reprintDocument, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
   Search,
@@ -18,6 +22,7 @@ import {
   SectionHeading,
   TableSymbol,
   TableShapePicker,
+  DepartmentTag,
 } from "./components.jsx";
 import "./style.css";
 
@@ -32,6 +37,11 @@ const pages = [
     name: "Porositë",
     icon: "list",
     description: "Porositë e hapura, si listë, gati për t'u mbyllur.",
+  },
+  {
+    name: "Repartet",
+    icon: "coffee",
+    description: "Fletët e çdo reparti — bar, ëmbëltore, restorant — gati për t'u përgatitur.",
   },
   {
     name: "Faturat",
@@ -82,16 +92,38 @@ const time = (value) =>
     minute: "2-digit",
     hour12: false,
   });
-function Receipt({ invoice, venueName, waiterName }) {
-  const fiscalized = invoice.fiscalStatus === "fiskalizuar" && invoice.fiscalIic;
+// products: optional — only passed by the manager-facing Faturat preview, never the
+// customer's printed copy. When present, groups lines by the product's current
+// department (bar/kuzhinë/ëmbëltore/...) so staff can see who prepared what; a line
+// whose product has no department, or was deleted since, falls into "Tjetër".
+function Receipt({ invoice, venueName, waiterName, products }) {
+  // preBill: a still-open table's order, printed before payment exists — no invoice
+  // number, no fiscal block, no payment method yet (see printOrder() in App).
+  const preBill = invoice.preBill;
+  const fiscalized = !preBill && invoice.fiscalStatus === "fiskalizuar" && invoice.fiscalIic;
+  const groups = products && (() => {
+    const byDept = new Map();
+    for (const l of invoice.lines) {
+      const dept = products.find((p) => p.id === l.id)?.department || "Tjetër";
+      if (!byDept.has(dept)) byDept.set(dept, []);
+      byDept.get(dept).push(l);
+    }
+    return [...byDept.entries()];
+  })();
   return (
     <>
       <div className="receipt-brand">
         {venueName || "BlueBar"}<span>BAR & KAFE</span>
       </div>
-      <p>{fiscalized ? "FATURË E FISKALIZUAR" : "KOPJE DEMO · JO FATURË FISKALE"}</p>
+      <p>
+        {preBill
+          ? "PARA-FATURË · JO PËR PAGESË"
+          : fiscalized
+            ? "FATURË E FISKALIZUAR"
+            : "KOPJE DEMO · JO FATURË FISKALE"}
+      </p>
       <div className="receipt-meta">
-        <span>Fatura D-{invoice.id}</span>
+        {!preBill && <span>Fatura D-{invoice.id}</span>}
         <span>Tavolina {String(invoice.table).padStart(2, "0")}</span>
       </div>
       <p>
@@ -99,21 +131,36 @@ function Receipt({ invoice, venueName, waiterName }) {
         {waiterName ? ` · ${waiterName}` : ""}
       </p>
       <hr />
-      {invoice.lines.map((l) => (
-        <div className="receipt-line" key={l.id}>
-          <span>
-            {l.qty} × {l.name}
-            <small>{money(l.price)} / copë</small>
-          </span>
-          <b>{money(l.qty * l.price)}</b>
-        </div>
-      ))}
+      {groups
+        ? groups.map(([dept, lines]) => (
+            <div className="receipt-department" key={dept}>
+              <p className="receipt-department-title">{dept.toUpperCase()}</p>
+              {lines.map((l) => (
+                <div className="receipt-line" key={l.id}>
+                  <span>
+                    {l.qty} × {l.name}
+                    <small>{money(l.price)} / copë</small>
+                  </span>
+                  <b>{money(l.qty * l.price)}</b>
+                </div>
+              ))}
+            </div>
+          ))
+        : invoice.lines.map((l) => (
+            <div className="receipt-line" key={l.id}>
+              <span>
+                {l.qty} × {l.name}
+                <small>{money(l.price)} / copë</small>
+              </span>
+              <b>{money(l.qty * l.price)}</b>
+            </div>
+          ))}
       <hr />
       <div className="receipt-total">
         <b>TOTALI</b>
         <strong>{money(invoice.total)}</strong>
       </div>
-      <p>Pagesa: {invoice.method}</p>
+      {!preBill && <p>Pagesa: {invoice.method}</p>}
       {fiscalized && (
         <>
           <hr />
@@ -125,6 +172,39 @@ function Receipt({ invoice, venueName, waiterName }) {
         </>
       )}
       <p>Faleminderit për vizitën!</p>
+    </>
+  );
+}
+// What one "Dërgo" round sent to one station: no prices, big quantities — it's a
+// work order for the bar/kitchen, not a bill. The full invoice comes at payment.
+// Exact amount, then the next 500 / 1,000 / 5,000 up — the notes a customer hands over.
+const amount = (n) => new Intl.NumberFormat("sq-AL", { maximumFractionDigits: 0 }).format(n);
+const quickCash = (t) =>
+  [...new Set([t, ...[500, 1000, 5000].map((n) => Math.ceil(t / n) * n)])].slice(0, 4);
+function StationTicket({ ticket, waiterName }) {
+  return (
+    <>
+      <div className="receipt-brand">
+        {ticket.department.toUpperCase()}
+        <span>{ticket.cancelledAt ? "ANULUAR · MOS E PËRGATITNI" : "POROSI PËR REPARTIN"}</span>
+      </div>
+      <div className="receipt-meta">
+        <span>Tavolina {String(ticket.table).padStart(2, "0")}</span>
+        <span>Raundi {ticket.round}</span>
+      </div>
+      <p>
+        {date(ticket.date)} · {time(ticket.date)}
+        {waiterName ? ` · ${waiterName}` : ""}
+      </p>
+      <hr />
+      {ticket.lines.map((l) => (
+        <div className="receipt-line station-line" key={l.id}>
+          <span>
+            <b>{l.qty} ×</b> {l.name}
+          </span>
+        </div>
+      ))}
+      <hr />
     </>
   );
 }
@@ -225,10 +305,18 @@ function App({ user, onLogout }) {
     [cancelling, setCancelling] = useState(false),
     [deleteConfirmId, setDeleteConfirmId] = useState(null),
     [floorEditing, setFloorEditing] = useState(false),
-    [floorDraft, setFloorDraft] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
     [floorSaving, setFloorSaving] = useState(false),
-    [orderMode, setOrderMode] = useState("summary");
+    // Table management works on an unsaved draft — new tables, edited area/shape/seats,
+    // moved/resized tables — shown live everywhere and saved with one "Konfirmo".
+    [tableEdits, setTableEdits] = useState({}),
+    [tableLayout, setTableLayout] = useState({}),
+    [tablesAdded, setTablesAdded] = useState([]),
+    [newTable, setNewTable] = useState({ area: "", shape: "Drejtkëndësh", seats: 4 }),
+    [orderMode, setOrderMode] = useState("summary"),
+    [fiscalizeChoice, setFiscalizeChoice] = useState(false),
+    [ticketPrint, setTicketPrint] = useState(null),
+    [deptFilter, setDeptFilter] = useState("Të gjitha");
   const dialog = useRef(null),
     dialogTrigger = useRef(null),
     heading = useRef(null),
@@ -268,42 +356,88 @@ function App({ user, onLogout }) {
     }
   };
   const nav = (p) => {
+    if (!leaveTableDraft()) return;
     setPage(p);
     setSelected(null);
     setQuery("");
     setCategory("Të gjitha");
+    setDeptFilter("Të gjitha");
     setNotice(null);
     setEditor(null);
     setReceipt(null);
+    setTicketPrint(null);
     setManageTables(false);
     setReport(null);
     setFloorEditing(false);
-    setFloorDraft(null);
     setFloorSelected(null);
     setOrderMode("summary");
     setTimeout(() => heading.current?.focus(), 0);
   };
-  const startFloorEdit = () => {
-    setFloorDraft(
-      Object.fromEntries(
-        activeTables.map((t) => [t.id, { posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation }]),
-      ),
-    );
-    setFloorSelected(null);
-    setFloorEditing(true);
+  const tableFields = (t) => ({ area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats });
+  const draftCount = {
+    added: tablesAdded.length,
+    edited: Object.keys(tableEdits).length,
+    moved: Object.keys(tableLayout).filter((id) => !tableEdits[id]).length,
   };
-  const cancelFloorEdit = () => {
-    setFloorEditing(false);
-    setFloorDraft(null);
-    setFloorSelected(null);
+  const draftDirty = draftCount.added + draftCount.edited + draftCount.moved > 0;
+  const discardTableDraft = () => {
+    setTableEdits({});
+    setTableLayout({});
+    setTablesAdded([]);
+    setEditor(null);
   };
+  // false = the manager chose to stay and keep their unsaved tables.
+  const leaveTableDraft = () => {
+    if (draftDirty && !window.confirm("Ndryshimet e tavolinave nuk janë ruajtur. T'i hedh poshtë?")) return false;
+    discardTableDraft();
+    return true;
+  };
+  // Only differences from the saved table are kept, so undoing a change by hand
+  // (clicking the old shape again) leaves nothing pending.
+  const editTable = (id, patch) =>
+    setTableEdits((edits) => {
+      const saved = tableFields(state.tables.find((t) => t.id === id));
+      const merged = { ...saved, ...edits[id], ...patch };
+      const { [id]: _, ...rest } = edits;
+      return Object.keys(saved).every((k) => saved[k] === merged[k]) ? rest : { ...edits, [id]: merged };
+    });
   const changeFloorLayout = (id, patch) =>
-    setFloorDraft((d) => ({ ...d, [id]: { ...d[id], ...patch } }));
-  async function saveFloorLayout() {
+    setTableLayout((layout) => {
+      const t = state.tables.find((x) => x.id === id);
+      return {
+        ...layout,
+        [id]: { posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation, ...layout[id], ...patch },
+      };
+    });
+  const addDraftTable = () => {
+    const area = newTable.area.trim();
+    if (!area) return notify("Vendosni zonën e tavolinës.", "error");
+    setTablesAdded((added) => [...added, { key: crypto.randomUUID(), ...newTable, area }]);
+  };
+  async function saveTableDraft() {
+    if (Object.values(tableEdits).some((e) => !e.area.trim()))
+      return notify("Çdo tavolinë duhet të ketë një zonë.", "error");
+    const ids = [...new Set([...Object.keys(tableEdits), ...Object.keys(tableLayout)])].map(Number);
+    const tables = [
+      ...ids
+        .map((id) => state.tables.find((t) => t.id === id))
+        .filter(Boolean)
+        .map((t) => {
+          const fields = { ...tableFields(t), ...tableEdits[t.id] };
+          return { id: t.id, ...fields, area: fields.area.trim(), ...tableLayout[t.id] };
+        }),
+      ...tablesAdded.map(({ area, shape, seats }) => ({ area, shape, seats })),
+    ];
+    const parts = [
+      draftCount.added && `${draftCount.added} ${draftCount.added === 1 ? "tavolinë e re" : "tavolina të reja"}`,
+      draftCount.edited && `${draftCount.edited} ${draftCount.edited === 1 ? "e ndryshuar" : "të ndryshuara"}`,
+      draftCount.moved && `${draftCount.moved} ${draftCount.moved === 1 ? "e zhvendosur" : "të zhvendosura"}`,
+    ].filter(Boolean);
     setFloorSaving(true);
-    const tables = Object.entries(floorDraft).map(([id, p]) => ({ id: Number(id), ...p }));
-    if (await update("table.layout", { tables }, "Plani i sallës u ruajt."))
-      cancelFloorEdit();
+    if (await update("tables.save", { tables }, `U ruajt: ${parts.join(" · ")}.`)) {
+      discardTableDraft();
+      setFloorSelected(null);
+    }
     setFloorSaving(false);
   }
   const selectTable = (t) => {
@@ -332,11 +466,10 @@ function App({ user, onLogout }) {
         a.localeCompare(b, "sq"),
       ),
     ];
-  // While editing, the canvas shows the local draft position/size/rotation; nothing
-  // reaches the server until "Ruaj planin" sends it as one table.layout command.
-  const floorTables = floorDraft
-    ? activeTables.map((t) => (floorDraft[t.id] ? { ...t, ...floorDraft[t.id] } : t))
-    : activeTables;
+  // The floor plan shows the unsaved draft (shape, size, position) as if it were saved.
+  const floorTables = activeTables.map((t) => ({ ...t, ...tableEdits[t.id], ...tableLayout[t.id] }));
+  // Tables (by id) that claim a cell another table also claims.
+  const floorClashes = [...new Set(collisions(floorTables).flat())];
   const table = activeTables.find((t) => t.id === selected),
     occupied = activeTables.filter((t) => t.lines.length).length;
   const available = (p) =>
@@ -355,6 +488,12 @@ function App({ user, onLogout }) {
       matches(`D-${i.id}`, query) &&
       (paymentFilter === "Të gjitha" || i.method === paymentFilter),
   );
+  const menuProducts = filteredProducts.filter(
+    (p) =>
+      deptFilter === "Të gjitha" ||
+      (deptFilter === "Pa nënkategori" ? !p.department : p.department === deptFilter),
+  );
+  const unrouted = state.products.filter((p) => !p.department).length;
   const filteredStock = state.products.filter(
     (p) =>
       matches(`${p.name} ${p.category}`, query) &&
@@ -371,9 +510,83 @@ function App({ user, onLogout }) {
       .reduce((s, i) => s + i.total, 0),
     expected = (state.shift?.opening || 0) + cashSales;
   const lowStock = state.products.filter((p) => p.stock <= 10).length;
+  const pendingUnits = (t) => t.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0);
   const print = (invoice) => {
+    setTicketPrint(null);
     setReceipt(invoice);
     setTimeout(() => window.print(), 100);
+  };
+  // One print job, one page per station — on a thermal printer each ticket is cut
+  // separately, so the kitchen slip and the bar slip come out apart.
+  const printTickets = (tickets) => {
+    setTicketPrint(tickets);
+    setTimeout(() => window.print(), 100);
+  };
+  // The waiter's device doesn't print: each department's own device (Repartet →
+  // "Printeri i kësaj pajisjeje") prints its own ticket. "Printo fletët" on the
+  // notice is the fallback for a venue without station devices.
+  const sendOrder = async (t) => {
+    const data = await update("order.send", { tableId: t.id });
+    if (data)
+      setNotice({
+        text: `U dërgua te: ${data.result.tickets.map((k) => k.department).join(", ")}.`,
+        tone: "success",
+        tickets: data.result.tickets,
+      });
+  };
+  // Departments / invoices a LAN printer covers go through the print agent; the rest
+  // still print from this browser.
+  const networked = state.printers.flatMap((p) => p.departments);
+  const cashierPrinter = state.printers.find((p) => p.receipts);
+  const [stationDepartments, toggleStation] = useStationPrinting(
+    state.tickets,
+    database.ready,
+    printTickets,
+    networked,
+  );
+  const reprintTickets = async (tickets) => {
+    const local = tickets.filter((k) => !networked.includes(k.department));
+    try {
+      for (const k of tickets.filter((k) => networked.includes(k.department)))
+        await reprintDocument("ticket", k.id);
+      if (local.length) printTickets(local);
+      else notify("Fleta u dërgua te printeri i repartit.");
+    } catch (e) {
+      notify(e.message, "error");
+    }
+  };
+  const reprintInvoice = async (invoice) => {
+    if (!cashierPrinter) return print(invoice);
+    try {
+      await reprintDocument("invoice", invoice.id);
+      notify(`Fatura D-${invoice.id} u dërgua te ${cashierPrinter.name}.`);
+    } catch (e) {
+      notify(e.message, "error");
+    }
+  };
+  useEffect(() => {
+    const clear = () => setTicketPrint(null);
+    window.addEventListener("afterprint", clear);
+    return () => window.removeEventListener("afterprint", clear);
+  }, []);
+  useEffect(() => {
+    // A kitchen screen can't wait the default 10s poll for new tickets.
+    if (page !== "Repartet") return;
+    const timer = setInterval(() => database.refresh(), 4000);
+    return () => clearInterval(timer);
+  }, [page]);
+  // Porositë's "Printo faturën": a pre-bill for a still-open table, before any
+  // payment/invoice exists — see Receipt's preBill handling above.
+  const printOrder = (t) => {
+    print({
+      preBill: true,
+      id: t.id,
+      table: t.id,
+      waiter: t.waiter,
+      date: new Date().toISOString(),
+      lines: t.lines,
+      total: total(t.lines),
+    });
   };
   const startPayment = (method) => {
     setReceived("");
@@ -396,9 +609,14 @@ function App({ user, onLogout }) {
     e.preventDefault();
     if (payment !== "Cash" && payment !== "Kartë") return;
     if (payment === "Cash" && Number(received) < total(table.lines)) return;
+    // Two submit buttons share this form; which one fired the submit decides
+    // whether the sale also gets fiscalized right away or is left for later
+    // (from Faturat's "Fiskalizo Faturën").
+    const autoFiscalize = e.nativeEvent.submitter?.value !== "skip-fiscalize";
     const command = {
       tableId: selected,
       method: payment,
+      fiscalize: autoFiscalize,
       ...(payment === "Cash" ? { received: Number(received) } : {}),
     };
     cancelPayment();
@@ -410,17 +628,25 @@ function App({ user, onLogout }) {
       setReceipt(invoice);
       setSelected(null);
       notify(
-        `Pagesa u regjistrua. Fatura D-${invoice.id} · ${money(invoice.total)}`,
+        `Pagesa u regjistrua. Fatura D-${invoice.id} · ${money(invoice.total)}` +
+          (cashierPrinter ? ` · po printohet te ${cashierPrinter.name}` : ""),
       );
+      // The full invoice prints on its own. With a cashier network printer the server
+      // already queued it (held until the NIVF arrives when fiscalizing); otherwise
+      // this browser prints it — after fiscalization, so the copy carries the codes.
+      const printHere = (inv) => !cashierPrinter && print(inv);
       // Best-effort and non-blocking: the sale is already done. A real tax-authority
       // round trip can take a few seconds, so this updates the receipt once it resolves
       // rather than making the customer wait before the payment even looks finished.
-      fiscalizeInvoice(invoice.id)
-        .then((data) => {
-          const fiscalized = data.state.invoices.find((i) => i.id === invoice.id);
-          if (fiscalized) setReceipt((current) => (current?.id === invoice.id ? fiscalized : current));
-        })
-        .catch(() => {});
+      if (autoFiscalize)
+        fiscalizeInvoice(invoice.id)
+          .then((data) => {
+            const fiscalized = data.state.invoices.find((i) => i.id === invoice.id) || invoice;
+            setReceipt((current) => (current?.id === invoice.id ? fiscalized : current));
+            printHere(fiscalized);
+          })
+          .catch(() => printHere(invoice));
+      else printHere(invoice);
     }
   }
   async function saveProduct(e) {
@@ -430,6 +656,9 @@ function App({ user, onLogout }) {
       price = Number(form.get("price"));
     if (!name || !Number.isSafeInteger(price) || price <= 0)
       return notify("Vendosni një emër dhe një çmim të vlefshëm.", "error");
+    // Without a department the product's tickets can't reach any station.
+    if (state.departments.length && !form.get("department"))
+      return notify("Zgjidhni nënkategorinë — reparti ku përgatitet produkti.", "error");
     if (
       state.products.some(
         (p) =>
@@ -445,26 +674,11 @@ function App({ user, onLogout }) {
           name,
           price,
           category: form.get("category"),
+          department: form.get("department") || undefined,
         },
         editor.id
           ? "Produkti u përditësua. Porositë ekzistuese ruajnë çmimin e tyre."
           : "Produkti u shtua. Shtoni gjendjen fillestare te Inventari.",
-      )
-    )
-      setEditor(null);
-  }
-  async function saveTable(e) {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget),
-      area = form.get("area").trim(),
-      shape = form.get("shape") || undefined,
-      seats = Number(form.get("seats"));
-    if (!area) return notify("Vendosni zonën e tavolinës.", "error");
-    if (
-      await update(
-        "table.save",
-        { ...(editor.id ? { id: editor.id } : {}), area, shape, seats },
-        editor.id ? "Tavolina u përditësua." : "Tavolina u shtua.",
       )
     )
       setEditor(null);
@@ -573,7 +787,7 @@ function App({ user, onLogout }) {
           </div>
           <nav aria-label="Navigimi kryesor">
             {pages
-              .filter((p) => role === "Menaxher" || p.name === "Tavolinat" || p.name === "Porositë")
+              .filter((p) => role === "Menaxher" || ["Tavolinat", "Porositë", "Repartet"].includes(p.name))
               .map((p) => (
                 <button
                   key={p.name}
@@ -654,10 +868,11 @@ function App({ user, onLogout }) {
                   manageTables ? (
                     <button
                       onClick={() => {
-                        cancelFloorEdit();
+                        if (!leaveTableDraft()) return;
+                        setFloorEditing(false);
+                        setFloorSelected(null);
                         setManageTables(false);
                         setSelected(null);
-                        setEditor(null);
                       }}
                     >
                       <Icon name="tables" size={18} />
@@ -702,10 +917,17 @@ function App({ user, onLogout }) {
                 <span>{notice.text}</span>
                 {(page === "Tavolinat" || page === "Porositë") &&
                   receipt &&
+                  !notice.tickets &&
                   notice.tone === "success" && (
-                    <button onClick={() => print(receipt)}>
+                    <button onClick={() => reprintInvoice(receipt)}>
                       <Icon name="print" size={16} />
                       Printo faturën
+                    </button>
+                  )}
+                {notice.tickets?.some((k) => !networked.includes(k.department)) && (
+                    <button onClick={() => printTickets(notice.tickets.filter((k) => !networked.includes(k.department)))}>
+                      <Icon name="print" size={16} />
+                      Printo fletët
                     </button>
                   )}
                 {page === "Turnet" && report && notice.tone === "success" && (
@@ -734,57 +956,69 @@ function App({ user, onLogout }) {
                     >
                       <div className="floor-edit-actions">
                         {floorEditing ? (
-                          <>
-                            <button onClick={cancelFloorEdit} disabled={floorSaving}>Anulo planin</button>
-                            <button className="primary" onClick={saveFloorLayout} disabled={floorSaving}>
-                              <Icon name="check" size={17} />
-                              {floorSaving ? "Po ruhet…" : "Ruaj planin"}
-                            </button>
-                          </>
+                          <button onClick={() => (setFloorEditing(false), setFloorSelected(null))}>
+                            <Icon name="tables" size={17} />
+                            Lista e tavolinave
+                          </button>
                         ) : (
-                          <>
-                            <button onClick={startFloorEdit} disabled={!activeTables.length}>
-                              <Icon name="location" size={17} />
-                              Vendos tavolinat në sallë
-                            </button>
-                            <button className="primary" onClick={() => setEditor({})}>
-                              <Icon name="plus" size={18} />
-                              Shto tavolinë
-                            </button>
-                          </>
+                          <button onClick={() => setFloorEditing(true)} disabled={!activeTables.length}>
+                            <Icon name="location" size={17} />
+                            Vendos tavolinat në sallë
+                          </button>
                         )}
+                        <button className="primary" onClick={() => setEditor({})}>
+                          <Icon name="plus" size={18} />
+                          Shto tavolina
+                        </button>
                       </div>
                     </SectionHeading>
                     {floorEditing ? (
                       <div className="floor-management">
-                        <p className="floor-edit-hint">
-                          <Icon name="info" size={16} />
-                          Tërhiqni tavolinat për t’i vendosur. Zgjidhni një tavolinë për ta rrotulluar ose për t’i ndryshuar madhësinë.
-                        </p>
+                        {floorClashes.length > 0 ? (
+                          <div className="notice warning floor-clash">
+                            <Icon name="info" size={16} />
+                            <span>
+                              {floorClashes.length} tavolina mbivendosen: {floorClashes.map((id) => String(id).padStart(2, "0")).join(", ")}.
+                            </span>
+                            <button
+                              onClick={() => {
+                                for (const [id, patch] of Object.entries(arrange(floorTables)))
+                                  changeFloorLayout(Number(id), patch);
+                              }}
+                            >
+                              Rregullo automatikisht
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="floor-edit-hint">
+                            <Icon name="info" size={16} />
+                            Tërhiqni tavolinat në një kuti të lirë. Zgjidhni një tavolinë për ta rrotulluar ose zmadhuar; kutia e kuqe tregon që vendi është i zënë.
+                          </p>
+                        )}
                         <FloorPlan
                           tables={floorTables}
                           editing
                           selected={floorSelected}
-                          waiters={state.waiters}
                           onSelectTable={(t) => setFloorSelected(t?.id ?? null)}
                           onLayoutChange={changeFloorLayout}
                         />
                         {floorSelected && (
                           <div className="floor-selected-tools">
-                            <span>Tavolina {String(floorSelected).padStart(2, "0")} · {state.tables.find((t) => t.id === floorSelected)?.shape}</span>
-                            <button onClick={() => setEditor({ ...state.tables.find((t) => t.id === floorSelected) })}>
+                            <span>Tavolina {String(floorSelected).padStart(2, "0")} · {floorTables.find((t) => t.id === floorSelected)?.shape}</span>
+                            <button onClick={() => setEditor({ id: floorSelected })}>
                               Ndrysho formën dhe vendet
                             </button>
                           </div>
                         )}
                       </div>
-                    ) : state.tables.length ? (
+                    ) : state.tables.length || tablesAdded.length ? (
                       <div className="table-admin-grid">
                         {[...state.tables]
                           .sort((a, b) => a.id - b.id)
+                          .map((saved) => ({ ...saved, ...tableEdits[saved.id] }))
                           .map((t) => (
                             <article
-                              className={`table-admin-card ${t.active ? "" : "inactive"}`}
+                              className={`table-admin-card ${t.active ? "" : "inactive"} ${editor?.id === t.id ? "editing" : ""} ${tableEdits[t.id] ? "drafted" : ""}`}
                               key={t.id}
                             >
                               <div className="table-admin-head">
@@ -792,9 +1026,13 @@ function App({ user, onLogout }) {
                                   <small>Tavolina</small>
                                   <strong>{String(t.id).padStart(2, "0")}</strong>
                                 </div>
-                                <Badge tone={t.active ? "green" : ""}>
-                                  {t.active ? "Aktive" : "Joaktive"}
-                                </Badge>
+                                {tableEdits[t.id] ? (
+                                  <Badge tone="amber">E ndryshuar</Badge>
+                                ) : (
+                                  <Badge tone={t.active ? "green" : ""}>
+                                    {t.active ? "Aktive" : "Joaktive"}
+                                  </Badge>
+                                )}
                               </div>
                               <div className="table-admin-visual">
                                 <TableSymbol shape={t.shape} />
@@ -804,12 +1042,14 @@ function App({ user, onLogout }) {
                               </div>
                               <div className="table-admin-zone">
                                 <Icon name="location" size={15} />
-                                <span>{t.area}</span>
+                                <span>
+                                  {t.area} · {t.seats} vende
+                                </span>
                               </div>
                               <div className="table-admin-actions">
                                 <button
                                   aria-label={`Ndrysho tavolinën ${t.id}`}
-                                  onClick={() => setEditor({ ...t })}
+                                  onClick={() => setEditor({ id: t.id })}
                                 >
                                   <Icon name="edit" size={17} />
                                   Ndrysho
@@ -892,64 +1132,155 @@ function App({ user, onLogout }) {
                               })()}
                             </article>
                           ))}
+                        {tablesAdded.map((t, n) => (
+                          <article className="table-admin-card drafted new" key={t.key}>
+                            <div className="table-admin-head">
+                              <div>
+                                <small>Tavolinë e re</small>
+                                <strong>+{n + 1}</strong>
+                              </div>
+                              <Badge tone="amber">E re</Badge>
+                            </div>
+                            <div className="table-admin-visual">
+                              <TableSymbol shape={t.shape} />
+                            </div>
+                            <div className="table-admin-zone">
+                              <Icon name="location" size={15} />
+                              <span>
+                                {t.area} · {t.seats} vende
+                              </span>
+                            </div>
+                            <div className="table-admin-actions">
+                              <button
+                                className="subtle-button"
+                                aria-label={`Hiq tavolinën e re ${n + 1}`}
+                                onClick={() => setTablesAdded((added) => added.filter((x) => x.key !== t.key))}
+                              >
+                                <Icon name="close" size={17} />
+                                Hiq
+                              </button>
+                            </div>
+                          </article>
+                        ))}
                       </div>
                     ) : (
                       <Empty icon="tables" title="Ende pa tavolina">
                         Shtoni tavolinën e parë për të nisur sallën.
                       </Empty>
                     )}
+                    {draftDirty && (
+                      <div className="draft-bar" role="status">
+                        <span>
+                          <b>Pa ruajtur:</b>{" "}
+                          {[
+                            draftCount.added && `${draftCount.added} ${draftCount.added === 1 ? "e re" : "të reja"}`,
+                            draftCount.edited && `${draftCount.edited} ${draftCount.edited === 1 ? "e ndryshuar" : "të ndryshuara"}`,
+                            draftCount.moved && `${draftCount.moved} ${draftCount.moved === 1 ? "e zhvendosur" : "të zhvendosura"}`,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                        <button onClick={discardTableDraft} disabled={floorSaving}>
+                          Anulo
+                        </button>
+                        <button className="primary" onClick={saveTableDraft} disabled={floorSaving}>
+                          <Icon name="check" size={17} />
+                          {floorSaving ? "Po ruhet…" : "Konfirmo"}
+                        </button>
+                      </div>
+                    )}
                   </section>
                   <aside className="management-aside">
-                    {editor && (
-                      <section className="panel editor-panel">
-                        <SectionHeading
-                          title={
-                            editor.id ? "Ndrysho tavolinën" : "Tavolinë e re"
-                          }
-                        >
-                          <button
-                            className="icon-button"
-                            onClick={() => setEditor(null)}
-                            aria-label="Mbyll formularin e tavolinës"
+                    {editor && (() => {
+                      const editing = editor.id && state.tables.find((t) => t.id === editor.id);
+                      const values = editing ? { ...tableFields(editing), ...tableEdits[editing.id] } : newTable;
+                      const change = (patch) => {
+                        if (!editing) return setNewTable((v) => ({ ...v, ...patch }));
+                        editTable(editing.id, patch);
+                        // A bar only reads as a counter when it's wide: give the preview
+                        // (and the save) bar proportions, and square it again when leaving Bar.
+                        // Same cells, new proportions — so a shape change can never collide.
+                        const current = { ...editing, ...tableEdits[editing.id], ...tableLayout[editing.id] };
+                        if (patch.shape && (patch.shape === "Bar") !== (current.shape === "Bar")) {
+                          const { cols, rows } = spanOf(current);
+                          changeFloorLayout(editing.id, sizeFor(patch.shape, cols, rows));
+                        }
+                      };
+                      return (
+                        <section className="panel editor-panel">
+                          <SectionHeading
+                            title={editing ? `Tavolina ${String(editing.id).padStart(2, "0")}` : "Tavolina të reja"}
+                            description={
+                              editing
+                                ? "Ndryshimi shfaqet menjëherë; ruhet kur shtypni Konfirmo."
+                                : "Shtoni sa të doni, pastaj Konfirmo një herë."
+                            }
                           >
-                            <Icon name="close" size={18} />
-                          </button>
-                        </SectionHeading>
-                        <form
-                          key={editor.id || "new"}
-                          className="stack-form"
-                          onSubmit={saveTable}
-                        >
-                          <Field
-                            label="Zona"
-                            name="area"
-                            defaultValue={editor.area || ""}
-                            placeholder="p.sh. Salla"
-                            maxLength={40}
-                            required
-                            autoFocus
-                          />
-                          <TableShapePicker
-                            defaultValue={editor.shape || "Drejtkëndësh"}
-                          />
-                          <Field
-                            label="Numri i vendeve"
-                            name="seats"
-                            type="number"
-                            min={1}
-                            max={12}
-                            defaultValue={editor.seats || 4}
-                            required
-                          />
-                          <p className="helper">
-                            Forma dhe vendet caktohen këtu; pozicioni vendoset te "Vendos tavolinat në sallë".
-                          </p>
-                          <button className="primary">
-                            {editor.id ? "Ruaj ndryshimet" : "Shto tavolinë"}
-                          </button>
-                        </form>
-                      </section>
-                    )}
+                            <button className="icon-button" onClick={() => setEditor(null)} aria-label="Mbyll formularin e tavolinës">
+                              <Icon name="close" size={18} />
+                            </button>
+                          </SectionHeading>
+                          <form
+                            key={editor.id || "new"}
+                            className="stack-form"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              editing ? setEditor(null) : addDraftTable();
+                            }}
+                          >
+                            <Field
+                              label="Zona"
+                              name="area"
+                              list="table-areas"
+                              value={values.area}
+                              onChange={(e) => change({ area: e.target.value })}
+                              placeholder="p.sh. Salla"
+                              maxLength={40}
+                              autoFocus={!editing}
+                            />
+                            <datalist id="table-areas">
+                              {[...new Set(state.tables.map((t) => t.area))].map((a) => (
+                                <option key={a} value={a} />
+                              ))}
+                            </datalist>
+                            <TableShapePicker value={values.shape} onChange={(shape) => change({ shape })} />
+                            <div className="field">
+                              <span>Numri i vendeve</span>
+                              <div className="quantity seats-stepper">
+                                <button type="button" aria-label="Një vend më pak" disabled={values.seats <= 1} onClick={() => change({ seats: values.seats - 1 })}>
+                                  −
+                                </button>
+                                <span>{values.seats}</span>
+                                <button type="button" aria-label="Një vend më shumë" disabled={values.seats >= 12} onClick={() => change({ seats: values.seats + 1 })}>
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                            {editing ? (
+                              <div className="actions">
+                                {(tableEdits[editing.id] || tableLayout[editing.id]) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTableEdits(({ [editing.id]: _, ...rest }) => rest);
+                                      setTableLayout(({ [editing.id]: _, ...rest }) => rest);
+                                    }}
+                                  >
+                                    Rikthe
+                                  </button>
+                                )}
+                                <button className="primary">Mbaro</button>
+                              </div>
+                            ) : (
+                              <button className="primary">
+                                <Icon name="plus" size={17} />
+                                Shto tavolinën{tablesAdded.length ? ` (${tablesAdded.length} gati)` : ""}
+                              </button>
+                            )}
+                          </form>
+                        </section>
+                      );
+                    })()}
                     <div className="info-note">
                       <Icon name="tables" />
                       <div>
@@ -1029,6 +1360,21 @@ function App({ user, onLogout }) {
                           onChange={setStatus}
                         />
                       </div>
+                    {role === "Menaxher" && floorClashes.length > 0 && (
+                      <div className="notice warning floor-clash">
+                        <Icon name="info" size={16} />
+                        <span>Disa tavolina mbivendosen në sallë.</span>
+                        <button
+                          onClick={() => {
+                            setManageTables(true);
+                            setFloorEditing(true);
+                            setSelected(null);
+                          }}
+                        >
+                          Rregullo sallën
+                        </button>
+                      </div>
+                    )}
                     {(() => {
                       const visible = activeTables.filter(
                         (t) =>
@@ -1041,7 +1387,6 @@ function App({ user, onLogout }) {
                           tables={visible}
                           editing={false}
                           selected={selected}
-                          waiters={state.waiters}
                           onSelectTable={(t) => t && selectTable(t)}
                         />
                       ) : (
@@ -1065,238 +1410,33 @@ function App({ user, onLogout }) {
                     })()}
                   </section>
                   {table ? (
-                    <section
-                      className="order"
-                      aria-label={`Porosia e tavolinës ${table.id}`}
-                    >
-                      <div className="order-heading">
-                        <div>
-                          <span className="order-title">
-                            <Icon name="tables" />
-                            <h2 ref={orderHeading} tabIndex={-1}>
-                              Tavolina {String(table.id).padStart(2, "0")}
-                            </h2>
-                          </span>
-                          <p>
-                            {table.area} ·{" "}
-                            {table.lines.length
-                              ? "Porosi e hapur"
-                              : "Porosi e re"}
-                          </p>
-                        </div>
-                        <button
-                          className="icon-button"
-                          onClick={() => setSelected(null)}
-                          aria-label="Kthehu te tavolinat"
-                        >
-                          <Icon name="close" />
-                        </button>
-                      </div>
-                      <TableDetailPanel table={table} time={time} />
-                      <div className="order-body">
-                        {!state.waiters.some((w) => w.active) && (
-                          <p className="notice warning">
-                            Shtoni një kamarier aktiv te Kamarierët përpara
-                            porosisë.
-                          </p>
-                        )}
-                        {role === "Kamarier" && table.lines.length && table.waiter !== user.waiterId ? (
-                          <div className="field claim-field">
-                            <span>Kamarieri</span>
-                            <div className="claim-row">
-                              <strong>{state.waiters.find((w) => w.id === table.waiter)?.name || "—"}</strong>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  update("order.assign", { tableId: selected, waiterId: user.waiterId })
-                                }
-                              >
-                                Merre tavolinën
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <ChoiceField
-                            label="Kamarieri"
-                            disabled={role === "Kamarier"}
-                            value={table.lines.length ? table.waiter : waiter}
-                            options={state.waiters
-                              .filter((w) => w.active || (table.lines.length && w.id === table.waiter))
-                              .map((w) => ({ value: w.id, label: w.name }))}
-                            onChange={(next) => {
-                              setWaiter(next);
-                              update("order.assign", {
-                                tableId: selected,
-                                waiterId: next,
-                              });
-                            }}
-                          />
-                        )}
-                        <div className="order-mode-tabs" role="group" aria-label="Pamja e porosisë">
-                          <button aria-pressed={orderMode === "summary"} disabled={!table.lines.length} onClick={() => setOrderMode("summary")}>Porosia</button>
-                          <button aria-pressed={orderMode === "add"} onClick={() => setOrderMode("add")}><Icon name="plus" size={16} /> Shto artikuj</button>
-                        </div>
-                        {orderMode === "add" && <div className="order-add-products">
-                        <Search
-                          label="Kërko produkt për porosinë"
-                          placeholder="Kërko një produkt…"
-                          value={query}
-                          onChange={setQuery}
-                        />
-                        <div
-                          className="category-tabs"
-                          aria-label="Kategoritë e menusë"
-                        >
-                          {["Të gjitha", ...state.categories].map((c) => (
-                            <button
-                              key={c}
-                              aria-pressed={category === c}
-                              onClick={() => setCategory(c)}
-                            >
-                              {c}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="product-picker">
-                          {filteredProducts.map((p) => (
-                            <button
-                              key={p.id}
-                              disabled={
-                                !state.shift || !waiter || available(p) <= 0
-                              }
-                              onClick={() =>
-                                update("order.add", {
-                                  tableId: selected,
-                                  productId: p.id,
-                                  waiterId: table.lines.length
-                                    ? table.waiter
-                                    : waiter,
-                                })
-                              }
-                            >
-                              <span>{p.name}</span>
-                              <div>
-                                <b>{money(p.price)}</b>
-                                {available(p) <= 0 ? (
-                                  <small>Pa stok</small>
-                                ) : (
-                                  <Icon name="plus" size={15} />
-                                )}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                        {!filteredProducts.length && (
-                          <p className="inline-empty">
-                            Nuk u gjet asnjë produkt. Provoni një emër tjetër.
-                          </p>
-                        )}
-                        </div>}
-                        <div className="order-section-title">
-                          <h3>Porosia aktuale</h3>
-                          <span>
-                            {table.lines.reduce((s, l) => s + l.qty, 0)} {table.lines.reduce((s, l) => s + l.qty, 0) === 1 ? "artikull" : "artikuj"}
-                          </span>
-                        </div>
-                        {!table.lines.length ? (
-                          <Empty icon="coffee" title="Gati për porosinë e parë">
-                            Zgjidhni produktet nga menuja më sipër.
-                          </Empty>
-                        ) : (
-                          <div className="order-lines">
-                            {table.lines.map((l) => (
-                              <div className="order-line" key={l.id}>
-                                <div className="line-name">
-                                  <strong>{l.name}</strong>
-                                  <small>{money(l.price)} / copë</small>
-                                </div>
-                                <div className="quantity">
-                                  <button
-                                    aria-label={`Hiq një ${l.name}`}
-                                    onClick={() =>
-                                      update("order.remove", {
-                                        tableId: selected,
-                                        productId: l.id,
-                                      })
-                                    }
-                                  >
-                                    −
-                                  </button>
-                                  <span>{l.qty}</span>
-                                  <button
-                                    disabled={
-                                      available(
-                                        state.products.find(
-                                          (p) => p.id === l.id,
-                                        ),
-                                      ) <= 0
-                                    }
-                                    aria-label={`Shto një ${l.name}`}
-                                    onClick={() =>
-                                      update("order.add", {
-                                        tableId: selected,
-                                        productId: l.id,
-                                        waiterId: table.waiter,
-                                      })
-                                    }
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                                <b>{money(l.price * l.qty)}</b>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {role === "Menaxher" && table.lines.length > 0 && (
-                        <div className="order-cancel">
-                          {cancelling ? (
-                            <form className="stack-form" onSubmit={async (e) => {
-                              e.preventDefault();
-                              const reason = new FormData(e.currentTarget).get("reason");
-                              const data = await update("order.cancel", { tableId: table.id, reason }, "Porosia u anulua dhe tavolina u lirua.");
-                              if (data) {
-                                setCancelling(false);
-                                setSelected(null);
-                              }
-                            }}>
-                              <Field label="Arsyeja e anulimit" name="reason" minLength={3} maxLength={200} required placeholder="p.sh. Porosi prove" autoFocus />
-                              <p className="helper">Anulohet vetëm porosia e papaguar. Nuk krijohet faturë dhe arsyeja e anulimit ruhet.</p>
-                              <div className="actions">
-                                <button type="button" onClick={() => setCancelling(false)}>Kthehu</button>
-                                <button className="danger-button">Konfirmo anulimin</button>
-                              </div>
-                            </form>
-                          ) : (
-                            <button className="text-button" onClick={() => setCancelling(true)}>Anulo porosinë</button>
-                          )}
-                        </div>
-                        )}
-                      </div>
-                      <div className="order-payment">
-                        <div className="order-total">
-                          <span>Totali për pagesë</span>
-                          <strong>{money(total(table.lines))}</strong>
-                        </div>
-                        <div className="actions">
-                          <button
-                            onClick={() => setOrderMode(orderMode === "add" ? "summary" : "add")}
-                            disabled={orderMode === "add" && !table.lines.length}
-                          >
-                            <Icon name={orderMode === "add" ? "receipt" : "plus"} size={17} />
-                            {orderMode === "add" ? "Shiko porosinë" : "Shto artikuj"}
-                          </button>
-                          <button
-                            className="primary"
-                            disabled={!table.lines.length || !state.shift}
-                            onClick={() => startPayment("Zgjidh")}
-                          >
-                            <Icon name="check" size={17} />
-                            Mbyll porosinë
-                          </button>
-                        </div>
-                      </div>
-                    </section>
+                    <TableOrder
+                      table={table}
+                      state={state}
+                      role={role}
+                      user={user}
+                      waiter={waiter}
+                      onWaiterChange={(next) => {
+                        setWaiter(next);
+                        update("order.assign", { tableId: selected, waiterId: next });
+                      }}
+                      mode={orderMode}
+                      setMode={setOrderMode}
+                      query={query}
+                      setQuery={setQuery}
+                      category={category}
+                      setCategory={setCategory}
+                      products={filteredProducts}
+                      available={available}
+                      update={update}
+                      onClose={() => setSelected(null)}
+                      onSend={sendOrder}
+                      onPay={() => startPayment("Zgjidh")}
+                      onPrintBill={printOrder}
+                      cancelling={cancelling}
+                      setCancelling={setCancelling}
+                      headingRef={orderHeading}
+                    />
                   ) : (
                     <aside className="floor-guide">
                       <div className="guide-symbol">
@@ -1348,6 +1488,25 @@ function App({ user, onLogout }) {
                 onSelect={setSelected}
                 onModify={openOrderTable}
                 onClose={closeOrderTable}
+                onPrint={printOrder}
+                onSend={sendOrder}
+                onReprintTicket={(ticket) => reprintTickets([ticket])}
+                time={time}
+              />
+            )}
+
+            {page === "Repartet" && (
+              <Stations
+                state={state}
+                stationDepartments={stationDepartments}
+                onToggleStation={toggleStation}
+                onPrint={reprintTickets}
+                isManager={role === "Menaxher"}
+                update={update}
+                notify={notify}
+                onDone={(k) =>
+                  update("ticket.done", { id: k.id }, k.cancelledAt ? "Fleta u hoq." : `Tavolina ${k.table} · ${k.department}: gati.`)
+                }
                 time={time}
               />
             )}
@@ -1400,23 +1559,11 @@ function App({ user, onLogout }) {
                               <td data-label="Fatura">
                                 <strong>D-{i.id}</strong>
                                 <small className="positive">Paguar</small>
-                                {i.fiscalStatus === "fiskalizuar" ? (
+                                {i.fiscalStatus === "fiskalizuar" && (
                                   <small className="positive">Fiskalizuar</small>
-                                ) : (
-                                  <button
-                                    className="text-button"
-                                    onClick={async () => {
-                                      try {
-                                        await fiscalizeInvoice(i.id);
-                                        await database.refresh();
-                                        notify(`Fatura D-${i.id} u fiskalizua.`);
-                                      } catch (e) {
-                                        notify(e.message, "error");
-                                      }
-                                    }}
-                                  >
-                                    {i.fiscalStatus === "dështoi" ? "Dështoi · Riprovo" : "Fiskalizo"}
-                                  </button>
+                                )}
+                                {i.fiscalStatus === "dështoi" && (
+                                  <small className="warning-text">Dështoi</small>
                                 )}
                               </td>
                               <td data-label="Tavolina">
@@ -1442,7 +1589,7 @@ function App({ user, onLogout }) {
                                 <button
                                   className="subtle-button"
                                   aria-label={`Shiko faturën D-${i.id}`}
-                                  onClick={() => setReceipt(i)}
+                                  onClick={() => (setReceipt(i), setFiscalizeChoice(false))}
                                 >
                                   Shiko
                                   <Icon name="arrow" size={15} />
@@ -1450,7 +1597,7 @@ function App({ user, onLogout }) {
                                 <button
                                   className="icon-button"
                                   aria-label={`Printo faturën D-${i.id}`}
-                                  onClick={() => print(i)}
+                                  onClick={() => reprintInvoice(i)}
                                 >
                                   <Icon name="print" size={18} />
                                 </button>
@@ -1498,24 +1645,65 @@ function App({ user, onLogout }) {
                   <aside className="receipt-preview">
                     <div className="preview-heading">
                       <h2>Detajet e faturës</h2>
-                      <button
-                        className="icon-button"
-                        onClick={() => setReceipt(null)}
-                        aria-label="Mbyll detajet e faturës"
-                      >
-                        <Icon name="close" />
-                      </button>
                     </div>
                     <article className="receipt-paper">
-                      <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} />
+                      <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} products={state.products} />
                     </article>
-                    <button
-                      className="primary full-width"
-                      onClick={() => print(receipt)}
-                    >
-                      <Icon name="print" size={18} />
-                      Printo 80mm
-                    </button>
+                    <div className="receipt-actions">
+                      {receipt.fiscalStatus === "fiskalizuar" ? (
+                        <div className="receipt-action-status positive">
+                          <Icon name="check" size={16} />
+                          Fatura është fiskalizuar
+                        </div>
+                      ) : fiscalizeChoice ? (
+                        <div className="fiscalize-choice">
+                          <span>Si të raportohet te BlueBill?</span>
+                          <div className="payment-methods">
+                            {["Cash", "Kartë"].map((method) => (
+                              <button
+                                key={method}
+                                onClick={async () => {
+                                  setFiscalizeChoice(false);
+                                  try {
+                                    const updated = await fiscalizeInvoice(receipt.id, method);
+                                    // The response already carries the fresh invoice — read
+                                    // it straight from there rather than from `state`, which
+                                    // a same-tick database.refresh() wouldn't have updated yet.
+                                    const invoice = updated.state.invoices.find((i) => i.id === receipt.id);
+                                    setReceipt((current) => (current?.id === receipt.id ? invoice : current));
+                                    database.refresh();
+                                    notify(`Fatura D-${receipt.id} u fiskalizua si ${method}.`);
+                                  } catch (e) {
+                                    notify(e.message, "error");
+                                  }
+                                }}
+                              >
+                                <Icon name={method === "Cash" ? "cash" : "card"} size={16} />
+                                {method}
+                              </button>
+                            ))}
+                          </div>
+                          <button className="text-button full-width" onClick={() => setFiscalizeChoice(false)}>
+                            Anulo
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="primary full-width" onClick={() => setFiscalizeChoice(true)}>
+                          <Icon name="receipt" size={18} />
+                          {receipt.fiscalStatus === "dështoi" ? "Fiskalizo Faturën · Riprovo" : "Fiskalizo Faturën"}
+                        </button>
+                      )}
+                      <button className="full-width" onClick={() => reprintInvoice(receipt)}>
+                        <Icon name="print" size={18} />
+                        Printo
+                      </button>
+                      <button
+                        className="text-button full-width"
+                        onClick={() => (setReceipt(null), setFiscalizeChoice(false))}
+                      >
+                        Mbyll
+                      </button>
+                    </div>
                     <p className="helper">
                       Zgjidhni letër 80mm dhe hiqni header/footer në dialogun e
                       printimit.
@@ -1730,14 +1918,29 @@ function App({ user, onLogout }) {
                       value={category}
                       onChange={setCategory}
                     />
+                    <ChoiceField
+                      label="Nënkategoria"
+                      options={["Të gjitha", ...state.departments, "Pa nënkategori"].map((item) => ({ value: item, label: item }))}
+                      value={deptFilter}
+                      onChange={setDeptFilter}
+                    />
                   </div>
-                  {filteredProducts.length ? (
+                  {unrouted > 0 && deptFilter !== "Pa nënkategori" && (
+                    <div className="notice warning">
+                      <span>
+                        {unrouted} {unrouted === 1 ? "produkt nuk ka" : "produkte nuk kanë"} nënkategori — kur porositen, fleta e tyre nuk shkon në asnjë repart.
+                      </span>
+                      <button onClick={() => setDeptFilter("Pa nënkategori")}>Shfaqi</button>
+                    </div>
+                  )}
+                  {menuProducts.length ? (
                     <div className="table-scroll">
                       <table className="responsive-table">
                         <thead>
                           <tr>
                             <th>Produkti</th>
                             <th>Kategoria</th>
+                            <th>Nënkategoria</th>
                             <th className="numeric">Çmimi</th>
                             <th>
                               <span className="sr-only">Veprimet</span>
@@ -1745,7 +1948,7 @@ function App({ user, onLogout }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredProducts.map((p) => (
+                          {menuProducts.map((p) => (
                             <tr key={p.id}>
                               <td data-label="Produkti">
                                 <strong>{p.name}</strong>
@@ -1753,6 +1956,13 @@ function App({ user, onLogout }) {
                               </td>
                               <td data-label="Kategoria">
                                 <Badge>{p.category}</Badge>
+                              </td>
+                              <td data-label="Nënkategoria">
+                                {p.department ? (
+                                  <DepartmentTag name={p.department} />
+                                ) : (
+                                  <small className="warning-text">Pa nënkategori</small>
+                                )}
                               </td>
                               <td data-label="Çmimi" className="numeric">
                                 <strong>{money(p.price)}</strong>
@@ -1780,6 +1990,7 @@ function App({ user, onLogout }) {
                           onClick={() => {
                             setQuery("");
                             setCategory("Të gjitha");
+                            setDeptFilter("Të gjitha");
                           }}
                         >
                           Pastro filtrat
@@ -1823,6 +2034,15 @@ function App({ user, onLogout }) {
                           name="category"
                           defaultValue={editor.category || state.categories[0]}
                           options={state.categories.map((item) => ({ value: item, label: item }))}
+                        />
+                        <ChoiceField
+                          label="Nënkategoria (reparti)"
+                          name="department"
+                          defaultValue={editor.department || ""}
+                          options={[
+                            { value: "", label: state.departments.length ? "— Zgjidhni repartin —" : "— Asnjë —" },
+                            ...state.departments.map((item) => ({ value: item, label: item })),
+                          ]}
                         />
                         <Field
                           label="Çmimi (Lek)"
@@ -1912,6 +2132,60 @@ function App({ user, onLogout }) {
                       <button>
                         <Icon name="plus" size={16} />
                         Shto kategori
+                      </button>
+                    </form>
+                  </section>
+                  <section className="panel">
+                    <SectionHeading
+                      title="Nënkategoritë"
+                      description="Repartet që përgatisin porosinë — bar, kuzhinë, ëmbëltore, picë."
+                    />
+                    <div className="category-list">
+                      {state.departments.map((d) => (
+                        <span key={d} className="department-chip">
+                          <span>{d}</span>
+                          <Badge>
+                            {state.products.filter((p) => p.department === d).length}
+                          </Badge>
+                        </span>
+                      ))}
+                    </div>
+                    <form
+                      className="stack-form category-form"
+                      onSubmit={async (e) => {
+                        const formElement = e.currentTarget;
+                        e.preventDefault();
+                        const name = new FormData(e.currentTarget)
+                          .get("department")
+                          .trim();
+                        if (!name)
+                          return notify("Vendosni emrin e nënkategorisë.", "error");
+                        if (
+                          state.departments.some(
+                            (d) => d.toLowerCase() === name.toLowerCase(),
+                          )
+                        )
+                          return notify("Kjo nënkategori ekziston tashmë.", "error");
+                        if (
+                          await update(
+                            "department.create",
+                            { name },
+                            "Nënkategoria u shtua.",
+                          )
+                        )
+                          formElement.reset();
+                      }}
+                    >
+                      <Field
+                        label="Nënkategori e re"
+                        name="department"
+                        placeholder="p.sh. Grill"
+                        maxLength={40}
+                        required
+                      />
+                      <button>
+                        <Icon name="plus" size={16} />
+                        Shto nënkategori
                       </button>
                     </form>
                   </section>
@@ -2059,6 +2333,7 @@ function App({ user, onLogout }) {
                 </section>
                 <aside className="management-aside">
                   <BusinessNetwork venue={user.venue} />
+                  <LoginModeSettings venue={user.venue} />
                   <section className="panel">
                     <SectionHeading
                       title="Shto në ekip"
@@ -2112,7 +2387,7 @@ function App({ user, onLogout }) {
                   <div className="info-note">
                     <Icon name="info" />
                     <div>
-                      <strong>Hyrja e kamarierëve</strong>
+                      <strong>PIN-i i kamarierit</strong>
                       <p>
                         Çdo kamarier hyn me një PIN 6-shifror që vendosni ju.
                         Pas 5 përpjekjeve të gabuara llogaria bllokohet për 15
@@ -2419,7 +2694,7 @@ function App({ user, onLogout }) {
                 <Icon name="close" />
               </button>
             </div>
-            <h2 id="payment-title">Mbyll porosinë</h2>
+            <h2 id="payment-title">Paguaj</h2>
             <p>
               Tavolina {String(table.id).padStart(2, "0")} · Zgjidhni mënyrën e pagesës
             </p>
@@ -2457,6 +2732,18 @@ function App({ user, onLogout }) {
                   onChange={(e) => setReceived(e.target.value)}
                   placeholder={String(total(table.lines))}
                 />
+                <div className="cash-quick" role="group" aria-label="Shuma të shpejta">
+                  {quickCash(total(table.lines)).map((v) => (
+                    <button
+                      type="button"
+                      key={v}
+                      aria-pressed={Number(received) === v}
+                      onClick={() => setReceived(String(v))}
+                    >
+                      {v === total(table.lines) ? "Saktë" : amount(v)}
+                    </button>
+                  ))}
+                </div>
                 <div className="cash-keypad" role="group" aria-label="Shuma e marrë">
                   {["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"].map((key) => (
                     <button
@@ -2492,7 +2779,7 @@ function App({ user, onLogout }) {
                 Kthehu
               </button>
               <button
-                className="primary"
+                value="skip-fiscalize"
                 disabled={
                   payment === "Zgjidh" ||
                   (payment === "Cash" &&
@@ -2500,13 +2787,34 @@ function App({ user, onLogout }) {
                 }
               >
                 <Icon name="check" size={17} />
-                Konfirmo dhe krijo faturën
+                Konfirmo
+              </button>
+              <button
+                className="primary"
+                value="fiscalize"
+                disabled={
+                  payment === "Zgjidh" ||
+                  (payment === "Cash" &&
+                    (received === "" || Number(received) < total(table.lines)))
+                }
+              >
+                <Icon name="check" size={17} />
+                Konfirmo dhe fiskalizo
               </button>
             </div>
           </form>
         )}
       </dialog>
-      {receipt && (
+      {ticketPrint &&
+        ticketPrint.map((ticket) => (
+          <article className="receipt print-only station-ticket" key={ticket.id}>
+            <StationTicket
+              ticket={ticket}
+              waiterName={state.waiters.find((w) => w.id === ticket.waiter)?.name}
+            />
+          </article>
+        ))}
+      {receipt && !ticketPrint && (
         <article className="receipt print-only">
           <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} />
         </article>

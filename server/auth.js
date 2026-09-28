@@ -153,6 +153,34 @@ export async function loginManager(pool, { pin }) {
   throw bad();
 }
 
+// Same trick as loginManager, but scoped to waiters (pin_only login mode): every
+// eligible waiter account is reserved atomically before any hash is checked, so this
+// keeps the same race-safe lockout guarantee with no name/waiterId given up front.
+// A wrong guess charges every active waiter's lockout counter — the same tradeoff
+// loginManager already accepts with several managers.
+const reserveWaitersByPin = async (pool) =>
+  (
+    await pool.query(
+      `UPDATE bluebar.accounts a
+       SET failed_attempts = failed_attempts + 1,
+           locked_until = CASE WHEN failed_attempts + 1 >= 5 THEN now() + interval '15 minutes' ELSE locked_until END
+       FROM bluebar.waiters w
+       WHERE a.role = 'waiter' AND a.waiter_id = w.id AND w.active AND a.active
+         AND (a.locked_until IS NULL OR a.locked_until <= now())
+       RETURNING a.id, a.secret_hash`,
+    )
+  ).rows;
+export async function loginWaiterByPin(pool, pin) {
+  const candidates = await reserveWaitersByPin(pool);
+  for (const c of candidates)
+    if (await verifySecret(pin, c.secret_hash)) {
+      await clear(pool, c.id);
+      return c.id;
+    }
+  if (!candidates.length) await verifySecret(pin, await decoyHash());
+  throw bad();
+}
+
 export async function setWaiterPin(pool, waiterId, pin) {
   if (!validPin(pin)) throw new AppError("PIN-i është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.");
   const r = await pool.query(

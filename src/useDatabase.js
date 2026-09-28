@@ -3,7 +3,7 @@ import { fetchState, sendCommand, venueSlug } from "./api.js";
 import { addItem } from "./domain.js";
 
 const empty = {
-  products: [], categories: [], waiters: [], tables: [], invoices: [],
+  products: [], categories: [], departments: [], waiters: [], tables: [], invoices: [], tickets: [], printers: [],
   movements: [], shifts: [], shift: null,
 };
 const key = `bluebar-pending-command-v2:${venueSlug}`;
@@ -26,21 +26,19 @@ function changeOrder(state, type, payload) {
   if (!table?.active) throw Error("Tavolina nuk ekziston ose është joaktive.");
   if (!table.lines.some((line) => line.id === payload.productId))
     throw Error("Produkti nuk është në porosi.");
+  const lines = table.lines
+    .map((line) =>
+      line.id === payload.productId
+        ? { ...line, qty: line.qty - 1, sent: Math.min(line.sent || 0, line.qty - 1) }
+        : line,
+    )
+    .filter((line) => line.qty > 0);
   return {
     ...state,
     tables: state.tables.map((item) =>
       item.id !== payload.tableId
         ? item
-        : {
-            ...item,
-            lines: item.lines
-              .map((line) =>
-                line.id === payload.productId
-                  ? { ...line, qty: line.qty - 1 }
-                  : line,
-              )
-              .filter((line) => line.qty > 0),
-          },
+        : { ...item, lines },
     ),
   };
 }

@@ -31,11 +31,17 @@ const VAT_RATE = 20;
 const UNIT_CODE = "XPP";
 
 // invoice: the app's own invoice record (see repository.js loadState) — {id, method, lines}.
-export function buildBlueBillPayload(invoice) {
+// methodOverride ("Cash"/"Kartë"), when given, is what gets reported to BlueBill instead
+// of invoice.method — BlueBar's own record of how the customer paid never changes either
+// way. Exists because BlueBill currently rejects a Card-method invoice at the fiscalize
+// step (its internal invoice `type` won't move off CASH — see bluebill.test.js), so a
+// manager can choose to report a card sale as Cash to BlueBill until that's resolved.
+export function buildBlueBillPayload(invoice, methodOverride) {
+  const method = methodOverride || invoice.method;
   return {
     externalId: `bluebar-${invoice.id}`,
     guestName: "Klient",
-    paymentMethod: invoice.method === "Kartë" ? "Card" : "Cash",
+    paymentMethod: method === "Kartë" ? "Card" : "Cash",
     lines: invoice.lines.map((l) => ({
       name: l.name,
       unitCode: UNIT_CODE,
@@ -68,11 +74,11 @@ async function blueBillRequest(url, token, options, idempotencyKey) {
 
 // Creates a draft invoice, then fiscalizes it. idempotencyKey should be derived from
 // BlueBar's own invoice id, so a retry (manual or automatic) never double-files it.
-export async function fiscalizeInvoice(token, invoice, idempotencyKey, fetchImpl = fetch) {
+export async function fiscalizeInvoice(token, invoice, idempotencyKey, fetchImpl = fetch, methodOverride) {
   const created = await blueBillRequest(
     `${BLUEBILL_API}/invoices`,
     token,
-    { method: "POST", body: buildBlueBillPayload(invoice), fetchImpl },
+    { method: "POST", body: buildBlueBillPayload(invoice, methodOverride), fetchImpl },
     idempotencyKey,
   );
   const fiscalized = await blueBillRequest(

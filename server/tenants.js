@@ -4,7 +4,7 @@ import { hashSecret, validPin, ipPolicy } from "./auth.js";
 import { migrateTenant, tenantSQL } from "./migrate.js";
 
 export const validSlug = slug => typeof slug === "string" && /^[a-z0-9][a-z0-9-]{2,39}$/.test(slug);
-export const publicVenue = venue => ({ slug: venue.slug, name: venue.name });
+export const publicVenue = venue => ({ slug: venue.slug, name: venue.name, loginMode: venue.login_mode });
 
 // Every auth and business query uses a request-local wrapper. No shared search_path
 // or mutable tenant state can leak between concurrent pooled connections.
@@ -51,6 +51,7 @@ export async function registerVenue(pool, { slug, name, pin }, ip) {
     // Configuration seeds are for the legacy installation; new businesses start empty.
     await query("DELETE FROM bluebar.dining_tables");
     await query("DELETE FROM bluebar.categories");
+    await query("DELETE FROM bluebar.departments");
     const account = (await query("INSERT INTO bluebar.accounts(role,username,secret_hash) VALUES('manager','manager',$1) RETURNING id", [secret])).rows[0];
     await client.query("COMMIT");
     return { venue, accountId: account.id };

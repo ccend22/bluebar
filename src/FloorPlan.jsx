@@ -1,6 +1,18 @@
 import React, { useRef, useState } from "react";
+import {
+  CELL_H,
+  CELL_W,
+  GRID_COLS,
+  GRID_ROWS,
+  MAX_SPAN,
+  cellsOf,
+  centerOf,
+  fits,
+  sizeFor,
+  spanOf,
+} from "./floorGeometry.js";
 import { money, total } from "./domain.js";
-import { Badge, Icon, TableSymbol } from "./components.jsx";
+import { Icon } from "./components.jsx";
 
 // Seats are auto-arranged around the table's own shape, not individually placed.
 // ponytail: a real venue rarely needs to hand-place each chair; if that changes,
@@ -38,25 +50,23 @@ const shapeClass = {
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
-// Placement snaps to a fixed lattice of slots instead of free pixels: easier to line
-// tables up. 8x5 on the canvas's 16:10 aspect ratio makes every cell square in real pixels.
-export const GRID_COLS = 8;
-export const GRID_ROWS = 5;
-export const CELL_W = 100 / GRID_COLS;
-export const CELL_H = 100 / GRID_ROWS;
-// A big table (large party, pushed-together tables) can grow across a few slots, not
-// just its own — capped at 3 cells so it still can't swallow the whole floor. A table
-// sized to N cells still has chairs sitting ~11-12% of its own size beyond its edges
-// (see chairLayout's ray-casting math), so the ceiling leaves that much margin inside
-// its span — otherwise a maxed-out table's chairs poke into the next untouched slot.
-export const MAX_TABLE_W = CELL_W * 3 * 0.8;
-export const MAX_TABLE_H = CELL_H * 3 * 0.8;
-const snapToCell = (v, cell) => clamp(Math.floor(v / cell) * cell + cell / 2, cell / 2, 100 - cell / 2);
-
-function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRotate, waiterName }) {
+function FloorTable({ t, editing, isSelected, onSelect, onChange, onGhost, others }) {
   const occupied = t.lines.length > 0;
   const itemCount = t.lines.reduce((sum, line) => sum + line.qty, 0);
   const ref = useRef(null);
+  // Always drawn on its own block of cells, so what you see is exactly what the
+  // collision rules use — including older layouts saved off the lattice.
+  const block = cellsOf(t);
+  const center = centerOf(block);
+  const span = spanOf(t);
+  const size = sizeFor(t.shape, span.cols, span.rows);
+  // Apply a change only if the table would land on free cells; either way show
+  // the target block (green / red) while the pointer is down.
+  const attempt = (candidate, patch) => {
+    const ok = fits(candidate, others);
+    onGhost({ ...candidate, ok });
+    if (ok) onChange(t.id, { ...patch, ...centerOf(candidate) });
+  };
   const drag = (start) => (e) => {
     if (!editing) return;
     e.preventDefault();
@@ -70,6 +80,7 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      onGhost(null);
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -80,16 +91,16 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
       ref={ref}
       className={`fp-table ${shapeClass[t.shape] || "shape-rect"} ${occupied ? "occupied" : ""} ${isSelected ? "selected" : ""} ${editing ? "editing" : ""}`}
       style={{
-        left: `${t.posX}%`,
-        top: `${t.posY}%`,
-        width: `${t.width}%`,
-        height: `${t.height}%`,
+        left: `${center.posX}%`,
+        top: `${center.posY}%`,
+        width: `${size.width}%`,
+        height: `${size.height}%`,
         transform: `translate(-50%, -50%) rotate(${t.rotation}deg)`,
       }}
       onPointerDown={drag((ev, canvas) => {
         const x = clamp(((ev.clientX - canvas.left) / canvas.width) * 100, 0, 100);
         const y = clamp(((ev.clientY - canvas.top) / canvas.height) * 100, 0, 100);
-        onDrag(t.id, snapToCell(x, CELL_W), snapToCell(y, CELL_H));
+        attempt(cellsOf(t, { posX: x, posY: y }), {});
       })}
       role="button"
       tabIndex={0}
@@ -128,10 +139,12 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
             style={{ transform: `rotate(${-t.rotation}deg) translateY(-26px)` }}
             aria-label={`Rrotullo tavolinën ${t.id}`}
             onPointerDown={drag((ev, canvas) => {
-              const cx = canvas.left + (t.posX / 100) * canvas.width;
-              const cy = canvas.top + (t.posY / 100) * canvas.height;
-              const deg = (Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180) / Math.PI + 90;
-              onRotate(t.id, ((Math.round(deg) % 360) + 360) % 360);
+              const cx = canvas.left + (center.posX / 100) * canvas.width;
+              const cy = canvas.top + (center.posY / 100) * canvas.height;
+              const raw = (Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180) / Math.PI + 90;
+              // 15° steps: tables line up with each other instead of sitting at 87°.
+              const rotation = ((Math.round(raw / 15) * 15) % 360 + 360) % 360;
+              attempt(cellsOf({ ...t, rotation }, center), { rotation });
             })}
           >
             <Icon name="rotate" size={13} />
@@ -143,21 +156,31 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
             onPointerDown={drag((ev, canvas) => {
               // The handle sits at the table's own bottom-right corner, which is
               // rotated on screen. Un-rotate the pointer's offset from center (in
-              // pixels, so the two axes share one scale before rotating) back into
-              // the table's own frame before reading it as width/height.
-              const cx = canvas.left + (t.posX / 100) * canvas.width;
-              const cy = canvas.top + (t.posY / 100) * canvas.height;
+              // pixels, so both axes share one scale) into the table's own frame,
+              // then read it as a whole number of cells, growing from the top-left.
+              const cx = canvas.left + (center.posX / 100) * canvas.width;
+              const cy = canvas.top + (center.posY / 100) * canvas.height;
               const rad = (-t.rotation * Math.PI) / 180;
               const dx = ev.clientX - cx, dy = ev.clientY - cy;
               const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
               const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
-              // A table near an edge can't grow all the way to MAX_TABLE_W/H without
-              // pushing past the canvas boundary — cap it to what actually still fits.
-              const maxW = Math.min(MAX_TABLE_W, 2 * Math.min(t.posX, 100 - t.posX));
-              const maxH = Math.min(MAX_TABLE_H, 2 * Math.min(t.posY, 100 - t.posY));
-              const w = clamp(((localX * 2) / canvas.width) * 100, 4, maxW);
-              const h = clamp(((localY * 2) / canvas.height) * 100, 4, maxH);
-              onResize(t.id, w, h);
+              // Width from the table's own left edge to the pointer, in cells.
+              const cellW = canvas.width / GRID_COLS, cellH = canvas.height / GRID_ROWS;
+              const edgeX = (size.width / 100) * canvas.width / 2;
+              const edgeY = (size.height / 100) * canvas.height / 2;
+              const cols = clamp(Math.round((localX + edgeX) / cellW + 0.3), 1, MAX_SPAN);
+              const rows = t.shape === "Bar" ? 1 : clamp(Math.round((localY + edgeY) / cellH + 0.3), 1, MAX_SPAN);
+              const turned = { ...t, ...sizeFor(t.shape, cols, rows) };
+              const { cols: fc, rows: fr } = cellsOf(turned);
+              attempt(
+                {
+                  left: clamp(block.left, 0, GRID_COLS - fc),
+                  top: clamp(block.top, 0, GRID_ROWS - fr),
+                  cols: fc,
+                  rows: fr,
+                },
+                sizeFor(t.shape, cols, rows),
+              );
             })}
           />
         </>
@@ -166,12 +189,26 @@ function FloorTable({ t, editing, isSelected, onSelect, onDrag, onResize, onRota
   );
 }
 
-export function FloorPlan({ tables, editing, selected, onSelectTable, onLayoutChange, waiters }) {
+export function FloorPlan({ tables, editing, selected, onSelectTable, onLayoutChange }) {
   const canvasRef = useRef(null);
-  const waiterName = (id) => waiters.find((w) => w.id === id)?.name.split(" ")[0];
+  // The block a dragged/resized/turned table is aiming at: green if free, red if taken.
+  const [ghost, setGhost] = useState(null);
+  const blocks = tables.map((t) => ({ id: t.id, ...cellsOf(t) }));
   return (
     <div className="floor-plan-viewport" role="region" aria-label="Plani i tavolinave" tabIndex={0}>
       <div className={`floor-plan ${editing ? "editing" : ""} ${tables.length ? "" : "is-empty"}`} ref={canvasRef} onClick={() => editing && onSelectTable(null)}>
+        {ghost && (
+          <div
+            className={`fp-ghost ${ghost.ok ? "ok" : "blocked"}`}
+            aria-hidden="true"
+            style={{
+              left: `${ghost.left * CELL_W}%`,
+              top: `${ghost.top * CELL_H}%`,
+              width: `${ghost.cols * CELL_W}%`,
+              height: `${ghost.rows * CELL_H}%`,
+            }}
+          />
+        )}
         {tables.map((t) => (
           <FloorTable
             key={t.id}
@@ -179,10 +216,9 @@ export function FloorPlan({ tables, editing, selected, onSelectTable, onLayoutCh
             editing={editing}
             isSelected={selected === t.id}
             onSelect={onSelectTable}
-            waiterName={waiterName(t.waiter)}
-            onDrag={(id, x, y) => onLayoutChange(id, { posX: x, posY: y })}
-            onResize={(id, w, h) => onLayoutChange(id, { width: w, height: h })}
-            onRotate={(id, deg) => onLayoutChange(id, { rotation: deg })}
+            others={blocks.filter((b) => b.id !== t.id)}
+            onChange={onLayoutChange}
+            onGhost={setGhost}
           />
         ))}
         {!tables.length && (
@@ -190,31 +226,6 @@ export function FloorPlan({ tables, editing, selected, onSelectTable, onLayoutCh
         )}
       </div>
       {tables.length > 0 && <p className="floor-scroll-hint">Rrëshqitni majtas ose djathtas për të parë të gjitha tavolinat.</p>}
-    </div>
-  );
-}
-
-export function TableDetailPanel({ table, waiterName, time }) {
-  if (!table) return null;
-  const occupied = table.lines.length > 0;
-  return (
-    <div className="fp-detail-row">
-      <span>
-        <small>Vendet</small>
-        <strong>{table.seats}</strong>
-      </span>
-      {occupied && table.occupiedSince && (
-        <span>
-          <small>Nisi</small>
-          <strong>{time(table.occupiedSince)}</strong>
-        </span>
-      )}
-      {occupied && waiterName && (
-        <span>
-          <small>Kamarieri</small>
-          <strong>{waiterName}</strong>
-        </span>
-      )}
     </div>
   );
 }

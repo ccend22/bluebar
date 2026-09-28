@@ -36,7 +36,8 @@ async function request(path, options = {}) {
 export const fetchState = () => request("/state");
 // Best-effort; call after a payment succeeds. Safe to ignore failures — a manager can
 // retry the same invoice later from Faturat, and this never blocks the sale itself.
-export const fiscalizeInvoice = (id) => send("POST", `/invoices/${id}/fiscalize`);
+export const fiscalizeInvoice = (id, method) =>
+  send("POST", `/invoices/${id}/fiscalize`, method ? { method } : undefined);
 export const sendCommand = (command) =>
   request("/commands", { method: "POST", body: JSON.stringify(command) });
 const send = (method, path, body) =>
@@ -52,6 +53,7 @@ export const fetchVenue = () => request("/venue");
 export const registerVenue = (body) => send("POST", "/venues/register", body);
 export const fetchNetwork = () => request("/venue/network");
 export const saveNetwork = (allowedIps) => send("PUT", "/venue/network", { allowedIps });
+export const saveLoginMode = (loginMode) => send("PUT", "/venue/login-mode", { loginMode });
 export function openBusiness(slug) {
   const url = new URL(window.location.href);
   url.search = "";
@@ -59,3 +61,8 @@ export function openBusiness(slug) {
   url.searchParams.set("business", slug);
   window.location.assign(url);
 }
+export const fetchPrintStatus = () => request("/print/status");
+export const createPrintKey = () => send("POST", "/print/key");
+export const testPrinter = (printerId) => send("POST", "/print/test", { printerId });
+// { queued: false } means no network printer covers it: print from the browser instead.
+export const reprintDocument = (kind, id) => send("POST", "/print/reprint", { kind, id: String(id) });

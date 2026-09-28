@@ -4,6 +4,15 @@ import { AppError } from "./commands.js";
 import { readSnapshot, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
 import { checkBlueBillConnection, fiscalizeInvoice } from "./bluebill.js";
 import {
+  agentKeyValid,
+  agentStatus,
+  createAgentKey,
+  enqueueReprint,
+  enqueueTest,
+  finishJob,
+  pendingJobs,
+} from "./printing.js";
+import {
   cookieName,
   endSession,
   findSession,
@@ -11,13 +20,14 @@ import {
   issueSession,
   loginManager,
   loginWaiter,
+  loginWaiterByPin,
   readCookie,
   sessionCookie,
   setWaiterPin,
   throttle,
 } from "./auth.js";
 
-const WAITER_COMMANDS = new Set(["order.add", "order.remove", "order.assign", "order.pay"]);
+const WAITER_COMMANDS = new Set(["order.add", "order.remove", "order.assign", "order.send", "order.pay", "ticket.done"]);
 const publicUser = ({ role, waiterId, name }) => ({ role, waiterId, name });
 const pin = { type: "string", pattern: "^[0-9]{6}$" };
 
@@ -120,7 +130,11 @@ export function buildApp({
   // fiscalization — retryable via the same endpoint — without ever affecting the payment.
   const blueBillReady = (request) =>
     Boolean(blueBill.token && blueBill.venueSlug && request.venue.slug === blueBill.venueSlug);
-  const fiscalizeInvoiceInState = async (request, invoiceId, result) => {
+  // methodOverride lets a manager report a different payment method to BlueBill than
+  // what's on BlueBar's own record (see buildBlueBillPayload) — it's folded into the
+  // idempotency key so switching methods on a retry gets a fresh BlueBill draft instead
+  // of replaying the previous attempt's (mismatched) cached one.
+  const fiscalizeInvoiceInState = async (request, invoiceId, result, methodOverride) => {
     if (!invoiceId || !blueBillReady(request)) return result;
     const invoice = result.state.invoices.find((i) => i.id === invoiceId);
     if (!invoice || invoice.fiscalStatus === "fiskalizuar") return result;
@@ -132,9 +146,8 @@ export function buildApp({
       },
     });
     try {
-      const fiscal = await fiscalizeInvoice(
-        blueBill.token, invoice, `bluebar-${request.venue.slug}-${invoiceId}`, blueBill.fetchImpl,
-      );
+      const key = `bluebar-${request.venue.slug}-${invoiceId}-${methodOverride || invoice.method}`;
+      const fiscal = await fiscalizeInvoice(blueBill.token, invoice, key, blueBill.fetchImpl, methodOverride);
       await setInvoiceFiscalResult(request.db, invoiceId, { status: "fiskalizuar", ...fiscal });
       return withInvoice({
         fiscalStatus: "fiskalizuar", fiscalIic: fiscal.iic, fiscalFic: fiscal.fic,
@@ -192,6 +205,54 @@ export function buildApp({
     await pool.query("UPDATE bluebar_catalog.venues SET allowed_ips=$1, use_legacy_network=false WHERE slug=$2", [ips, request.venue.slug]);
     return { allowedIps: ips, currentIp: request.ip.replace(/^::ffff:/i, "") };
   });
+  // --- Network printing: the in-venue agent (public/bluebar-print.mjs) pulls jobs here.
+  const printAgent = async (request) => {
+    requireDb();
+    const key = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+    if (!(await agentKeyValid(request.db, key)))
+      throw new AppError("Çelësi i agjentit të printimit është i pavlefshëm.", 401);
+  };
+  app.get("/api/print/jobs", { preValidation: printAgent }, async (request) => ({
+    jobs: await pendingJobs(request.db, request.venue.name),
+  }));
+  app.post("/api/print/jobs/:id", {
+    preValidation: printAgent,
+    schema: {
+      params: { type: "object", properties: { id: { type: "string", maxLength: 64 } } },
+      body: { type: "object", additionalProperties: false, required: ["ok"],
+        properties: { ok: { type: "boolean" }, error: { type: "string", maxLength: 200 } } },
+    },
+  }, async (request) => {
+    await finishJob(request.db, request.params.id, request.body.ok, request.body.error);
+    return { ok: true };
+  });
+  app.get("/api/print/status", { preValidation: session("manager") }, async (request) => agentStatus(request.db));
+  // Shown once: only its hash is stored. Creating a new key disconnects the old agent.
+  app.post("/api/print/key", { preValidation: session("manager") }, async (request) => ({
+    key: await createAgentKey(request.db),
+  }));
+  app.post("/api/print/test", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["printerId"],
+      properties: { printerId: { type: "integer", minimum: 1 } } } },
+  }, async (request) => {
+    if (!(await enqueueTest(request.db, request.body.printerId))) throw new AppError("Printeri nuk ekziston.", 404);
+    return { queued: true };
+  });
+  app.post("/api/print/reprint", {
+    preValidation: session(),
+    schema: { body: { type: "object", additionalProperties: false, required: ["kind", "id"],
+      properties: { kind: { type: "string", enum: ["ticket", "invoice"] }, id: { type: "string", maxLength: 64 } } } },
+  }, async (request) => ({ queued: await enqueueReprint(request.db, request.body.kind, request.body.id) }));
+
+  app.put("/api/venue/login-mode", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["loginMode"],
+      properties: { loginMode: { type: "string", enum: ["name_pin", "pin_only", "fingerprint"] } } } },
+  }, async request => {
+    await pool.query("UPDATE bluebar_catalog.venues SET login_mode=$1 WHERE slug=$2", [request.body.loginMode, request.venue.slug]);
+    return { loginMode: request.body.loginMode };
+  });
 
   app.get("/api/health", async () => {
     requireDb();
@@ -215,7 +276,8 @@ export function buildApp({
         body: {
           type: "object",
           additionalProperties: false,
-          required: ["waiterId", "pin"],
+          required: ["pin"],
+          // waiterId is omitted in pin_only login mode — the PIN alone picks the account.
           properties: { waiterId: { type: "integer", minimum: 1 }, pin },
         },
       },
@@ -225,7 +287,10 @@ export function buildApp({
       if (!waiterIpOk(request))
         throw new AppError("Kamarierët hyjnë vetëm nga rrjeti i lokalit.", 403);
       attempt(request);
-      return start(request, reply, await loginWaiter(request.db, request.body));
+      const accountId = request.body.waiterId
+        ? await loginWaiter(request.db, request.body)
+        : await loginWaiterByPin(request.db, request.body.pin);
+      return start(request, reply, accountId);
     },
   );
   app.post(
@@ -279,14 +344,23 @@ export function buildApp({
       // Any authenticated session, matching order.pay: a waiter fiscalizes the sale
       // they just closed, a manager retries one later from Faturat.
       preValidation: session(),
-      schema: { params: { type: "object", properties: { id: { type: "integer", minimum: 1 } } } },
+      schema: {
+        params: { type: "object", properties: { id: { type: "integer", minimum: 1 } } },
+        // type includes "null" because a plain POST with no body (the common case —
+        // no method override) arrives as an unparsed, bodyless request, not "{}".
+        body: {
+          type: ["object", "null"],
+          additionalProperties: false,
+          properties: { method: { type: "string", enum: ["Cash", "Kartë"] } },
+        },
+      },
     },
     async (request) => {
       if (!blueBillReady(request)) throw new AppError("BlueBill nuk është konfiguruar për këtë biznes.", 503);
       const snapshot = await readSnapshot(request.db);
       if (!snapshot.state.invoices.some((i) => i.id === request.params.id))
         throw new AppError("Fatura nuk ekziston.", 404);
-      const result = await fiscalizeInvoiceInState(request, request.params.id, snapshot);
+      const result = await fiscalizeInvoiceInState(request, request.params.id, snapshot, request.body?.method);
       return present(result, request.user, request.db);
     },
   );
@@ -308,14 +382,20 @@ export function buildApp({
                 "order.add",
                 "order.remove",
                 "order.assign",
+                "order.send",
                 "order.pay",
                 "order.cancel",
+                "ticket.done",
+                "printer.save",
+                "printer.delete",
                 "table.save",
+                "tables.save",
                 "table.toggle",
                 "table.delete",
                 "table.layout",
                 "product.save",
                 "category.create",
+                "department.create",
                 "stock.receive",
                 "waiter.create",
                 "waiter.toggle",
@@ -343,7 +423,7 @@ export function buildApp({
       // authority round trip; a slow BlueBill must never make a completed payment look
       // like it failed, or race the server's own request timeout.
       const result = ["order.add", "order.remove"].includes(body.type)
-        ? await executeOrderPatch(request.db, body)
+        ? await executeOrderPatch(request.db, body, user)
         : await execute(request.db, body, user);
       return present(result, user, request.db);
     },
