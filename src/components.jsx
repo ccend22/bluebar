@@ -109,6 +109,13 @@ const paths = {
       <path d="M3 21v-6h6" />
     </>
   ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.4l2.1 1.2M17.7 15.4l2.1 1.2M4.2 16.6l2.1-1.2M17.7 8.6l2.1-1.2" />
+      <circle cx="12" cy="12" r="7.2" />
+    </>
+  ),
   more: (
     <>
       <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />

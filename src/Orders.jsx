@@ -207,7 +207,7 @@ export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, 
                   onClick={() => setFiscalizeChoice(true)}
                 >
                   <Icon name="receipt" size={18} />
-                  Fiskalizo Faturën
+                  {state.fiscal?.enabled ? "Fiskalizo Faturën" : "Paguaj"}
                 </button>
               )}
               <button className="full-width" onClick={() => onSelect(null)}>

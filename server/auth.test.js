@@ -175,6 +175,92 @@ test("invoice fiscalization: not manager-only, best-effort, persisted, and idemp
   }
 });
 
+test("a manager connects the business's own BlueBill token: verified, encrypted, never shown again", async () => {
+  const GOOD = "bb_test_goodTokenGoodToken1234";
+  const seen = [];
+  const blueBill = {
+    fetchImpl: async (url, options) => {
+      const token = options.headers.Authorization.slice(7);
+      seen.push({ url, token });
+      if (token !== GOOD) return new Response("{}", { status: 401 });
+      if (options.method === "GET") return new Response("[]", { status: 200 });
+      if (url.endsWith("/invoices"))
+        return new Response(JSON.stringify({ data: { id: "bb-1" } }), { status: 201 });
+      return new Response(JSON.stringify({ data: { fiscal: { iic: "IIC", fic: "FIC", verificationUrl: "v" } } }), { status: 200 });
+    },
+  };
+  const t = await setup({ blueBill, secretKey: "test-secret-key-for-bluebar-tests" });
+  try {
+    const path = "/api/integrations/bluebill";
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("PUT", path, { cookie: waiter, body: { token: GOOD } })).statusCode, 403);
+    const manager = t.cookieOf(await t.managerLogin());
+    assert.deepEqual((await t.call("GET", path, { cookie: manager })).json(), { enabled: false, source: null, mode: null, canSave: true });
+    assert.equal((await t.call("GET", "/api/state", { cookie: waiter })).json().state.fiscal.enabled, false);
+    // Not token-shaped, or refused by BlueBill: nothing is stored.
+    assert.equal((await t.call("PUT", path, { cookie: manager, body: { token: "hello" } })).statusCode, 400);
+    const refused = await t.call("PUT", path, { cookie: manager, body: { token: "bb_test_wrongTokenWrongToken99" } });
+    assert.equal(refused.statusCode, 400);
+    assert.match(refused.json().error, /nuk e pranoi/);
+    assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar.bluebill_connection")).rows[0].n, 0);
+
+    const saved = await t.call("PUT", path, { cookie: manager, body: { token: GOOD } });
+    assert.equal(saved.statusCode, 200);
+    assert.equal(saved.json().enabled, true);
+    assert.equal(saved.json().mode, "test");
+    assert.equal(saved.json().hint, "bb_test_…1234");
+    assert.equal(saved.json().connectedBy, "boss");
+    // Only ciphertext at rest; the token never comes back to any browser.
+    const row = (await t.pool.query("SELECT token_cipher FROM bluebar.bluebill_connection")).rows[0];
+    assert.doesNotMatch(row.token_cipher, /goodToken/);
+    for (const cookie of [manager, waiter]) {
+      const body = (await t.call("GET", "/api/state", { cookie })).body + (await t.call("GET", path, { cookie })).body;
+      assert.doesNotMatch(body, /goodToken/);
+    }
+    assert.deepEqual((await t.call("GET", "/api/state", { cookie: waiter })).json().state.fiscal, { enabled: true, mode: "test" });
+
+    // Sales now fiscalize with this business's token.
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 10 });
+    await t.send("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    const version = (await t.call("GET", "/api/state", { cookie: manager })).json().version;
+    const pay = await t.call("POST", "/api/commands", {
+      cookie: manager,
+      body: { id: randomUUID(), version, type: "order.pay", payload: { tableId: 1, method: "Cash", received: 100 } },
+    });
+    const invoiceId = pay.json().result.invoiceId;
+    const fiscalized = await t.call("POST", `/api/invoices/${invoiceId}/fiscalize`, { cookie: waiter });
+    assert.equal(fiscalized.json().state.invoices.find((i) => i.id === invoiceId).fiscalStatus, "fiskalizuar");
+    assert.ok(seen.filter((c) => c.url.includes("/invoices/")).every((c) => c.token === GOOD));
+
+    // A different server key can't open it: fiscalization stops instead of misbehaving.
+    const otherKey = buildApp({ pool: t.pool, origins: ["http://127.0.0.1:5173"], blueBill, secretKey: "some-other-key" });
+    const status = await otherKey.inject({ method: "GET", url: path, headers: { host: "localhost", origin: "http://127.0.0.1:5173", "x-bluebar-client": "1", cookie: manager } });
+    assert.equal(status.json().enabled, false);
+    assert.ok(status.json().problem);
+    await otherKey.close();
+
+    const removed = await t.call("DELETE", path, { cookie: manager, body: {} });
+    assert.equal(removed.json().enabled, false);
+    assert.equal((await t.call("POST", `/api/invoices/${invoiceId}/fiscalize`, { cookie: manager })).statusCode, 503);
+  } finally {
+    await t.close();
+  }
+});
+
+test("without a server encryption key, saving a token is refused", async () => {
+  const t = await setup({ secretKey: undefined, blueBill: {} });
+  try {
+    const manager = t.cookieOf(await t.managerLogin());
+    const r = await t.call("PUT", "/api/integrations/bluebill", { cookie: manager, body: { token: "bb_test_goodTokenGoodToken1234" } });
+    assert.equal(r.statusCode, 503);
+    assert.equal((await t.call("GET", "/api/integrations/bluebill", { cookie: manager })).json().canSave, false);
+  } finally {
+    await t.close();
+  }
+});
+
 test("fiscalize can report a different payment method to BlueBill than the invoice's own record", async () => {
   const payloads = [];
   const blueBill = {

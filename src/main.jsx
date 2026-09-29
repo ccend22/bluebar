@@ -5,6 +5,8 @@ import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { LoginModeSettings } from "./LoginModeSettings.jsx";
+import { Fiscalization } from "./Fiscalization.jsx";
+import { NetworkPrinters } from "./NetworkPrinters.jsx";
 import { WaiterPatternEditor } from "./PatternPad.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
 import { arrange, collisions, sizeFor, spanOf } from "./floorGeometry.js";
@@ -78,6 +80,11 @@ const pages = [
     name: "Raportet",
     icon: "chart",
     description: "Të ardhurat, produktet dhe kamarierët më të mirë.",
+  },
+  {
+    name: "Cilësimet",
+    icon: "settings",
+    description: "Fiskalizimi, rrjeti i lokalit, hyrja e stafit dhe printerët.",
   },
 ];
 const matches = (text, query) =>
@@ -541,7 +548,7 @@ function App({ user, onLogout }) {
     // Two submit buttons share this form; which one fired the submit decides
     // whether the sale also gets fiscalized right away or is left for later
     // (from Faturat's "Fiskalizo Faturën").
-    const autoFiscalize = e.nativeEvent.submitter?.value !== "skip-fiscalize";
+    const autoFiscalize = Boolean(state.fiscal?.enabled) && e.nativeEvent.submitter?.value !== "skip-fiscalize";
     const command = {
       tableId: selected,
       method: payment,
@@ -572,6 +579,7 @@ function App({ user, onLogout }) {
           .then((data) => {
             const fiscalized = data.state.invoices.find((i) => i.id === invoice.id) || invoice;
             setReceipt((current) => (current?.id === invoice.id ? fiscalized : current));
+            database.refresh();
             printHere(fiscalized);
           })
           .catch(() => printHere(invoice));
@@ -808,7 +816,10 @@ function App({ user, onLogout }) {
           <div className="demo">
             <Icon name="info" size={15} />
             <span>
-              {user.venue?.name || "BlueBar"} · Pa fiskalizim.
+              {user.venue?.name || "BlueBar"} ·{" "}
+              {state.fiscal?.enabled
+                ? `Fiskalizim aktiv${state.fiscal.mode === "test" ? " (test)" : ""}.`
+                : "Pa fiskalizim."}
             </span>
             <Badge>{database.error ? "PA LIDHJE" : "DATABASE"}</Badge>
           </div>
@@ -1490,9 +1501,6 @@ function App({ user, onLogout }) {
                 stationDepartments={stationDepartments}
                 onToggleStation={toggleStation}
                 onPrint={reprintTickets}
-                isManager={role === "Menaxher"}
-                update={update}
-                notify={notify}
                 onDone={(k) =>
                   update("ticket.done", { id: k.id }, k.cancelledAt ? "Fleta u hoq." : `Tavolina ${k.table} · ${k.department}: gati.`)
                 }
@@ -1676,7 +1684,7 @@ function App({ user, onLogout }) {
                             Anulo
                           </button>
                         </div>
-                      ) : (
+                      ) : !state.fiscal?.enabled ? null : (
                         <button className="primary full-width" onClick={() => setFiscalizeChoice(true)}>
                           <Icon name="receipt" size={18} />
                           {receipt.fiscalStatus === "dështoi" ? "Fiskalizo Faturën · Riprovo" : "Fiskalizo Faturën"}
@@ -2326,8 +2334,6 @@ function App({ user, onLogout }) {
                   )}
                 </section>
                 <aside className="management-aside">
-                  <BusinessNetwork venue={user.venue} />
-                  <LoginModeSettings venue={user.venue} waiters={state.waiters} />
                   <section className="panel">
                     <SectionHeading
                       title="Shto në ekip"
@@ -2407,6 +2413,18 @@ function App({ user, onLogout }) {
               />
             )}
             {page === "Raportet" && <Reports state={state} />}
+            {page === "Cilësimet" && (
+              <div className="settings-grid">
+                <div className="settings-column">
+                  <Fiscalization onChange={() => database.refresh()} />
+                  <BusinessNetwork venue={user.venue} />
+                  <LoginModeSettings venue={user.venue} waiters={state.waiters} />
+                </div>
+                <div className="settings-column">
+                  <NetworkPrinters state={state} update={update} notify={notify} />
+                </div>
+              </div>
+            )}
           </fieldset>
           </main>
           <footer>
@@ -2526,6 +2544,7 @@ function App({ user, onLogout }) {
               </button>
               <button
                 value="skip-fiscalize"
+                className={state.fiscal?.enabled ? undefined : "primary"}
                 disabled={
                   payment === "Zgjidh" ||
                   (payment === "Cash" &&
@@ -2535,18 +2554,20 @@ function App({ user, onLogout }) {
                 <Icon name="check" size={17} />
                 Konfirmo
               </button>
-              <button
-                className="primary"
-                value="fiscalize"
-                disabled={
-                  payment === "Zgjidh" ||
-                  (payment === "Cash" &&
-                    (received === "" || Number(received) < total(table.lines)))
-                }
-              >
-                <Icon name="check" size={17} />
-                Konfirmo dhe fiskalizo
-              </button>
+              {state.fiscal?.enabled && (
+                <button
+                  className="primary"
+                  value="fiscalize"
+                  disabled={
+                    payment === "Zgjidh" ||
+                    (payment === "Cash" &&
+                      (received === "" || Number(received) < total(table.lines)))
+                  }
+                >
+                  <Icon name="check" size={17} />
+                  Konfirmo dhe fiskalizo
+                </button>
+              )}
             </div>
           </form>
         )}

@@ -4852,3 +4852,105 @@ textarea {
     min-height: 64px;
   }
 }
+/* ---- Cilësimet ---- */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.settings-column {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.fiscal-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+.fiscal-status > div {
+  flex: 1;
+  min-width: 0;
+}
+.fiscal-status strong {
+  font-size: 15px;
+}
+.fiscal-status small {
+  margin-top: 2px;
+}
+.fiscal-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+.fiscal-status.on {
+  border-color: #cfe5da;
+  background: var(--green-soft);
+}
+.fiscal-status.on .fiscal-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 4px rgba(39, 101, 79, 0.15);
+}
+.fiscal-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+.fiscal-hint code {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: #202428;
+  font: 600 12px ui-monospace, "SF Mono", Menlo, monospace;
+}
+.fiscal-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fiscal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fiscal-actions > button {
+  flex: 1 1 auto;
+  min-height: 44px;
+}
+.fiscal-confirm {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fbeeec;
+  color: #7b2a23;
+  font-size: 13px;
+}
+.fiscal-disconnect {
+  margin-top: 10px;
+  color: #a43d34;
+}
+@media (max-width: 1050px) {
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.fiscal-panel .helper + .fiscal-actions {
+  margin-top: 14px;
+}

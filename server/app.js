@@ -1,7 +1,8 @@
 import Fastify from "fastify";
 import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks } from "./tenants.js";
 import { AppError } from "./commands.js";
-import { readSnapshot, readRevision, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
+import { readSnapshot, readRevision, bumpRevision, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
+import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
 import {
@@ -35,6 +36,9 @@ const publicUser = ({ role, waiterId, name }) => ({ role, waiterId, name });
 const pin = { type: "string", pattern: "^[0-9]{6}$" };
 const pattern = { type: "array", minItems: 4, maxItems: 9, items: { type: "integer", minimum: 1, maximum: 9 } };
 
+const tokenMode = (token) => (token.startsWith("bb_test_") ? "test" : "live");
+const tokenHint = (token) => `${token.slice(0, token.indexOf("_", 3) + 1)}…${token.slice(-4)}`;
+
 export function buildApp({
   pool,
   provider = "PostgreSQL",
@@ -43,10 +47,12 @@ export function buildApp({
   trustProxy = false,
   secureCookies = false,
   allowedHosts = ["localhost", "127.0.0.1"],
+  // Legacy single-business setup; a token a manager saves in Cilësimet takes priority.
   blueBill = {
     token: process.env.BLUEBILL_API_TOKEN,
     venueSlug: process.env.BLUEBILL_VENUE_SLUG,
   },
+  secretKey = process.env.BLUEBAR_SECRET_KEY,
 }) {
   const app = Fastify({
     logger: false,
@@ -103,9 +109,11 @@ export function buildApp({
       request.sessionToken = token;
     };
   // Managers get PIN status; waiters only see what a shift needs (no history, cash float or stock log).
-  const present = async (data, user, db) => {
+  const present = async (data, request) => {
+    const { user, db } = request;
     if (data.patch) return { ...data, provider };
-    const { state } = data;
+    const fiscal = await fiscalStatus(request);
+    const state = { ...data.state, fiscal: { enabled: fiscal.enabled, mode: fiscal.mode } };
     if (user.role === "manager") {
       const secrets = new Map(
         (
@@ -139,14 +147,46 @@ export function buildApp({
   // Best-effort enrichment of an already-paid invoice, called from a dedicated endpoint
   // (never chained into order.pay itself) so a slow or unreachable BlueBill delays
   // fiscalization — retryable via the same endpoint — without ever affecting the payment.
-  const blueBillReady = (request) =>
-    Boolean(blueBill.token && blueBill.venueSlug && request.venue.slug === blueBill.venueSlug);
+  const serverToken = (request) =>
+    blueBill.token && blueBill.venueSlug && request.venue.slug === blueBill.venueSlug ? blueBill.token : null;
+  const connectionRow = async (request) =>
+    (await request.db.query("SELECT * FROM bluebar.bluebill_connection")).rows[0];
+  // The token this business fiscalizes with: its own (saved in Cilësimet), else the legacy
+  // server one. null when neither is usable — including a saved token that no longer opens.
+  const blueBillToken = async (request) => {
+    const row = await connectionRow(request);
+    if (row) {
+      if (!secretKey) return null;
+      try {
+        return open(secretKey, row.token_cipher, request.venue.schema_name);
+      } catch {
+        return null;
+      }
+    }
+    return serverToken(request);
+  };
+  // Safe to show a manager: never the token itself.
+  const fiscalStatus = async (request) => {
+    const row = await connectionRow(request);
+    if (row) {
+      const token = await blueBillToken(request);
+      return {
+        enabled: Boolean(token), source: "venue", mode: row.mode, hint: row.token_hint,
+        connectedBy: row.connected_by, connectedAt: row.connected_at.toISOString?.() ?? row.connected_at,
+        ...(!token && { problem: "Token-i i ruajtur nuk mund të lexohet më. Vendoseni përsëri." }),
+      };
+    }
+    const legacy = serverToken(request);
+    if (legacy) return { enabled: true, source: "server", mode: tokenMode(legacy), hint: tokenHint(legacy) };
+    return { enabled: false, source: null, mode: null };
+  };
   // methodOverride lets a manager report a different payment method to BlueBill than
   // what's on BlueBar's own record (see buildBlueBillPayload) — it's folded into the
   // idempotency key so switching methods on a retry gets a fresh BlueBill draft instead
   // of replaying the previous attempt's (mismatched) cached one.
   const fiscalizeInvoiceInState = async (request, invoiceId, result, methodOverride) => {
-    if (!invoiceId || !blueBillReady(request)) return result;
+    const token = invoiceId && (await blueBillToken(request));
+    if (!token) return result;
     const invoice = result.state.invoices.find((i) => i.id === invoiceId);
     if (!invoice || invoice.fiscalStatus === "fiskalizuar") return result;
     const withInvoice = (patch) => ({
@@ -158,7 +198,7 @@ export function buildApp({
     });
     try {
       const key = `bluebar-${request.venue.slug}-${invoiceId}-${methodOverride || invoice.method}`;
-      const fiscal = await fiscalizeInvoice(blueBill.token, invoice, key, blueBill.fetchImpl, methodOverride);
+      const fiscal = await fiscalizeInvoice(token, invoice, key, blueBill.fetchImpl, methodOverride);
       await setInvoiceFiscalResult(request.db, invoiceId, { status: "fiskalizuar", ...fiscal });
       return withInvoice({
         fiscalStatus: "fiskalizuar", fiscalIic: fiscal.iic, fiscalFic: fiscal.fic,
@@ -196,12 +236,44 @@ export function buildApp({
     preValidation: session("manager"),
   }, async request => {
     // A BlueBill token is scoped to one business. Never probe it from another tenant.
-    if (!blueBill.token || !blueBill.venueSlug || request.venue.slug !== blueBill.venueSlug)
-      return { configured: false, connected: false };
+    const token = await blueBillToken(request);
+    if (!token) return { configured: false, connected: false };
     return {
       configured: true,
-      ...await checkBlueBillConnection(blueBill.token, blueBill.fetchImpl),
+      ...await checkBlueBillConnection(token, blueBill.fetchImpl),
     };
+  });
+  app.get("/api/integrations/bluebill", { preValidation: session("manager") }, async (request) => ({
+    ...(await fiscalStatus(request)),
+    canSave: Boolean(secretKey),
+  }));
+  app.put("/api/integrations/bluebill", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["token"],
+      properties: { token: { type: "string", pattern: "^bb_[a-z]+_[A-Za-z0-9_-]{16,200}$" } } } },
+  }, async (request) => {
+    if (!secretKey)
+      throw new AppError("Serveri nuk ka çelësin e enkriptimit (BLUEBAR_SECRET_KEY). Kontaktoni administratorin.", 503);
+    const { token } = request.body;
+    // Only a token BlueBill itself accepts gets saved — a typo shows up now, not at the first sale.
+    const check = await checkBlueBillConnection(token, blueBill.fetchImpl);
+    if (!check.connected)
+      throw check.providerStatus == null
+        ? new AppError("BlueBill nuk u arrit. Kontrolloni internetin dhe provoni përsëri.", 502)
+        : new AppError("BlueBill nuk e pranoi këtë token. Kopjojeni të plotë nga BlueBill dhe provoni përsëri.", 400);
+    await request.db.query(
+      `INSERT INTO bluebar.bluebill_connection (id, token_cipher, token_hint, mode, connected_by, connected_at)
+       VALUES (true, $1, $2, $3, $4, now())
+       ON CONFLICT (id) DO UPDATE SET token_cipher = $1, token_hint = $2, mode = $3, connected_by = $4, connected_at = now()`,
+      [seal(secretKey, token, request.venue.schema_name), tokenHint(token), tokenMode(token), request.user.name],
+    );
+    await bumpRevision(request.db);
+    return { ...(await fiscalStatus(request)), canSave: true };
+  });
+  app.delete("/api/integrations/bluebill", { preValidation: session("manager") }, async (request) => {
+    await request.db.query("DELETE FROM bluebar.bluebill_connection");
+    await bumpRevision(request.db);
+    return { ...(await fiscalStatus(request)), canSave: Boolean(secretKey) };
   });
   app.get("/api/venue/network", { preValidation: session("manager") }, async request => ({
     allowedIps: request.venue.use_legacy_network ? allowedIps : request.venue.allowed_ips,
@@ -421,7 +493,7 @@ export function buildApp({
   }, async (request) => {
     const since = request.query.since;
     if (since !== undefined && (await readRevision(request.db)) === since) return { unchanged: true, revision: since };
-    return present(await readSnapshot(request.db), request.user, request.db);
+    return present(await readSnapshot(request.db), request);
   });
   app.post(
     "/api/invoices/:id/fiscalize",
@@ -441,12 +513,12 @@ export function buildApp({
       },
     },
     async (request) => {
-      if (!blueBillReady(request)) throw new AppError("BlueBill nuk është konfiguruar për këtë biznes.", 503);
+      if (!(await blueBillToken(request))) throw new AppError("BlueBill nuk është konfiguruar për këtë biznes.", 503);
       const snapshot = await readSnapshot(request.db);
       if (!snapshot.state.invoices.some((i) => i.id === request.params.id))
         throw new AppError("Fatura nuk ekziston.", 404);
       const result = await fiscalizeInvoiceInState(request, request.params.id, snapshot, request.body?.method);
-      return present(result, request.user, request.db);
+      return present(result, request);
     },
   );
   app.post(
@@ -511,7 +583,7 @@ export function buildApp({
       const result = ["order.add", "order.remove"].includes(body.type)
         ? await executeOrderPatch(request.db, body, user)
         : await execute(request.db, body, user);
-      return present(result, user, request.db);
+      return present(result, request);
     },
   );
   app.setErrorHandler((error, request, reply) => {

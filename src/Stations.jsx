@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { venueSlug } from "./api.js";
 import { Badge, DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
-import { NetworkPrinters } from "./NetworkPrinters.jsx";
 
 // Which departments this device prints for is a property of the device (the bar's
 // Mac has the bar printer), not of the business — so it lives in localStorage.
@@ -59,7 +58,7 @@ export function useStationPrinting(tickets, ready, print, networked = []) {
 
 const minutesAgo = (iso) => Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
 
-export function Stations({ state, stationDepartments, onToggleStation, onPrint, onDone, time, isManager, update, notify }) {
+export function Stations({ state, stationDepartments, onToggleStation, onPrint, onDone, time }) {
   const networked = (d) => state.printers.some((p) => p.departments.includes(d));
   const departments = [...state.departments, "Tjetër"];
   const [tab, setTab] = useState(() =>
@@ -131,7 +130,6 @@ export function Stations({ state, stationDepartments, onToggleStation, onPrint, 
         )}
       </section>
       <aside className="management-aside">
-        {isManager && <NetworkPrinters state={state} update={update} notify={notify} />}
         <section className="panel">
           <SectionHeading
             title="Printeri i kësaj pajisjeje"

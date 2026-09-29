@@ -69,4 +69,9 @@ export const createPrintKey = () => send("POST", "/print/key");
 export const testPrinter = (printerId) => send("POST", "/print/test", { printerId });
 // { queued: false } means no network printer covers it: print from the browser instead.
 export const reprintDocument = (kind, id) => send("POST", "/print/reprint", { kind, id: String(id) });
+// The business's own BlueBill token: write-only — the server only ever returns its hint.
+export const fetchBlueBill = () => request("/integrations/bluebill");
+export const saveBlueBill = (token) => send("PUT", "/integrations/bluebill", { token });
+export const disconnectBlueBill = () => send("DELETE", "/integrations/bluebill");
+export const testBlueBill = () => request("/integrations/bluebill/connection");
 export const fetchShiftReport = (id) => request(`/shifts/${id}/report`);
