@@ -276,7 +276,7 @@ function App({ user, onLogout }) {
     }
   }, [payment]);
   useEffect(() => {
-    if (selected !== null && window.matchMedia("(max-width: 760px)").matches) {
+    if (selected !== null && window.matchMedia("(max-width: 760px), (max-height: 500px) and (pointer: coarse)").matches) {
       orderHeading.current?.focus({ preventScroll: true });
       orderHeading.current
         ?.closest(".order")

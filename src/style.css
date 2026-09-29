@@ -251,6 +251,7 @@ a {
 .app {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 .sr-only {
   position: absolute;
@@ -2461,7 +2462,7 @@ footer > span:last-child {
     font-size: 10px;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .app {
     display: block;
   }
@@ -3039,7 +3040,7 @@ footer > span:last-child {
     min-height: 48px;
   }
 }
-@media (min-width: 761px) and (any-pointer: coarse) {
+@media (min-width: 761px) and (min-height: 501px) and (any-pointer: coarse) {
   nav button {
     min-height: 54px;
   }
@@ -3061,7 +3062,7 @@ footer > span:last-child {
     font-size: 12px;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   body {
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
@@ -3103,12 +3104,12 @@ footer > span:last-child {
     line-height: 1.5;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   main:has(.order) > .workspace-controls > .title-row,
   main:has(.order) > .workspace-controls > .floor-summary { display: none; }
   .order { scroll-margin-top: 12px; }
 }
-@media screen and (min-width: 761px) {
+@media screen and (min-width: 761px) and (min-height: 501px), screen and (min-width: 761px) and (pointer: fine) {
   body:has(.floor-app) { overflow: hidden; }
   .floor-app { height: 100dvh; min-height: 0; overflow: hidden; }
   .floor-app .workspace { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
@@ -3132,11 +3133,11 @@ footer > span:last-child {
   .floor-app .order-heading { padding: 12px 16px; }
   .floor-app .order-body { padding: 12px 16px; }
 }
-@media screen and (min-width: 761px) and (max-width: 1050px) {
+@media screen and (min-width: 761px) and (max-width: 1050px) and (min-height: 501px), screen and (min-width: 761px) and (max-width: 1050px) and (pointer: fine) {
   .floor-app .floor-layout.has-order { grid-template-columns: minmax(0, 1fr); }
   .floor-app .floor-layout.has-order .floor { display: none; }
 }
-@media screen and (max-width: 760px) {
+@media screen and (max-width: 760px), screen and (max-height: 500px) and (pointer: coarse) {
   body:has(.floor-app) { overflow: hidden; }
   .floor-app { display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden; }
   .floor-app .sidebar { flex-shrink: 0; padding: 8px 10px 0; }
@@ -3427,7 +3428,7 @@ footer > span:last-child {
 .database-overlay {position:fixed;inset:0;z-index:100;background:#edf3f6ee;display:grid;place-items:center;padding:20px}
 .database-overlay .panel {max-width:440px;width:100%;margin:0}
 .database-overlay p {margin-top:16px;font-size:13px}
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .database-setup.login-screen {
     margin: 1.5vh auto;
     padding: 20px;
@@ -3461,7 +3462,7 @@ footer > span:last-child {
 .save-status {font-size:11px;color:var(--muted);min-width:62px}
 .danger-button {background:#a43d34;color:#fff;border-color:#a43d34}
 .danger-button:hover {background:#892f28;color:#fff}
-@media(max-width:760px){.save-status{min-width:0;font-size:10px}.header-actions{flex-wrap:wrap}}
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {.save-status{min-width:0;font-size:10px}.header-actions{flex-wrap:wrap}}
 
 .business-entry { max-width: 440px; }
 .business-fields { display: grid; gap: 18px; border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -3469,7 +3470,7 @@ footer > span:last-child {
 .business-entry .helper { margin: 0; }
 .business-entry h1 { font-size: 26px; }
 textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); font: inherit; color: inherit; resize: vertical; }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .business-entry input, textarea { font-size: 16px; }
   .business-entry { padding: 24px; }
 }
@@ -4064,7 +4065,7 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
 .seats-stepper {
   width: fit-content;
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .draft-bar {
     flex-wrap: wrap;
     bottom: 8px;
@@ -4453,7 +4454,7 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
     grid-template-columns: minmax(0, 1fr);
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .shift-live-head {
     flex-wrap: wrap;
   }
@@ -4481,7 +4482,7 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
 .nav-sheet-layer {
   display: none;
 }
-@media screen and (max-width: 760px) {
+@media screen and (max-width: 760px), screen and (max-height: 500px) and (pointer: coarse) {
   :root {
     --tabbar: calc(62px + env(safe-area-inset-bottom, 0px));
   }
@@ -4713,7 +4714,7 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
   }
 }
 /* Mobile list rows: one compact line of what matters, details beneath it. */
-@media screen and (max-width: 760px) {
+@media screen and (max-width: 760px), screen and (max-height: 500px) and (pointer: coarse) {
   :is(.invoice-table, .product-table, .stock-table) tr {
     grid-template-columns: auto auto minmax(0, 1fr) auto auto;
     align-items: center;
@@ -4765,4 +4766,89 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
   .stock-table td:nth-child(4) > small { font-size: 12px; }
   .stock-table .stock-entry { grid-area: 3 / 1 / 4 / 6; margin-top: 4px; padding-top: 10px; }
   .stock-table .stock-entry .inline-form { flex: 1; justify-content: flex-end; }
+}
+/* ---- iPhone fit: Safari's visible height, landscape text inflation, safe areas ---- */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+.payment-dialog {
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  /* Segmented filters scroll sideways instead of pushing past the edge. */
+  .tabs {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tabs button {
+    flex-shrink: 0;
+  }
+  .close-steps {
+    gap: 4px;
+  }
+  .close-steps li {
+    min-width: 0;
+    gap: 5px;
+    padding: 8px 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .close-steps li > span {
+    flex-shrink: 0;
+  }
+  .nav-sheet {
+    max-height: calc(100dvh - var(--tabbar) - 24px - env(safe-area-inset-top, 0px));
+    overflow-y: auto;
+  }
+}
+/* Phone on its side: little height, so the header and chrome shrink to fit. */
+@media (max-height: 500px) and (pointer: coarse) {
+  :root {
+    --tabbar: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
+  .app .sidebar nav {
+    height: 52px;
+  }
+  .app .sidebar nav button {
+    flex-direction: row;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .app .topbar,
+  .floor-app .topbar {
+    min-height: 44px;
+  }
+  .app .role button {
+    min-height: 36px;
+  }
+  main {
+    padding-top: 10px;
+  }
+  .title-row {
+    margin-bottom: 10px;
+  }
+  .title-row h1 {
+    font-size: 20px;
+  }
+  .floor-app .floor-plan {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .floor-app .fp-table {
+    height: 64px !important;
+    min-height: 64px;
+  }
 }
