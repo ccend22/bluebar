@@ -47,19 +47,51 @@ export async function loadState(client) {
           sent: l.sent,
         })),
     }));
+  // Per-shift sales, so the history and its totals never need every invoice loaded.
+  const sales = new Map(
+    (
+      await client.query(
+        `SELECT shift_id, count(*)::integer AS count, sum(total)::bigint AS total,
+           COALESCE(sum(total) FILTER (WHERE method = 'Cash'), 0)::bigint AS cash,
+           COALESCE(sum(total) FILTER (WHERE method = 'Kartë'), 0)::bigint AS card
+         FROM bluebar.invoices GROUP BY shift_id`,
+      )
+    ).rows.map((r) => [r.shift_id, { count: r.count, total: Number(r.total), cash: Number(r.cash), card: Number(r.card) }]),
+  );
+  const openShift = rows("shifts").find((s) => !s.closed);
+  const cashMovements = openShift
+    ? (
+        await client.query(
+          "SELECT * FROM bluebar.cash_movements WHERE shift_id = $1 ORDER BY created_at, id",
+          [openShift.id],
+        )
+      ).rows.map((m) => ({
+        id: m.id,
+        kind: m.kind,
+        amount: m.amount,
+        reason: m.reason,
+        by: m.created_by,
+        date: iso(m.created_at),
+      }))
+    : [];
   const shifts = (rows("shifts"))
     .map((s) => ({
       id: s.id,
       opened: iso(s.opened),
       opening: s.opening,
+      openedBy: s.opened_by,
       ...(s.closed
         ? {
             closed: iso(s.closed),
+            closedBy: s.closed_by,
             counted: s.counted,
+            countedDetail: s.counted_detail,
             expected: Number(s.expected),
             difference: Number(s.difference),
+            note: s.note,
+            sales: sales.get(s.id) || { count: 0, total: 0, cash: 0, card: 0 },
           }
-        : {}),
+        : { cashMovements }),
     }))
     .sort((a, b) => b.id - a.id);
   const invoiceLines = rows("invoice_lines");
@@ -98,6 +130,7 @@ export async function loadState(client) {
     }));
   return {
     version: control.version,
+    revision: Number(control.revision),
     state: {
       categories,
       departments,
@@ -182,7 +215,9 @@ export async function persist(client, previous, next) {
       ),
   ))
     await client.query(
-      "INSERT INTO bluebar.shifts(id,opened,opening,closed,counted,expected,difference) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET closed=$4,counted=$5,expected=$6,difference=$7",
+      `INSERT INTO bluebar.shifts(id,opened,opening,closed,counted,expected,difference,opened_by,closed_by,note,counted_detail)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT(id) DO UPDATE SET closed=$4,counted=$5,expected=$6,difference=$7,closed_by=$9,note=$10,counted_detail=$11`,
       [
         s.id,
         s.opened,
@@ -191,8 +226,21 @@ export async function persist(client, previous, next) {
         s.counted ?? null,
         s.expected ?? null,
         s.difference ?? null,
+        s.openedBy || null,
+        s.closedBy || null,
+        s.note || null,
+        s.countedDetail ? JSON.stringify(s.countedDetail) : null,
       ],
     );
+  // Cash movements are only ever added, and only to the open shift.
+  if (next.shift)
+    for (const m of (next.shift.cashMovements || []).filter(
+      (m) => !(previous.shift?.cashMovements || []).some((x) => x.id === m.id),
+    ))
+      await client.query(
+        "INSERT INTO bluebar.cash_movements(id,shift_id,kind,amount,reason,created_by,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)",
+        [m.id, next.shift.id, m.kind, m.amount, m.reason, m.by, m.date],
+      );
   for (const t of next.tables.filter((t) =>
     changed(
       previous.tables.find((x) => x.id === t.id),
@@ -449,17 +497,18 @@ export async function executeOrderPatch(pool, command, actor = null) {
     const version = (
       await client.query(
         `WITH bumped AS (
-           UPDATE bluebar.control SET version = version + 1 WHERE id = 1 RETURNING version
+           UPDATE bluebar.control SET version = version + 1, revision = revision + 1 WHERE id = 1
+           RETURNING version, revision
          )
          INSERT INTO bluebar.commands(id, payload_hash, type, result)
          SELECT $1, $2, $3, '{}'::jsonb FROM bumped
-         RETURNING (SELECT version FROM bumped) AS version`,
+         RETURNING (SELECT version FROM bumped) AS version, (SELECT revision FROM bumped) AS revision`,
         [command.id, hash, command.type],
       )
-    ).rows[0].version;
+    ).rows[0];
     const table = await readOrderTable(client, tableId);
     await client.query("COMMIT");
-    return { version, patch: { table }, result: {} };
+    return { version: version.version, revision: Number(version.revision), patch: { table }, result: {} };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -510,15 +559,17 @@ export async function execute(pool, command, actor = null) {
     }
     await persist(client, snapshot.state, next.state);
     const version = snapshot.version + 1;
-    await client.query("UPDATE bluebar.control SET version=$1 WHERE id=1", [
-      version,
-    ]);
+    const revision = Number(
+      (await client.query("UPDATE bluebar.control SET version=$1, revision = revision + 1 WHERE id=1 RETURNING revision", [
+        version,
+      ])).rows[0].revision,
+    );
     await client.query(
       "INSERT INTO bluebar.commands(id,payload_hash,type,result) VALUES($1,$2,$3,$4)",
       [command.id, hash, command.type, JSON.stringify(next.result)],
     );
     await client.query("COMMIT");
-    return { state: next.state, version, result: next.result };
+    return { state: next.state, version, revision, result: next.result };
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
@@ -537,4 +588,10 @@ export async function setInvoiceFiscalResult(pool, invoiceId, { status, iic = nu
      WHERE id = $1`,
     [invoiceId, status, iic, fic, verificationUrl],
   );
+  await bumpRevision(pool);
 }
+// For writes outside commands that still change what /api/state shows.
+export const bumpRevision = (pool) => pool.query("UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1");
+// A device's cheap poll: has anything changed since the revision it already has?
+export const readRevision = async (pool) =>
+  Number((await pool.query("SELECT revision FROM bluebar.control WHERE id = 1")).rows[0].revision);

@@ -5,7 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { migrate } from "./migrate.js";
 import { buildApp } from "./app.js";
 import { execute, readSnapshot } from "./repository.js";
-import { createManager, ipPolicy, setWaiterPin } from "./auth.js";
+import { createManager, ipPolicy, setWaiterPattern, setWaiterPin } from "./auth.js";
 
 const OUTSIDE = "203.0.113.9";
 async function setup(options = {}) {
@@ -619,6 +619,76 @@ test("a waiter can only pay off their own table, until they claim it via order.a
       body: pay(2, await currentVersion()),
     });
     assert.equal(paidAfterClaim.statusCode, 200);
+  } finally {
+    await t.close();
+  }
+});
+
+test("polling with the last revision gets a tiny 'unchanged' reply until something is saved", async () => {
+  const t = await setup();
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    const poll = async (since) => (await t.call("GET", `/api/state?since=${since}`, { cookie })).json();
+    const { revision } = (await t.call("GET", "/api/state", { cookie })).json();
+    assert.deepEqual(await poll(revision), { unchanged: true, revision });
+    // A command, a PIN change and a pattern change each count as a change.
+    await t.send("category.create", { name: "Kokteje" });
+    const afterCommand = await poll(revision);
+    assert.ok(afterCommand.state && afterCommand.revision > revision);
+    await setWaiterPin(t.pool, 1, "739105");
+    const afterPin = await poll(afterCommand.revision);
+    assert.ok(afterPin.state && afterPin.revision > afterCommand.revision);
+    await setWaiterPattern(t.pool, 1, [1, 5, 9, 6]);
+    const afterPattern = await poll(afterPin.revision);
+    assert.equal(afterPattern.state.waiters[0].hasPattern, true);
+    assert.deepEqual(await poll(afterPattern.revision), { unchanged: true, revision: afterPattern.revision });
+  } finally {
+    await t.close();
+  }
+});
+
+test("Turnet: cash in/out feeds the expected drawer, counts must add up, waiters can't touch the drawer", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (cookie, type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    await cmd(boss, "shift.open", { opening: 5000 });
+    await cmd(boss, "product.save", { name: "Espresso", price: 150, category: "Kafe" });
+    await cmd(boss, "stock.receive", { productId: 1, qty: 10 });
+    for (let i = 0; i < 2; i++) await cmd(ana, "order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    await cmd(ana, "order.pay", { tableId: 1, method: "Cash", received: 300 });
+
+    assert.equal((await cmd(ana, "shift.cash", { kind: "out", amount: 100, reason: "Akull" })).statusCode, 403, "waiters can't move drawer cash");
+    assert.equal((await cmd(boss, "shift.cash", { kind: "out", amount: 999999, reason: "Kasaforta" })).statusCode, 400, "can't take out more than is there");
+    assert.equal((await cmd(boss, "shift.cash", { kind: "in", amount: 2000, reason: "Kusur nga banka" })).statusCode, 200);
+    assert.equal((await cmd(boss, "shift.cash", { kind: "out", amount: 1500, reason: "Furnitori i akullit" })).statusCode, 200);
+
+    const state = (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    assert.equal(state.shift.openedBy, "boss");
+    assert.deepEqual(state.shift.cashMovements.map((m) => [m.kind, m.amount, m.reason]), [["in", 2000, "Kusur nga banka"], ["out", 1500, "Furnitori i akullit"]]);
+    const waiterView = (await t.call("GET", "/api/state", { cookie: ana })).json().state;
+    assert.equal(waiterView.shift.cashMovements, undefined, "waiters don't see the drawer");
+
+    // expected = 5000 + 300 cash + 2000 in - 1500 out = 5800
+    assert.equal((await cmd(boss, "shift.close", { counted: 5800, denominations: { 5000: 1, 500: 1 } })).statusCode, 400, "notes must add up to the total");
+    const closed = await cmd(boss, "shift.close", { counted: 5750, denominations: { 5000: 1, 500: 1, 200: 1, 50: 1 }, note: "50 Lek kusur i gabuar" });
+    assert.equal(closed.statusCode, 200, closed.body);
+    const shift = closed.json().state.shifts[0];
+    assert.deepEqual([shift.expected, shift.counted, shift.difference, shift.closedBy, shift.note], [5800, 5750, -50, "boss", "50 Lek kusur i gabuar"]);
+    assert.deepEqual(shift.sales, { count: 1, total: 300, cash: 300, card: 0 });
+
+    const report = (await t.call("GET", `/api/shifts/${shift.id}/report`, { cookie: boss })).json();
+    assert.deepEqual([report.cash, report.cashIn, report.cashOut, report.invoiceCount], [300, 2000, 1500, 1]);
+    assert.deepEqual(report.byWaiter.map((w) => [w.name, w.total]), [["Arben K", 300]]);
+    assert.deepEqual(report.shift.countedDetail, { 5000: 1, 500: 1, 200: 1, 50: 1 });
+    assert.equal((await t.call("GET", `/api/shifts/${shift.id}/report`, { cookie: ana })).statusCode, 403);
+    // History reloads with the same numbers the close produced.
+    const history = (await t.call("GET", "/api/state", { cookie: boss })).json().state.shifts[0];
+    assert.deepEqual(history.sales, shift.sales);
   } finally {
     await t.close();
   }

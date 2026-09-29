@@ -136,27 +136,53 @@ export function checkout(state, tableId, method) {
     ],
   };
 }
-export function closeShift(state, counted) {
+// Lek notes and coins, largest first — what's actually in a till.
+export const DENOMINATIONS = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 1];
+// The open shift's money: sales so far and the cash that should be in the drawer —
+// the float, plus cash sales, plus money put in, minus money taken out.
+export function drawer(state) {
+  const shift = state.shift;
+  if (!shift) return null;
+  const invoices = state.invoices.filter((i) => i.shiftId === shift.id);
+  const sum = (list) => list.reduce((s, x) => s + (x.total ?? x.amount), 0);
+  const cash = sum(invoices.filter((i) => i.method === "Cash"));
+  const card = sum(invoices.filter((i) => i.method === "Kartë"));
+  const moves = shift.cashMovements || [];
+  const cashIn = sum(moves.filter((m) => m.kind === "in"));
+  const cashOut = sum(moves.filter((m) => m.kind === "out"));
+  return {
+    opening: shift.opening,
+    cash,
+    card,
+    cashIn,
+    cashOut,
+    expected: shift.opening + cash + cashIn - cashOut,
+    count: invoices.length,
+    total: cash + card,
+  };
+}
+export function closeShift(state, counted, { note = null, countedDetail = null, by = null } = {}) {
   if (!state.shift) throw Error("Nuk ka turn të hapur.");
   if (state.tables.some((t) => t.lines.length))
     throw Error("Mbyllni porositë e hapura përpara turnit.");
   if (!Number.isFinite(counted) || counted < 0)
     throw Error("Vendosni shumën e numëruar.");
-  const expected =
-    state.shift.opening +
-    state.invoices
-      .filter((i) => i.shiftId === state.shift.id && i.method === "Cash")
-      .reduce((s, i) => s + i.total, 0);
+  const d = drawer(state);
+  const { cashMovements, ...shift } = state.shift;
   return {
     ...state,
     shift: null,
     shifts: [
       {
-        ...state.shift,
+        ...shift,
         closed: new Date().toISOString(),
+        closedBy: by,
         counted,
-        expected,
-        difference: counted - expected,
+        countedDetail,
+        expected: d.expected,
+        difference: counted - d.expected,
+        note,
+        sales: { count: d.count, total: d.total, cash: d.cash, card: d.card },
       },
       ...state.shifts,
     ],

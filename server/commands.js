@@ -1,4 +1,4 @@
-import { addItem, checkout, closeShift } from "../src/domain.js";
+import { addItem, checkout, closeShift, DENOMINATIONS, drawer } from "../src/domain.js";
 import { cellsOf, centerOf, footprint, freeSpot, sizeFor } from "../src/floorGeometry.js";
 export class AppError extends Error {
   constructor(message, statusCode = 400) {
@@ -495,14 +495,52 @@ export function applyCommand(state, type, payload, actor = null) {
           id: nextId(state.shifts),
           opened: new Date().toISOString(),
           opening: p.opening,
+          openedBy: actor?.name || null,
+          cashMovements: [],
         },
       };
       break;
     }
-    case "shift.close":
-      integer(p.counted, 0, 100000000);
-      next = closeShift(state, p.counted);
+    case "shift.cash": {
+      // Money put into or taken out of the drawer mid-shift (a supplier paid in cash,
+      // takings moved to the safe), so the count at closing still adds up.
+      if (!state.shift) fail("Nuk ka turn të hapur.");
+      if (p.kind !== "in" && p.kind !== "out") fail("Zgjidhni hyrje ose dalje.");
+      const amount = integer(p.amount, 1, 100000000);
+      const reason = name(p.reason, 120);
+      if (p.kind === "out" && amount > drawer(state).expected)
+        fail("Në arkë nuk ka aq cash sa po nxirrni.");
+      next = {
+        ...state,
+        shift: {
+          ...state.shift,
+          cashMovements: [
+            ...(state.shift.cashMovements || []),
+            { id: crypto.randomUUID(), kind: p.kind, amount, reason, by: actor?.name || null, date: new Date().toISOString() },
+          ],
+        },
+      };
       break;
+    }
+    case "shift.close": {
+      integer(p.counted, 0, 100000000);
+      // A count by notes and coins must add up to the total it claims.
+      let countedDetail = null;
+      if (p.denominations !== undefined) {
+        if (!p.denominations || typeof p.denominations !== "object" || Array.isArray(p.denominations))
+          fail("Numërimi sipas prerjeve është i pavlefshëm.");
+        countedDetail = {};
+        for (const [key, qty] of Object.entries(p.denominations)) {
+          if (!DENOMINATIONS.includes(Number(key))) fail("Prerje e panjohur.");
+          if (integer(qty, 0, 100000)) countedDetail[key] = qty;
+        }
+        const sum = Object.entries(countedDetail).reduce((s, [k, q]) => s + Number(k) * q, 0);
+        if (sum !== p.counted) fail("Shuma e prerjeve nuk përputhet me totalin.");
+      }
+      const note = p.note === undefined || p.note === null || String(p.note).trim() === "" ? null : name(p.note, 300);
+      next = closeShift(state, p.counted, { note, countedDetail, by: actor?.name || null });
+      break;
+    }
     default:
       fail("Veprimi nuk njihet.");
   }

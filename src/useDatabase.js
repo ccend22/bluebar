@@ -89,6 +89,11 @@ export function useDatabase() {
         confirmedRef.current = {
           ...confirmedRef.current,
           version: data.version,
+          // A table patch carries only its own table: adopt its revision only when
+          // nothing else happened in between, or a later poll would say "unchanged"
+          // and this device would never see the other change.
+          revision:
+            data.revision === confirmedRef.current.revision + 1 ? data.revision : confirmedRef.current.revision,
           provider: data.provider || confirmedRef.current.provider,
           state: {
             ...confirmedRef.current.state,
@@ -106,7 +111,9 @@ export function useDatabase() {
   );
   const refresh = useCallback(async () => {
     try {
-      accept(await fetchState());
+      const data = await fetchState(confirmedRef.current.revision);
+      if (data.unchanged) setError("");
+      else accept(data);
       return true;
     } catch (requestError) {
       setError(requestError.message);

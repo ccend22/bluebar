@@ -13,6 +13,8 @@ import { Reports } from "./Reports.jsx";
 import { Orders } from "./Orders.jsx";
 import { Stations, useStationPrinting } from "./Stations.jsx";
 import { TableOrder } from "./TableOrder.jsx";
+import { ShiftReport, Shifts } from "./Shifts.jsx";
+import { launch, useInstall, useOnline } from "./pwa.js";
 import { fetchSession, fiscalizeInvoice, logout, reprintDocument, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
@@ -27,6 +29,9 @@ import {
 } from "./components.jsx";
 import "./style.css";
 
+// On a phone the manager's nav is a bottom tab bar: these stay as tabs, the rest
+// open from "Më shumë".
+const MOBILE_TABS = ["Tavolinat", "Porositë", "Faturat", "Turnet"];
 const pages = [
   {
     name: "Tavolinat",
@@ -209,78 +214,10 @@ function StationTicket({ ticket, waiterName }) {
     </>
   );
 }
-function ShiftReport({ report, venueName }) {
-  const { shift, invoiceCount, cash, card, topProducts, byWaiter } = report;
-  return (
-    <>
-      <div className="receipt-brand">
-        {venueName || "BlueBar"}<span>RAPORT TURNI</span>
-      </div>
-      <div className="receipt-meta">
-        <span>Turni #{shift.id}</span>
-        <span>{invoiceCount} fatura</span>
-      </div>
-      <p>
-        {date(shift.opened)} {time(shift.opened)} – {date(shift.closed)}{" "}
-        {time(shift.closed)}
-      </p>
-      <hr />
-      <div className="receipt-line">
-        <span>Fondi fillestar</span>
-        <b>{money(shift.opening)}</b>
-      </div>
-      <div className="receipt-line">
-        <span>Shitje cash</span>
-        <b>{money(cash)}</b>
-      </div>
-      <div className="receipt-line">
-        <span>Shitje me kartë</span>
-        <b>{money(card)}</b>
-      </div>
-      <hr />
-      <div className="receipt-total">
-        <b>E PRITSHME CASH</b>
-        <strong>{money(shift.expected)}</strong>
-      </div>
-      <div className="receipt-line">
-        <span>E numëruar</span>
-        <b>{money(shift.counted)}</b>
-      </div>
-      <div className="receipt-line">
-        <span>Diferenca</span>
-        <b>{money(shift.difference)}</b>
-      </div>
-      <hr />
-      <p>PRODUKTET MË TË SHITURA</p>
-      {topProducts.length ? (
-        topProducts.map((p) => (
-          <div className="receipt-line" key={p.name}>
-            <span>
-              {p.qty} × {p.name}
-            </span>
-            <b>{money(p.total)}</b>
-          </div>
-        ))
-      ) : (
-        <p>Asnjë shitje</p>
-      )}
-      <hr />
-      <p>SHITJE SIPAS KAMARIERIT</p>
-      {byWaiter.length ? (
-        byWaiter.map((w) => (
-          <div className="receipt-line" key={w.name}>
-            <span>{w.name}</span>
-            <b>{money(w.total)}</b>
-          </div>
-        ))
-      ) : (
-        <p>Asnjë shitje</p>
-      )}
-    </>
-  );
-}
 function App({ user, onLogout }) {
   const database = useDatabase();
+  const online = useOnline();
+  const installOffer = useInstall();
   const { state } = database;
   const [page, setPage] = useState("Tavolinat"),
     [selected, setSelected] = useState(null),
@@ -301,7 +238,6 @@ function App({ user, onLogout }) {
     [editor, setEditor] = useState(null),
     [paymentFilter, setPaymentFilter] = useState("Të gjitha"),
     [stockFilter, setStockFilter] = useState("Të gjitha"),
-    [counted, setCounted] = useState(""),
     [manageTables, setManageTables] = useState(false),
     [report, setReport] = useState(null),
     [cancelling, setCancelling] = useState(false),
@@ -318,7 +254,8 @@ function App({ user, onLogout }) {
     [orderMode, setOrderMode] = useState("summary"),
     [fiscalizeChoice, setFiscalizeChoice] = useState(false),
     [ticketPrint, setTicketPrint] = useState(null),
-    [deptFilter, setDeptFilter] = useState("Të gjitha");
+    [deptFilter, setDeptFilter] = useState("Të gjitha"),
+    [moreOpen, setMoreOpen] = useState(false);
   const dialog = useRef(null),
     dialogTrigger = useRef(null),
     heading = useRef(null),
@@ -501,16 +438,6 @@ function App({ user, onLogout }) {
       matches(`${p.name} ${p.category}`, query) &&
       (stockFilter === "Të gjitha" || p.stock <= 10),
   );
-  const shiftInvoices = state.invoices.filter(
-      (i) => i.shiftId === state.shift?.id,
-    ),
-    cashSales = shiftInvoices
-      .filter((i) => i.method === "Cash")
-      .reduce((s, i) => s + i.total, 0),
-    cardSales = shiftInvoices
-      .filter((i) => i.method === "Kartë")
-      .reduce((s, i) => s + i.total, 0),
-    expected = (state.shift?.opening || 0) + cashSales;
   const lowStock = state.products.filter((p) => p.stock <= 10).length;
   const pendingUnits = (t) => t.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0);
   const print = (invoice) => {
@@ -685,38 +612,15 @@ function App({ user, onLogout }) {
     )
       setEditor(null);
   }
-  // Takes the state explicitly (not the outer `state` closure) so a report built right after
-  // shift.close uses that response's fresh data, not a render that hasn't caught up yet.
-  const buildReport = (fromState, shift) => {
-    const invoices = fromState.invoices.filter((i) => i.shiftId === shift.id);
-    const cash = invoices
-        .filter((i) => i.method === "Cash")
-        .reduce((s, i) => s + i.total, 0),
-      card = invoices
-        .filter((i) => i.method === "Kartë")
-        .reduce((s, i) => s + i.total, 0);
-    const products = new Map();
-    for (const inv of invoices)
-      for (const l of inv.lines) {
-        const cur = products.get(l.name) || { qty: 0, total: 0 };
-        cur.qty += l.qty;
-        cur.total += l.qty * l.price;
-        products.set(l.name, cur);
-      }
-    const topProducts = [...products]
-      .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5);
-    const waiterTotals = new Map();
-    for (const inv of invoices)
-      waiterTotals.set(inv.waiter, (waiterTotals.get(inv.waiter) || 0) + inv.total);
-    const byWaiter = [...waiterTotals]
-      .map(([id, total]) => ({
-        name: fromState.waiters.find((w) => w.id === id)?.name || "—",
-        total,
-      }))
-      .sort((a, b) => b.total - a.total);
-    return { shift, invoiceCount: invoices.length, cash, card, topProducts, byWaiter };
+  // The shift report goes to the cashier's network printer when there is one.
+  const printShiftReport = async (r) => {
+    if (!cashierPrinter) return window.print();
+    try {
+      await reprintDocument("shift", r.shift.id);
+      notify(`Raporti u dërgua te ${cashierPrinter.name}.`);
+    } catch (e) {
+      notify(e.message, "error");
+    }
   };
   if (database.loading || !database.ready)
     return (
@@ -793,8 +697,12 @@ function App({ user, onLogout }) {
               .map((p) => (
                 <button
                   key={p.name}
+                  className={role === "Menaxher" && !MOBILE_TABS.includes(p.name) ? "nav-extra" : undefined}
                   aria-current={page === p.name ? "page" : undefined}
-                  onClick={() => nav(p.name)}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    nav(p.name);
+                  }}
                 >
                   <Icon name={p.icon} />
                   <span>{p.name}</span>
@@ -803,7 +711,50 @@ function App({ user, onLogout }) {
                   )}
                 </button>
               ))}
+            {role === "Menaxher" && (
+              <button
+                className="nav-more"
+                aria-expanded={moreOpen}
+                aria-current={!MOBILE_TABS.includes(page) ? "page" : undefined}
+                onClick={() => setMoreOpen((open) => !open)}
+              >
+                <Icon name="more" />
+                <span>{MOBILE_TABS.includes(page) ? "Më shumë" : page}</span>
+                {lowStock > 0 && <span className="nav-count">{lowStock}</span>}
+              </button>
+            )}
           </nav>
+          {moreOpen && (
+            <div className="nav-sheet-layer" onClick={() => setMoreOpen(false)} onKeyDown={(e) => e.key === "Escape" && setMoreOpen(false)}>
+              <div className="nav-sheet" role="menu" aria-label="Më shumë faqe" onClick={(e) => e.stopPropagation()}>
+                {pages
+                  .filter((p) => !MOBILE_TABS.includes(p.name))
+                  .map((p) => (
+                    <button
+                      key={p.name}
+                      role="menuitem"
+                      autoFocus={p.name === pages.find((x) => !MOBILE_TABS.includes(x.name)).name}
+                      aria-current={page === p.name ? "page" : undefined}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        nav(p.name);
+                      }}
+                    >
+                      <Icon name={p.icon} />
+                      <span>{p.name}</span>
+                      {p.name === "Inventari" && lowStock > 0 && <span className="nav-count">{lowStock}</span>}
+                    </button>
+                  ))}
+                <div className="nav-sheet-user">
+                  <span className="avatar">{user.name[0]}</span>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <small>{user.venue?.name || "BlueBar"}</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="sidebar-note">
             <Icon name="info" size={18} />
             <p>
@@ -830,10 +781,20 @@ function App({ user, onLogout }) {
               Hapësira e punës <Icon name="arrow" size={14} />
               <strong>{page}</strong>
             </div>
+            <div className="topbar-brand" aria-hidden="true">
+              <span className="brandmark">b.</span>
+              <span>{user.venue?.name || "BlueBar"}</span>
+            </div>
             <div className="header-actions">
               <span className="save-status" role="status" aria-live="polite">
                 {database.saving ? "Po ruhet…" : ""}
               </span>
+              {!online && (
+                <span className="shift-status offline" role="status">
+                  <span className="dot" />
+                  Pa internet
+                </span>
+              )}
               <span className={`shift-status ${state.shift ? "" : "closed"}`}>
                 <span className="dot" />
                 {state.shift ? "Turn i hapur" : "Turn i mbyllur"}
@@ -900,6 +861,32 @@ function App({ user, onLogout }) {
                 )}
               </div>
             </div>
+            {!online && (
+              <div className="notice warning" role="status">
+                <Icon name="info" />
+                <span>
+                  Pa lidhje me internetin. Porositë dhe pagesat nuk ruhen derisa të rikthehet lidhja.
+                </span>
+              </div>
+            )}
+            {installOffer && (
+              <div className="notice install-offer">
+                <img src="/icons/icon-192.png" alt="" width="32" height="32" />
+                <span>
+                  {installOffer.kind === "prompt"
+                    ? "Instaloni BlueBar si aplikacion: hapet me një prekje, në ekran të plotë."
+                    : "Instaloni BlueBar: prekni Shpërndaj, pastaj “Shto në ekranin bazë”."}
+                </span>
+                {installOffer.kind === "prompt" && (
+                  <button className="primary" onClick={installOffer.install}>
+                    Instalo
+                  </button>
+                )}
+                <button className="icon-button" onClick={installOffer.dismiss} aria-label="Mbyll ofertën e instalimit">
+                  <Icon name="close" size={18} />
+                </button>
+              </div>
+            )}
             {database.error && !database.pending && (
               <div className="notice error" role="alert">
                 <Icon name="info" />
@@ -933,7 +920,7 @@ function App({ user, onLogout }) {
                     </button>
                   )}
                 {page === "Turnet" && report && notice.tone === "success" && (
-                  <button onClick={() => window.print()}>
+                  <button onClick={() => printShiftReport(report)}>
                     <Icon name="print" size={16} />
                     Printo raportin
                   </button>
@@ -1542,7 +1529,7 @@ function App({ user, onLogout }) {
                   </div>
                   {filteredInvoices.length ? (
                     <div className="table-scroll">
-                      <table className="responsive-table">
+                      <table className="responsive-table invoice-table">
                         <thead>
                           <tr>
                             <th>Fatura</th>
@@ -1557,7 +1544,7 @@ function App({ user, onLogout }) {
                         </thead>
                         <tbody>
                           {filteredInvoices.map((i) => (
-                            <tr key={i.id}>
+                            <tr key={i.id} onClick={(e) => !e.target.closest("button") && (setReceipt(i), setFiscalizeChoice(false))}>
                               <td data-label="Fatura">
                                 <strong>D-{i.id}</strong>
                                 <small className="positive">Paguar</small>
@@ -1937,7 +1924,7 @@ function App({ user, onLogout }) {
                   )}
                   {menuProducts.length ? (
                     <div className="table-scroll">
-                      <table className="responsive-table">
+                      <table className="responsive-table product-table">
                         <thead>
                           <tr>
                             <th>Produkti</th>
@@ -2408,264 +2395,16 @@ function App({ user, onLogout }) {
             )}
 
             {page === "Turnet" && (
-              <div className="management-layout">
-                <div>
-                  <section className="panel">
-                    <SectionHeading
-                      title={
-                        state.shift ? "Turni aktual" : "Gati për turnin e ri"
-                      }
-                      description={
-                        state.shift
-                          ? `Hapur më ${date(state.shift.opened)}, ora ${time(state.shift.opened)}`
-                          : "Vendosni fondin fillestar të arkës për të nisur shërbimin."
-                      }
-                    >
-                      <Badge tone={state.shift ? "green" : ""}>
-                        {state.shift ? "I hapur" : "I mbyllur"}
-                      </Badge>
-                    </SectionHeading>
-                    {state.shift ? (
-                      <>
-                        <div className="reconciliation">
-                          <div>
-                            <span>Fondi fillestar</span>
-                            <strong>{money(state.shift.opening)}</strong>
-                          </div>
-                          <div>
-                            <span>
-                              Shitje cash{" "}
-                              <small>
-                                {
-                                  shiftInvoices.filter(
-                                    (i) => i.method === "Cash",
-                                  ).length
-                                }{" "}
-                                fatura
-                              </small>
-                            </span>
-                            <strong>+ {money(cashSales)}</strong>
-                          </div>
-                          <div className="reconciliation-total">
-                            <span>Cash i pritshëm në arkë</span>
-                            <strong>{money(expected)}</strong>
-                          </div>
-                          <div className="card-total">
-                            <span>
-                              Shitje me kartë{" "}
-                              <small>Nuk përfshihen në cash</small>
-                            </span>
-                            <strong>{money(cardSales)}</strong>
-                          </div>
-                        </div>
-                        {occupied > 0 && (
-                          <div className="notice warning">
-                            <Icon name="info" />
-                            <span>
-                              {occupied} tavolina kanë porosi të hapura.
-                              Përfundoni pagesat përpara mbylljes.
-                            </span>
-                            <button onClick={() => nav("Tavolinat")}>
-                              Shiko tavolinat
-                            </button>
-                          </div>
-                        )}
-                        <form
-                          className="shift-form"
-                          onSubmit={async (e) => {
-                            const formElement = e.currentTarget;
-                            e.preventDefault();
-                            const data = await update(
-                              "shift.close",
-                              { counted: Number(counted) },
-                              "Turni u mbyll. Numërimi u ruajt në historik.",
-                            );
-                            if (data) {
-                              setCounted("");
-                              setReport(
-                                buildReport(data.state, data.state.shifts[0]),
-                              );
-                            }
-                          }}
-                        >
-                          <Field
-                            label="Cash i numëruar (Lek)"
-                            name="amount"
-                            type="number"
-                            min="0"
-                            step="1"
-                            max="100000000"
-                            value={counted}
-                            onChange={(e) => setCounted(e.target.value)}
-                            placeholder="Vendosni shumën reale"
-                            required
-                          />
-                          {counted !== "" && (
-                            <div
-                              className={`count-difference ${Number(counted) === expected ? "positive" : "warning-text"}`}
-                            >
-                              <span>Diferenca e numërimit</span>
-                              <strong>
-                                {money(Number(counted) - expected)}
-                              </strong>
-                            </div>
-                          )}
-                          <button className="primary" disabled={occupied > 0}>
-                            <Icon name="check" size={18} />
-                            Mbyll turnin
-                          </button>
-                        </form>
-                      </>
-                    ) : (
-                      <form
-                        className="stack-form"
-                        onSubmit={async (e) => {
-                          const formElement = e.currentTarget;
-                          e.preventDefault();
-                          const amount = Number(
-                            new FormData(e.currentTarget).get("amount"),
-                          );
-                          await update(
-                            "shift.open",
-                            { opening: amount },
-                            "Turni u hap. Mund të filloni të merrni porosi.",
-                          );
-                        }}
-                      >
-                        <Field
-                          label="Fondi fillestar (Lek)"
-                          name="amount"
-                          type="number"
-                          min="0"
-                          step="1"
-                          max="100000000"
-                          required
-                          placeholder="p.sh. 5000"
-                        />
-                        <button className="primary">
-                          <Icon name="plus" size={18} />
-                          Hap turnin
-                        </button>
-                      </form>
-                    )}
-                  </section>
-                  {report && (
-                    <div className="receipt-preview">
-                      <div className="preview-heading">
-                        <h2>Raporti i turnit #{report.shift.id}</h2>
-                        <button
-                          className="icon-button"
-                          onClick={() => setReport(null)}
-                          aria-label="Mbyll raportin"
-                        >
-                          <Icon name="close" />
-                        </button>
-                      </div>
-                      <article className="receipt-paper">
-                        <ShiftReport report={report} venueName={user.venue?.name} />
-                      </article>
-                      <button
-                        className="primary full-width"
-                        onClick={() => window.print()}
-                      >
-                        <Icon name="print" size={18} />
-                        Printo raportin
-                      </button>
-                    </div>
-                  )}
-                  <section className="panel">
-                    <SectionHeading
-                      title="Historiku i turneve"
-                      description={`${state.shifts.length} turne të mbyllura`}
-                    />
-                    {state.shifts.length ? (
-                      <div className="table-scroll">
-                        <table className="responsive-table">
-                          <thead>
-                            <tr>
-                              <th>Mbyllur më</th>
-                              <th>E pritshme</th>
-                              <th>E numëruar</th>
-                              <th>Diferenca</th>
-                              <th>
-                                <span className="sr-only">Veprimet</span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {state.shifts.map((s) => (
-                              <tr key={s.id}>
-                                <td data-label="Mbyllur më">
-                                  {date(s.closed)}
-                                  <small>{time(s.closed)}</small>
-                                </td>
-                                <td data-label="E pritshme">
-                                  {money(s.expected)}
-                                </td>
-                                <td data-label="E numëruar">
-                                  {money(s.counted)}
-                                </td>
-                                <td data-label="Diferenca">
-                                  <Badge
-                                    tone={
-                                      s.difference === 0 ? "green" : "amber"
-                                    }
-                                  >
-                                    {money(s.difference)}
-                                  </Badge>
-                                </td>
-                                <td className="row-actions">
-                                  <button
-                                    onClick={() =>
-                                      setReport(buildReport(state, s))
-                                    }
-                                  >
-                                    Shiko raportin
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <Empty icon="clock" title="Çdo turn, i dokumentuar">
-                        Pas mbylljes së turnit të parë, numërimet dhe diferencat
-                        do të shfaqen këtu.
-                      </Empty>
-                    )}
-                  </section>
-                </div>
-                <aside className="management-aside">
-                  <div className="info-note">
-                    <Icon name="cash" />
-                    <div>
-                      <strong>Një numërim i qartë</strong>
-                      <p>
-                        Numëroni paratë fizike në arkë. Pagesat me kartë ruhen
-                        veçmas dhe nuk shtohen në cash-in e pritshëm.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="shift-checklist">
-                    <h3>Para mbylljes</h3>
-                    <p>
-                      <Icon name={occupied ? "tables" : "check"} size={18} />
-                      {occupied
-                        ? "Përfundoni porositë e hapura"
-                        : "Të gjitha tavolinat janë të lira"}
-                    </p>
-                    <p>
-                      <Icon name="cash" size={18} />
-                      Numëroni paratë në arkë
-                    </p>
-                    <p>
-                      <Icon name="receipt" size={18} />
-                      Kontrolloni diferencën e numërimit
-                    </p>
-                  </div>
-                </aside>
-              </div>
+              <Shifts
+                state={state}
+                user={user}
+                update={update}
+                notify={notify}
+                nav={nav}
+                report={report}
+                setReport={setReport}
+                onPrintReport={printShiftReport}
+              />
             )}
             {page === "Raportet" && <Reports state={state} />}
           </fieldset>
@@ -2835,11 +2574,23 @@ function App({ user, onLogout }) {
   );
 }
 function Root() {
-  // undefined = checking the session, null = signed out.
+  // undefined = checking the session, null = signed out, "offline" = couldn't reach
+  // the server (not the same as signed out — don't send staff to the login screen).
   const [user, setUser] = useState(undefined);
+  const check = () =>
+    fetchSession().then(setUser, (e) => setUser(e.status === 0 ? "offline" : null));
   useEffect(() => {
     setUnauthorizedHandler(() => setUser(null));
-    fetchSession().then(setUser, () => setUser(null));
+    check();
+    // The "online" event alone isn't reliable (captive Wi-Fi, flaky signal): also retry
+    // every few seconds while the offline screen is up.
+    const retry = () => setUser((u) => (u === "offline" ? (check(), undefined) : u));
+    window.addEventListener("online", retry);
+    const timer = setInterval(retry, 5000);
+    return () => {
+      window.removeEventListener("online", retry);
+      clearInterval(timer);
+    };
   }, []);
   const enter = (u) => {
     setUser(u);
@@ -2855,6 +2606,17 @@ function Root() {
         <p>Po ngarkohet…</p>
       </main>
     );
+  if (user === "offline")
+    return (
+      <main className="database-setup">
+        <span className="brand">BlueBar</span>
+        <h1>Pa lidhje</h1>
+        <p>BlueBar nuk arrin serverin. Kontrolloni internetin — rilidhet vetë sapo të kthehet lidhja.</p>
+        <button className="primary" onClick={() => (setUser(undefined), check())}>
+          Provo sërish
+        </button>
+      </main>
+    );
   return user ? <App user={user} onLogout={leave} /> : <Login onSignedIn={enter} />;
 }
-createRoot(document.getElementById("root")).render(<Root />);
+if (launch()) createRoot(document.getElementById("root")).render(<Root />);

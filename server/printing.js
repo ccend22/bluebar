@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { shiftReport } from "./shiftReport.js";
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 // The API runs in UTC; slips are read by staff in Tirana.
@@ -67,7 +68,7 @@ export async function enqueueTest(db, printerId) {
 // client to fall back to the browser's print dialog.
 export async function enqueueReprint(db, kind, ref) {
   let printer;
-  if (kind === "invoice") {
+  if (kind === "invoice" || kind === "shift") {
     printer = (await db.query("SELECT id FROM bluebar.printers WHERE receipts LIMIT 1")).rows[0];
   } else {
     const ticket = (await db.query("SELECT department FROM bluebar.station_tickets WHERE id = $1", [ref])).rows[0];
@@ -77,7 +78,7 @@ export async function enqueueReprint(db, kind, ref) {
       ).rows[0];
   }
   if (!printer) return false;
-  await enqueue(db, printer.id, kind === "invoice" ? "invoice" : "ticket", ref);
+  await enqueue(db, printer.id, kind === "ticket" ? "ticket" : kind, ref);
   return true;
 }
 
@@ -127,6 +128,47 @@ async function invoiceDocument(db, id, venueName) {
     { type: "center", text: "Faleminderit për vizitën!" },
   ];
 }
+async function shiftDocument(db, id, venueName) {
+  const r = await shiftReport(db, Number(id));
+  if (!r) return null;
+  const { shift } = r;
+  return [
+    { type: "title", text: venueName || "BlueBar" },
+    { type: "center", text: shift.closed ? `RAPORT TURNI #${shift.id}` : `GJENDJA E TURNIT #${shift.id}` },
+    { type: "text", text: `Hapur: ${stamp(shift.opened)}${shift.openedBy ? ` · ${shift.openedBy}` : ""}` },
+    ...(shift.closed ? [{ type: "text", text: `Mbyllur: ${stamp(shift.closed)}${shift.closedBy ? ` · ${shift.closedBy}` : ""}` }] : []),
+    { type: "rule" },
+    { type: "pair", left: "Fatura", right: String(r.invoiceCount) },
+    { type: "pair", left: "Shitje cash", right: lek(r.cash) },
+    { type: "pair", left: "Shitje me kartë", right: lek(r.card) },
+    { type: "total", left: "SHITJE GJITHSEJ", right: lek(r.cash + r.card) },
+    { type: "rule" },
+    { type: "pair", left: "Fondi fillestar", right: lek(shift.opening) },
+    { type: "pair", left: "+ Shitje cash", right: lek(r.cash) },
+    ...(r.cashIn ? [{ type: "pair", left: "+ Hyrje në arkë", right: lek(r.cashIn) }] : []),
+    ...(r.cashOut ? [{ type: "pair", left: "- Dalje nga arka", right: lek(r.cashOut) }] : []),
+    { type: "total", left: "CASH I PRITSHËM", right: lek(shift.expected) },
+    ...(shift.closed
+      ? [
+          { type: "pair", left: "Cash i numëruar", right: lek(shift.counted) },
+          { type: "pair", left: "Diferenca", right: lek(shift.difference) },
+          ...(shift.note ? [{ type: "text", text: `Shënim: ${shift.note}` }] : []),
+        ]
+      : []),
+    ...(r.cashMovements.length
+      ? [{ type: "rule" }, { type: "center", text: "LËVIZJET E ARKËS" },
+        ...r.cashMovements.map((m) => ({ type: "pair", left: `${m.kind === "in" ? "+" : "-"} ${m.reason}`, right: lek(m.amount) }))]
+      : []),
+    { type: "rule" },
+    { type: "center", text: "SIPAS KAMARIERIT" },
+    ...r.byWaiter.map((w) => ({ type: "pair", left: `${w.name} (${w.count})`, right: lek(w.total) })),
+    { type: "rule" },
+    { type: "center", text: "MË TË SHITURAT" },
+    ...r.topProducts.map((p) => ({ type: "pair", left: `${p.qty} x ${p.name}`, right: lek(p.total) })),
+    { type: "rule" },
+    { type: "text", text: `Të fiskalizuara: ${r.fiscalized} nga ${r.invoiceCount}` },
+  ];
+}
 async function testDocument(db, printerId) {
   const p = (await db.query("SELECT * FROM bluebar.printers WHERE id = $1", [Number(printerId)])).rows[0];
   if (!p) return null;
@@ -166,6 +208,8 @@ export async function pendingJobs(db, venueName) {
         ? await invoiceDocument(db, j.ref, venueName)
         : j.kind === "test"
           ? await testDocument(db, j.ref)
+          : j.kind === "shift"
+            ? await shiftDocument(db, j.ref, venueName)
           : await ticketDocument(db, j.ref, j.kind === "cancel");
     if (!document) {
       // The ticket was finished and cleared before the agent got to it: nothing to print.

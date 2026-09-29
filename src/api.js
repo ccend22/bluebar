@@ -33,7 +33,8 @@ async function request(path, options = {}) {
     throw new ApiError(body.error || "Kërkesa dështoi.", response.status);
   return body;
 }
-export const fetchState = () => request("/state");
+// since: the revision this device already has; the reply is { unchanged: true } if nothing moved.
+export const fetchState = (since) => request(since === undefined ? "/state" : `/state?since=${since}`);
 // Best-effort; call after a payment succeeds. Safe to ignore failures — a manager can
 // retry the same invoice later from Faturat, and this never blocks the sale itself.
 export const fiscalizeInvoice = (id, method) =>
@@ -68,3 +69,4 @@ export const createPrintKey = () => send("POST", "/print/key");
 export const testPrinter = (printerId) => send("POST", "/print/test", { printerId });
 // { queued: false } means no network printer covers it: print from the browser instead.
 export const reprintDocument = (kind, id) => send("POST", "/print/reprint", { kind, id: String(id) });
+export const fetchShiftReport = (id) => request(`/shifts/${id}/report`);

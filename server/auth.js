@@ -145,6 +145,7 @@ export async function setWaiterPattern(pool, waiterId, pattern) {
   );
   if (!r.rows[0]) throw new AppError("Kamarieri nuk ekziston.", 404);
   await pool.query("DELETE FROM bluebar.sessions WHERE account_id = $1", [r.rows[0].id]);
+  await pool.query("UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1");
 }
 export async function loginWaiter(pool, { waiterId, pin }) {
   const a = await reserve(pool, waiterId, null);
@@ -219,6 +220,7 @@ export async function setWaiterPin(pool, waiterId, pin) {
   );
   if (!r.rows[0]) throw new AppError("Kamarieri nuk ekziston.", 404);
   await pool.query("DELETE FROM bluebar.sessions WHERE account_id = $1", [r.rows[0].id]);
+  await pool.query("UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1");
 }
 const genPin = () => {
   let p;
@@ -236,5 +238,6 @@ export async function createManager(pool, username) {
     [username, await hashSecret(pin)],
   );
   await pool.query("DELETE FROM bluebar.sessions WHERE account_id = $1", [r.rows[0].id]);
+  await pool.query("UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1");
   return { id: r.rows[0].id, pin };
 }

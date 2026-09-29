@@ -1,8 +1,9 @@
 import Fastify from "fastify";
 import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks } from "./tenants.js";
 import { AppError } from "./commands.js";
-import { readSnapshot, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
+import { readSnapshot, readRevision, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
 import { checkBlueBillConnection, fiscalizeInvoice } from "./bluebill.js";
+import { shiftReport } from "./shiftReport.js";
 import {
   agentKeyValid,
   agentStatus,
@@ -252,8 +253,21 @@ export function buildApp({
   app.post("/api/print/reprint", {
     preValidation: session(),
     schema: { body: { type: "object", additionalProperties: false, required: ["kind", "id"],
-      properties: { kind: { type: "string", enum: ["ticket", "invoice"] }, id: { type: "string", maxLength: 64 } } } },
-  }, async (request) => ({ queued: await enqueueReprint(request.db, request.body.kind, request.body.id) }));
+      properties: { kind: { type: "string", enum: ["ticket", "invoice", "shift"] }, id: { type: "string", maxLength: 64 } } } },
+  }, async (request) => {
+    // Shift reports hold the cash count: managers only.
+    if (request.body.kind === "shift" && request.user.role !== "manager")
+      throw new AppError("Nuk keni leje për këtë veprim.", 403);
+    return { queued: await enqueueReprint(request.db, request.body.kind, request.body.id) };
+  });
+  app.get("/api/shifts/:id/report", {
+    preValidation: session("manager"),
+    schema: { params: { type: "object", properties: { id: { type: "integer", minimum: 1 } } } },
+  }, async (request) => {
+    const report = await shiftReport(request.db, request.params.id);
+    if (!report) throw new AppError("Turni nuk ekziston.", 404);
+    return report;
+  });
 
   app.put("/api/venue/login-mode", {
     preValidation: session("manager"),
@@ -401,9 +415,14 @@ export function buildApp({
       return start(request, reply, await loginWaiterPattern(request.db, request.body));
     },
   );
-  app.get("/api/state", { preValidation: session() }, async (request) =>
-    present(await readSnapshot(request.db), request.user, request.db),
-  );
+  app.get("/api/state", {
+    preValidation: session(),
+    schema: { querystring: { type: "object", properties: { since: { type: "integer", minimum: 0 } } } },
+  }, async (request) => {
+    const since = request.query.since;
+    if (since !== undefined && (await readRevision(request.db)) === since) return { unchanged: true, revision: since };
+    return present(await readSnapshot(request.db), request.user, request.db);
+  });
   app.post(
     "/api/invoices/:id/fiscalize",
     {
@@ -467,6 +486,7 @@ export function buildApp({
                 "waiter.toggle",
                 "shift.open",
                 "shift.close",
+                "shift.cash",
               ],
             },
             payload: { type: "object" },
