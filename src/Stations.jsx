@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { venueSlug } from "./api.js";
-import { Badge, DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
+import { DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
 
 // Which departments this device prints for is a property of the device (the bar's
 // Mac has the bar printer), not of the business — so it lives in localStorage.
@@ -56,9 +56,17 @@ export function useStationPrinting(tickets, ready, print, networked = []) {
   return [departments, toggle];
 }
 
-const minutesAgo = (iso) => Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+const ago = (iso) => {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} orë`;
+  const days = Math.floor(minutes / (24 * 60));
+  return `${days} ditë`;
+};
+// On screen: only tickets of orders still open. Paid or cancelled ones leave at once.
+const open = (k) => !k.doneAt && !k.invoice && !k.cancelledAt;
 
-export function Stations({ state, stationDepartments, onToggleStation, onPrint, onDone, time }) {
+export function Stations({ state, stationDepartments, onToggleStation, onPrint, time }) {
   const networked = (d) => state.printers.some((p) => p.departments.includes(d));
   const departments = [...state.departments, "Tjetër"];
   const [tab, setTab] = useState(() =>
@@ -66,16 +74,16 @@ export function Stations({ state, stationDepartments, onToggleStation, onPrint, 
   );
   const waiterName = (id) => state.waiters.find((w) => w.id === id)?.name;
   const queue = state.tickets
-    .filter((k) => !k.doneAt && (tab === "Të gjitha" || k.department === tab))
+    .filter((k) => open(k) && (tab === "Të gjitha" || k.department === tab))
     .sort((a, b) => a.date.localeCompare(b.date));
-  const count = (d) => state.tickets.filter((k) => !k.doneAt && k.department === d).length;
+  const count = (d) => state.tickets.filter((k) => open(k) && k.department === d).length;
 
   return (
     <div className="management-layout">
       <section className="panel">
         <SectionHeading
           title="Fletët në pritje"
-          description={`${queue.length} ${queue.length === 1 ? "fletë" : "fletë"} për t'u përgatitur`}
+          description={`${queue.length} fletë për t'u përgatitur · largohen vetë kur tavolina paguhet`}
         />
         <div className="tabs" aria-label="Filtro repartin">
           {["Të gjitha", ...departments].map((d) => (
@@ -88,19 +96,14 @@ export function Stations({ state, stationDepartments, onToggleStation, onPrint, 
         {queue.length ? (
           <div className="station-queue">
             {queue.map((k) => (
-              <article className={`station-card ${k.cancelledAt ? "cancelled" : ""}`} key={k.id}>
+              <article className="station-card" key={k.id}>
                 <header>
                   <DepartmentTag name={k.department} />
                   <strong>Tavolina {String(k.table).padStart(2, "0")}</strong>
                   <span>Raundi {k.round}</span>
-                  {k.cancelledAt ? (
-                    <Badge tone="red">Anuluar</Badge>
-                  ) : k.invoice ? (
-                    <Badge tone="green">Paguar</Badge>
-                  ) : null}
                 </header>
                 <p className="station-meta">
-                  {time(k.date)} · {minutesAgo(k.date)} min më parë
+                  {time(k.date)} · {ago(k.date)} më parë
                   {waiterName(k.waiter) ? ` · ${waiterName(k.waiter)}` : ""}
                 </p>
                 <ul>
@@ -111,13 +114,9 @@ export function Stations({ state, stationDepartments, onToggleStation, onPrint, 
                   ))}
                 </ul>
                 <div className="station-actions">
-                  <button onClick={() => onPrint([k])} aria-label={`Printo fletën e tavolinës ${k.table}`}>
+                  <button onClick={() => onPrint([k])} aria-label={`Printo sërish fletën e tavolinës ${k.table}`}>
                     <Icon name="print" size={17} />
-                    Printo
-                  </button>
-                  <button className={k.cancelledAt ? "" : "primary"} onClick={() => onDone(k)}>
-                    <Icon name={k.cancelledAt ? "close" : "check"} size={17} />
-                    {k.cancelledAt ? "Hiq" : "Gati"}
+                    Printo sërish
                   </button>
                 </div>
               </article>

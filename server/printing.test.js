@@ -161,3 +161,174 @@ test("print agent: each department's ticket reaches its own network printer; the
     await db.close();
   }
 });
+
+test("pairing a venue computer: one-time code → installer → key → the bash agent prints", async () => {
+  const { spawn, spawnSync } = await import("node:child_process");
+  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const db = new PGlite();
+  const query = (sql, params) => (params ? db.query(sql, params) : db.exec(sql).then((r) => r.at(-1) || { rows: [] }));
+  const pool = { query, connect: async () => ({ query, release() {} }) };
+  await migrate(pool);
+  await execute(pool, { id: randomUUID(), version: 0, type: "waiter.create", payload: { name: "Ana" } });
+  await setWaiterPin(pool, 1, "482913");
+  const manager = await createManager(pool, "boss");
+  const printer = await fakePrinter();
+  const app = buildApp({ pool, origins: [], allowedHosts: ["127.0.0.1"] });
+  await app.listen({ port: 0, host: "127.0.0.1" });
+  const url = `http://127.0.0.1:${app.server.address().port}`;
+  const call = (method, path, { cookie, body, headers = { "x-bluebar-client": "1" } } = {}) =>
+    fetch(url + path, {
+      method,
+      headers: { ...headers, ...(cookie && { cookie }), ...(body && { "content-type": "application/json" }) },
+      body: body && JSON.stringify(body),
+    });
+  const login = async (path, body) => (await call("POST", path, { body })).headers.get("set-cookie").split(";")[0];
+  const home = await mkdtemp(join(tmpdir(), "bluebar-agent-"));
+  let agent;
+  try {
+    const boss = await login("/api/auth/manager-login", { pin: manager.pin });
+    const ana = await login("/api/auth/waiter-login", { waiterId: 1, pin: "482913" });
+    assert.equal((await call("POST", "/api/print/pairing", { cookie: ana })).status, 403);
+    const { code } = await (await call("POST", "/api/print/pairing", { cookie: boss })).json();
+    assert.match(code, /^\d{6}$/);
+
+    // The installer needs no BlueBar header (curl | bash, a download link) and knows this server.
+    const sh = await (await call("GET", `/api/print/install/${code}.sh`, { headers: {} })).text();
+    assert.ok(sh.includes(`URL='${url}'`) && sh.includes(`CODE='${code}'`));
+    assert.equal(spawnSync("bash", ["-n"], { input: sh }).status, 0, "installer is valid bash");
+    const cmd = await call("GET", `/api/print/install/${code}.cmd`, { headers: {} });
+    assert.match(cmd.headers.get("content-disposition"), /attachment; filename="BlueBar Print.cmd"/);
+    assert.match(await cmd.text(), /\r\n/);
+    assert.ok((await (await call("GET", `/api/print/install/${code}.ps1`, { headers: {} })).text()).includes(`$Code = '${code}'`));
+    assert.equal((await call("GET", "/api/print/install/12345.sh", { headers: {} })).status, 404);
+
+    // The code works once, and only the right one.
+    const wrong = code === "000000" ? "000001" : "000000";
+    assert.equal((await call("POST", "/api/print/pair", { body: { code: wrong } })).status, 400);
+    const paired = await call("POST", "/api/print/pair?format=lines", { body: { code } });
+    assert.equal(paired.status, 200);
+    const [venue, key, name] = (await paired.text()).split("\n");
+    assert.deepEqual([venue, name], ["bluebar", "BlueBar"]);
+    assert.equal((await call("POST", "/api/print/pair", { body: { code } })).status, 400, "a code is single-use");
+
+    // A job, fetched as ready ESC/POS bytes.
+    const { version } = await (await call("GET", "/api/state", { cookie: boss })).json();
+    await call("POST", "/api/commands", {
+      cookie: boss,
+      body: { id: randomUUID(), version, type: "printer.save", payload: { name: "Bari", host: "127.0.0.1", port: printer.port, departments: ["Bar"] } },
+    });
+    await call("POST", "/api/print/test", { cookie: boss, body: { printerId: 1 } });
+    const auth = { "x-bluebar-client": "1", "x-bluebar-venue": venue, authorization: `Bearer ${key}` };
+    const lines = await (await call("GET", "/api/print/jobs?format=lines", { headers: auth })).text();
+    const [, host, port, data] = lines.split(" ");
+    assert.deepEqual([host, Number(port)], ["127.0.0.1", printer.port]);
+    const bytes = Buffer.from(data, "base64");
+    assert.deepEqual([...bytes.subarray(0, 2)], [0x1b, 0x40], "starts with ESC @");
+
+    // The real agent the installer writes, run against that job.
+    await mkdir(join(home, ".bluebar-print"));
+    await writeFile(join(home, ".bluebar-print", "config"), `URL='${url}'\nVENUE='${venue}'\nKEY='${key}'\n`);
+    const agentScript = sh.split("<<'AGENT'\n")[1].split("\nAGENT\n")[0];
+    agent = spawn("bash", ["-c", agentScript], { env: { ...process.env, HOME: home }, stdio: "ignore" });
+    for (let i = 0; i < 100 && !printer.jobs.length; i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(printer.jobs.length, 1);
+    assert.deepEqual(printer.jobs[0], bytes, "the printer receives exactly BlueBar's bytes");
+    for (let i = 0; i < 50 && (await (await call("GET", "/api/print/jobs?format=lines", { headers: auth })).text()); i++)
+      await new Promise((r) => setTimeout(r, 100));
+    assert.equal(await (await call("GET", "/api/print/jobs?format=lines", { headers: auth })).text(), "", "reported as printed");
+  } finally {
+    agent?.kill();
+    await rm(home, { recursive: true, force: true });
+    await app.close();
+    await printer.close();
+    await db.close();
+  }
+});
+
+test("USB printers: saved as usb:<queue>, printed raw through lp, optionally without ë/ç", async () => {
+  const { spawn } = await import("node:child_process");
+  const { mkdtemp, mkdir, writeFile, readFile: read, rm, chmod } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { installer } = await import("./installers.js");
+  const { createAgentKey } = await import("./printing.js");
+  const db = new PGlite();
+  const query = (sql, params) => (params ? db.query(sql, params) : db.exec(sql).then((r) => r.at(-1) || { rows: [] }));
+  const pool = { query, connect: async () => ({ query, release() {} }) };
+  await migrate(pool);
+  const manager = await createManager(pool, "boss");
+  const app = buildApp({ pool, origins: [], allowedHosts: ["127.0.0.1"] });
+  await app.listen({ port: 0, host: "127.0.0.1" });
+  const url = `http://127.0.0.1:${app.server.address().port}`;
+  const home = await mkdtemp(join(tmpdir(), "bluebar-usb-"));
+  let agent;
+  try {
+    // Validation: a queue name keeps its case; anything else in "usb:" is refused.
+    const base = { name: "Arka", port: 9100, width: 42, departments: [], receipts: true };
+    assert.throws(() => applyCommand(initialState(), "printer.save", { ...base, host: "usb:bad name;rm" }));
+    const saved = applyCommand(initialState(), "printer.save", { ...base, host: "usb:GEZHI_micro_printer", ascii: true }).state;
+    assert.deepEqual([saved.printers[0].host, saved.printers[0].ascii], ["usb:GEZHI_micro_printer", true]);
+
+    const cookie = (await fetch(`${url}/api/auth/manager-login`, {
+      method: "POST", headers: { "x-bluebar-client": "1", "content-type": "application/json" }, body: JSON.stringify({ pin: manager.pin }),
+    })).headers.get("set-cookie").split(";")[0];
+    const api = (method, path, body, headers = {}) =>
+      fetch(url + path, { method, headers: { "x-bluebar-client": "1", cookie, "content-type": "application/json", ...headers }, body: body && JSON.stringify(body) });
+    const { version } = await (await api("GET", "/api/state")).json();
+    await api("POST", "/api/commands", { id: randomUUID(), version, type: "printer.save", payload: { ...base, host: "usb:GEZHI_micro_printer", ascii: true } });
+    const key = await createAgentKey(pool);
+    await api("POST", "/api/print/test", { printerId: 1 });
+
+    // The agent reports its local printers; the manager's form lists them.
+    const auth = { authorization: `Bearer ${key}`, "x-bluebar-venue": "bluebar", "x-bluebar-usb": "GEZHI_micro_printer,Other,bad name" };
+    const line = await (await api("GET", "/api/print/jobs?format=lines", undefined, auth)).text();
+    assert.deepEqual((await (await api("GET", "/api/print/status")).json()).usbPrinters, ["GEZHI_micro_printer", "Other"]);
+    const bytes = Buffer.from(line.split(" ")[3], "base64");
+    assert.ok(!bytes.includes(0x89), "ë is not sent to an ascii printer");
+    assert.ok(bytes.includes(Buffer.from("PROVE PRINTIMI")), "it's spelled with e instead");
+
+    // The bash agent hands it to lp, raw, for that queue. A fake lp records the call.
+    const bin = join(home, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "lp"), `#!/bin/bash\necho "$@" > "${home}/lp-args"\ncat "\${@: -1}" > "${home}/lp-data"\n`);
+    await writeFile(join(bin, "lpstat"), "#!/bin/bash\necho GEZHI_micro_printer\n");
+    await chmod(join(bin, "lp"), 0o755);
+    await chmod(join(bin, "lpstat"), 0o755);
+    await mkdir(join(home, ".bluebar-print"));
+    await writeFile(join(home, ".bluebar-print", "config"), `URL='${url}'\nVENUE='bluebar'\nKEY='${key}'\n`);
+    const sh = installer("sh", url, "123456");
+    const agentScript = sh.split("<<'AGENT'\n")[1].split("\nAGENT\n")[0];
+    agent = spawn("bash", ["-c", agentScript], { env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` }, stdio: "ignore" });
+    let args = "";
+    for (let i = 0; i < 100 && !args; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      args = await read(join(home, "lp-args"), "utf8").catch(() => "");
+    }
+    assert.match(args, /^-d GEZHI_micro_printer -o raw /);
+    assert.deepEqual(await read(join(home, "lp-data")), bytes, "lp receives BlueBar's exact bytes");
+  } finally {
+    agent?.kill();
+    await rm(home, { recursive: true, force: true });
+    await app.close();
+    await db.close();
+  }
+});
+
+test("a printer without a working cutter is never sent a cut, and feeds further to tear", () => {
+  const doc = [{ type: "text", text: "TOTALI 100 Lek" }];
+  const cut = encode(doc, 42);
+  const tear = encode(doc, 42, { cut: false });
+  assert.ok(cut.includes(Buffer.from([0x1d, 0x56, 0x01])), "cuts with GS V 1");
+  assert.ok(!tear.includes(Buffer.from([0x1d, 0x56])), "no cut command at all");
+  assert.ok(tear.includes(Buffer.from([0x1b, 0x64, 0x08])), "feeds 8 lines to the tear bar");
+  const saved = applyCommand(initialState(), "printer.save", {
+    name: "Arka", host: "usb:GEZHI_micro_printer", width: 42, departments: [], receipts: true, cutter: false,
+  }).state;
+  assert.equal(saved.printers[0].cutter, false);
+});
+
+test("printed text can't carry printer commands: control characters are dropped", () => {
+  assert.deepEqual(textBytes("Kafe\x1bp\x00\x01\x1d(k X"), [...Buffer.from("Kafep(k X")]);
+});

@@ -199,7 +199,7 @@ export function TableOrder({
         {mode === "add" ? (
           <div className="menu-view">
             <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
-            <div className="chip-row" aria-label="Kategoritë e menusë">
+            <div className="chip-row" aria-label="Nënkategoritë e menusë">
               {["Të gjitha", ...state.categories].map((c) => (
                 <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
                   {c}

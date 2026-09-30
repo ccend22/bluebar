@@ -1,10 +1,10 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, createHmac } from "node:crypto";
 import { AppError } from "./commands.js";
 import { hashSecret, validPin, ipPolicy } from "./auth.js";
 import { migrateTenant, tenantSQL } from "./migrate.js";
 
 export const validSlug = slug => typeof slug === "string" && /^[a-z0-9][a-z0-9-]{2,39}$/.test(slug);
-export const publicVenue = venue => ({ slug: venue.slug, name: venue.name, loginMode: venue.login_mode });
+export const publicVenue = venue => ({ slug: venue.slug, name: venue.name, loginMode: venue.login_mode, managerLogin: venue.manager_login || "pin_only" });
 
 // Every auth and business query uses a request-local wrapper. No shared search_path
 // or mutable tenant state can leak between concurrent pooled connections.
@@ -25,18 +25,25 @@ export async function resolveVenue(pool, slug) {
   if (!venue) throw new AppError("Biznesi nuk u gjet. Kontrolloni kodin.", 404);
   return venue;
 }
-export async function registerVenue(pool, { slug, name, pin }, ip) {
-  if (!validSlug(slug) || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 80)
-    throw new AppError("Vendosni emrin dhe kodin e vlefshëm të biznesit.");
-  if (!validPin(pin)) throw new AppError("PIN-i është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.");
-  const budget = (await pool.query(`
+// Database-backed hourly budget, shared by every serverless instance. Returns the
+// attempts used so far this hour for `key` (an IP, optionally prefixed per purpose).
+// The IP is stored only as a keyed hash (a bare SHA-256 of an IPv4 address can be
+// reversed by trying all of them), and rows are dropped a day after they expire.
+export async function spendBudget(pool, key) {
+  await pool.query("DELETE FROM bluebar_catalog.registration_limits WHERE reset_at < now() - interval '1 day'");
+  return (await pool.query(`
     INSERT INTO bluebar_catalog.registration_limits(ip_hash, attempts, reset_at)
     VALUES ($1, 1, now() + interval '1 hour')
     ON CONFLICT (ip_hash) DO UPDATE SET
       attempts = CASE WHEN bluebar_catalog.registration_limits.reset_at < now() THEN 1 ELSE bluebar_catalog.registration_limits.attempts + 1 END,
       reset_at = CASE WHEN bluebar_catalog.registration_limits.reset_at < now() THEN now() + interval '1 hour' ELSE bluebar_catalog.registration_limits.reset_at END
-    RETURNING attempts`, [createHash("sha256").update(ip).digest("hex")])).rows[0];
-  if (budget.attempts > 5) throw new AppError("Shumë regjistrime. Provoni pas një ore.", 429);
+    RETURNING attempts`, [createHmac("sha256", process.env.BLUEBAR_SECRET_KEY || "bluebar-rate-limit").update(key).digest("hex")])).rows[0].attempts;
+}
+export async function registerVenue(pool, { slug, name, pin }, ip) {
+  if (!validSlug(slug) || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 80)
+    throw new AppError("Vendosni emrin dhe kodin e vlefshëm të biznesit.");
+  if (!validPin(pin)) throw new AppError("PIN-i është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.");
+  if ((await spendBudget(pool, ip)) > 5) throw new AppError("Shumë regjistrime. Provoni pas një ore.", 429);
   const secret = await hashSecret(pin);
   const schema = `bluebar_${randomUUID().replaceAll("-", "")}`;
   const client = await pool.connect();

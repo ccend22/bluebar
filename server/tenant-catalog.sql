@@ -27,3 +27,14 @@ CREATE TABLE IF NOT EXISTS bluebar_catalog.registration_limits (
   attempts integer NOT NULL,
   reset_at timestamptz NOT NULL
 );
+-- One-time codes that pair a venue computer with BlueBar printing (Cilësimet → Printerët).
+-- The computer doesn't know its business yet, so codes live here, not in a tenant schema.
+CREATE TABLE IF NOT EXISTS bluebar_catalog.print_pairings (
+  code_hash text PRIMARY KEY,
+  venue_slug text NOT NULL REFERENCES bluebar_catalog.venues(slug) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL
+);
+-- How the manager signs in: pin_only (the PIN alone, the original flow) or name_pin
+-- (their username, then the PIN).
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS manager_login text NOT NULL DEFAULT 'pin_only'
+  CHECK (manager_login IN ('pin_only', 'name_pin'));

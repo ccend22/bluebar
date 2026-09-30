@@ -149,6 +149,8 @@ export async function loadState(client) {
           width: x.width,
           departments: x.departments,
           receipts: x.receipts,
+          ascii: x.ascii,
+          cutter: x.cutter,
         })),
       tickets: tickets
         .map((k) => ({
@@ -306,9 +308,9 @@ export async function persist(client, previous, next) {
     await client.query("DELETE FROM bluebar.printers WHERE id=$1", [x.id]);
   for (const x of next.printers.filter((x) => changed(previous.printers.find((y) => y.id === x.id), x)))
     await client.query(
-      `INSERT INTO bluebar.printers(id,name,host,port,width,departments,receipts) VALUES($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT(id) DO UPDATE SET name=$2,host=$3,port=$4,width=$5,departments=$6,receipts=$7`,
-      [x.id, x.name, x.host, x.port, x.width, x.departments, x.receipts],
+      `INSERT INTO bluebar.printers(id,name,host,port,width,departments,receipts,ascii,cutter) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT(id) DO UPDATE SET name=$2,host=$3,port=$4,width=$5,departments=$6,receipts=$7,ascii=$8,cutter=$9`,
+      [x.id, x.name, x.host, x.port, x.width, x.departments, x.receipts, x.ascii === true, x.cutter !== false],
     );
   // Print jobs follow from what just changed, in the same transaction: a sale can't
   // exist without its cashier job, nor a station ticket without its printer job.

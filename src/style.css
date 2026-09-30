@@ -798,30 +798,6 @@ main {
 .fp-table.editing:active {
   cursor: grabbing;
 }
-.fp-chairs {
-  position: absolute;
-  inset: 0;
-  /* Decorative only — without this, its full (invisible) box would steal clicks
-     and drags meant for whatever table ends up underneath it once tables overlap. */
-  pointer-events: none;
-}
-.fp-chair {
-  position: absolute;
-  width: 15px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--surface);
-  border: 1.5px solid var(--line-strong);
-  transition: opacity 120ms var(--ease-out);
-}
-.fp-chair-round {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-}
-.fp-table.occupied .fp-chair {
-  opacity: 0;
-}
 .fp-body {
   position: relative;
   display: flex;
@@ -3161,18 +3137,75 @@ footer > span:last-child {
   .floor-app .floor-plan { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: start; gap: 7px; width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; overflow-y: auto; padding: 8px; }
   .floor-app .fp-table { position: relative; top: auto !important; left: auto !important; width: 100% !important; height: 76px !important; min-width: 0; min-height: 76px; transform: none !important; }
   .floor-app .fp-body { transform: none !important; }
-  .floor-app .fp-chairs { display: none; }
   .floor-app .floor-layout.has-order .floor { display: none; }
   .floor-app .order { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .floor-app .order-heading { flex-shrink: 0; }
   .floor-app .order-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+}
+/* Browser printing on a thermal roll. printFitted() (src/printPaper.js) sets --paper to
+   this device's roll width and sizes the page to exactly what's printed, so a receipt
+   is never cut short or split. These rules live outside @media print so that
+   measurement sees the same layout the printer will. */
+.print-only {
+  /* Thermal printers can't print the outer ~5 mm on either side. */
+  width: calc(var(--paper, 80mm) - 10mm);
+  margin: 0 5mm;
+  padding: 4mm 0;
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  color: black;
+  background: white;
+}
+.print-only.print-measure {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: -10000px;
+  visibility: hidden;
+}
+.print-only .receipt-brand {
+  font-size: 22px;
+  color: black;
+  margin: 0 0 3mm;
+}
+.print-only p {
+  text-align: center;
+  color: black;
+  font-size: 9px;
+  line-height: 1.5;
+  margin: 1.5mm 0;
+}
+.print-only .receipt-meta {
+  font-size: 10px;
+}
+.print-only .receipt-line small {
+  color: black;
+}
+.print-only .receipt-total {
+  font-size: 13px;
+}
+.print-only hr {
+  border-color: black;
+  margin: 2.5mm 0;
+}
+.print-only .receipt-line {
+  margin: 1.5mm 0;
+}
+.print-only .station-line {
+  font-size: 14px;
 }
 @media print {
   @page {
     size: auto;
     margin: 0;
   }
+  /* No minimum width: wider than the roll, Chrome would shrink the whole receipt. */
+  :root,
   body {
+    min-width: 0;
     background: white;
   }
   .app,
@@ -3182,53 +3215,9 @@ footer > span:last-child {
   }
   .print-only {
     display: block;
-    width: 72mm;
-    margin: 0 4mm;
-    padding: 4mm 0;
-    font:
-      11px ui-monospace,
-      SFMono-Regular,
-      Consolas,
-      monospace;
-    color: black;
-  }
-  /* Receipt content plus 4 mm on each side fits an 88 mm paper roll. */
-  .print-only.invoice-print {
-    width: 80mm;
-  }
-  .receipt-brand {
-    font-size: 24px;
-    color: black;
-    margin: 0 0 3mm;
-  }
-  .receipt p {
-    text-align: center;
-    color: black;
-    font-size: 9px;
-    line-height: 1.5;
-    margin: 1.5mm 0;
-  }
-  .receipt-meta {
-    font-size: 10px;
-  }
-  .receipt-line small {
-    color: black;
-  }
-  .receipt-total {
-    font-size: 13px;
-  }
-  .receipt hr {
-    border-color: black;
-    margin: 2.5mm 0;
-  }
-  .receipt-line {
-    margin: 1.5mm 0;
   }
   .station-ticket + .station-ticket {
     break-before: page;
-  }
-  .station-line {
-    font-size: 14px;
   }
 }
 
@@ -3487,14 +3476,6 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
   border-radius: 12px;
   padding: 14px;
   background: var(--surface);
-}
-.station-card.cancelled {
-  border-color: #e6b8b2;
-  background: #fdf6f5;
-}
-.station-card.cancelled ul {
-  text-decoration: line-through;
-  color: var(--muted);
 }
 .station-card header {
   display: flex;
@@ -3991,20 +3972,59 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
   background: var(--green);
   box-shadow: 0 0 0 4px var(--green-soft);
 }
-.agent-setup {
+.pair-setup {
   display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 14px;
 }
-.agent-setup code {
-  display: block;
+.pair-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pair-steps li {
+  padding-left: 4px;
+}
+.pair-steps .button-link {
+  display: flex;
+  width: fit-content;
+  margin-top: 8px;
+}
+.primary-link {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: white;
+}
+.pair-line {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pair-line code {
+  flex: 1;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 10px;
   background: #1d1d1f;
   color: #f5f5f7;
-  font-size: 11px;
-  line-height: 1.5;
+  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
   overflow-wrap: anywhere;
+}
+.pair-line button {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+.pair-alt summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pair-setup > .text-button {
+  justify-self: start;
 }
 .button-link {
   display: inline-flex;
@@ -4953,4 +4973,35 @@ textarea {
 }
 .fiscal-panel .helper + .fiscal-actions {
   margin-top: 14px;
+}
+.paper-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.printer-ascii {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.printer-ascii input {
+  margin-top: 3px;
+}
+.printer-ascii small {
+  margin-top: 2px;
+}
+/* Registration honeypot: off-screen for people and screen readers, filled only by bots. */
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }

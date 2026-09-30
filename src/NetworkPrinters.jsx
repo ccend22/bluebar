@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createPrintKey, fetchPrintStatus, testPrinter, venueSlug } from "./api.js";
+import { createPrintPairing, fetchPrintStatus, testPrinter } from "./api.js";
 import { Badge, DepartmentTag, Field, Icon, SectionHeading } from "./components.jsx";
 
 const PAPER = [
@@ -14,7 +14,6 @@ const online = (status) => status?.lastSeen && Date.now() - new Date(status.last
 export function NetworkPrinters({ state, update, notify }) {
   const [editing, setEditing] = useState(null);
   const [status, setStatus] = useState(null);
-  const [key, setKey] = useState(null);
   const departments = [...state.departments, "Tjetër"];
 
   useEffect(() => {
@@ -34,21 +33,27 @@ export function NetworkPrinters({ state, update, notify }) {
     const payload = {
       ...(editing.id ? { id: editing.id } : {}),
       name: form.get("name").trim(),
-      host: form.get("host").trim(),
-      port: Number(form.get("port") || 9100),
+      host: usb ? `usb:${form.get("queue").trim()}` : form.get("host").trim(),
+      port: usb ? 9100 : Number(form.get("port") || 9100),
+      ascii: form.get("ascii") === "on",
+      cutter: form.get("cutter") === "on",
       width: Number(form.get("width")),
       departments: form.getAll("departments"),
       receipts: form.get("receipts") === "on",
     };
     if (await update("printer.save", payload, editing.id ? "Printeri u ruajt." : "Printeri u shtua.")) setEditing(null);
   }
-  const command = key && `node bluebar-print.mjs --url ${window.location.origin} --venue ${venueSlug} --key ${key}`;
+
+  // Network (IP) or USB on the print computer ("usb:<queue>").
+  const usb = editing?.usb ?? Boolean(editing?.host?.startsWith("usb:"));
+  const queues = status?.usbPrinters ?? [];
+  const queue = editing?.host?.startsWith("usb:") ? editing.host.slice(4) : queues[0];
 
   return (
     <>
       <section className="panel">
         <SectionHeading
-          title="Printerët e rrjetit"
+          title="Printerët"
           description="Çdo repart printon te printeri i vet; arka printon faturën e plotë."
         >
           {!editing && (
@@ -60,10 +65,35 @@ export function NetworkPrinters({ state, update, notify }) {
         {editing ? (
           <form className="stack-form" onSubmit={save} key={editing.id || "new"}>
             <Field label="Emri" name="name" defaultValue={editing.name || ""} placeholder="p.sh. Kuzhina" maxLength={40} required autoFocus />
-            <div className="printer-address">
-              <Field label="IP e printerit" name="host" defaultValue={editing.host || ""} placeholder="192.168.1.50" required />
-              <Field label="Porta" name="port" type="number" min="1" max="65535" defaultValue={editing.port || 9100} />
+            <div className="tabs" aria-label="Lidhja e printerit">
+              <button type="button" aria-pressed={!usb} onClick={() => setEditing({ ...editing, usb: false })}>
+                Rrjeti (IP)
+              </button>
+              <button type="button" aria-pressed={usb} onClick={() => setEditing({ ...editing, usb: true })}>
+                USB
+              </button>
             </div>
+            {usb ? (
+              queues.length ? (
+                <Field label="Printeri në kompjuterin e printimit">
+                  <select name="queue" defaultValue={queue} required>
+                    {[...new Set([queue, ...queues])].filter(Boolean).map((q) => (
+                      <option key={q} value={q}>{q.replaceAll("_", " ")}</option>
+                    ))}
+                  </select>
+                </Field>
+              ) : (
+                <>
+                  <Field label="Emri i printerit në kompjuter" name="queue" defaultValue={queue || ""} placeholder="p.sh. GEZHI_micro_printer" pattern="[A-Za-z0-9_.\-]{1,60}" required />
+                  <p className="helper">Lidhni kompjuterin e printimit (më poshtë) dhe printerët e tij USB shfaqen këtu në listë.</p>
+                </>
+              )
+            ) : (
+              <div className="printer-address">
+                <Field label="IP e printerit" name="host" defaultValue={editing.host?.startsWith("usb:") ? "" : editing.host || ""} placeholder="192.168.1.50" required />
+                <Field label="Porta" name="port" type="number" min="1" max="65535" defaultValue={editing.port || 9100} />
+              </div>
+            )}
             <fieldset className="printer-choice">
               <legend>Letra</legend>
               {PAPER.map((p) => (
@@ -86,7 +116,23 @@ export function NetworkPrinters({ state, update, notify }) {
                 <strong>Faturat e arkës</strong>
               </label>
             </fieldset>
-            <p className="helper">IP-ja shfaqet në fletën e vetë-testit të printerit (mbani butonin FEED gjatë ndezjes).</p>
+            <label className="printer-ascii">
+              <input type="checkbox" name="cutter" defaultChecked={editing.cutter !== false} />
+              <span>
+                Prerëse automatike
+                <small>Fatura pritet vetë. Hiqeni nëse prerësja nuk punon: letra del e plotë për t'u grisur.</small>
+              </span>
+            </label>
+            <label className="printer-ascii">
+              <input type="checkbox" name="ascii" defaultChecked={editing.ascii} />
+              <span>
+                Printo pa ë dhe ç
+                <small>Për printera që i shfaqin si “?” ose shenja kineze: printohen si e dhe c.</small>
+              </span>
+            </label>
+            {!usb && (
+              <p className="helper">IP-ja shfaqet në fletën e vetë-testit të printerit (mbani butonin FEED gjatë ndezjes).</p>
+            )}
             <div className="actions">
               <button type="button" onClick={() => setEditing(null)}>Anulo</button>
               <button className="primary">{editing.id ? "Ruaj" : "Shto printerin"}</button>
@@ -99,7 +145,8 @@ export function NetworkPrinters({ state, update, notify }) {
                 <div>
                   <strong>{p.name}</strong>
                   <small>
-                    {p.host}:{p.port} · {PAPER.find((paper) => paper.width === p.width)?.label || `${p.width} shenja`}
+                    {p.host.startsWith("usb:") ? `USB · ${p.host.slice(4).replaceAll("_", " ")}` : `${p.host}:${p.port}`} ·{" "}
+                    {PAPER.find((paper) => paper.width === p.width)?.label || `${p.width} shenja`}
                   </small>
                   <div className="printer-targets">
                     {p.departments.map((d) => (
@@ -139,47 +186,125 @@ export function NetworkPrinters({ state, update, notify }) {
           </p>
         )}
       </section>
-      <section className="panel">
-        <SectionHeading title="Agjenti i printimit" description="Programi në kompjuterin e lokalit që dërgon fletët te printerët." />
-        <p className={`agent-status ${online(status) ? "on" : ""}`}>
-          <span />
-          {!status?.configured
-            ? "I pa lidhur ende"
-            : online(status)
-              ? `Në linjë${status.pending ? ` · ${status.pending} në radhë` : ""}`
-              : `Jashtë linje${status.pending ? ` · ${status.pending} fletë presin` : ""}`}
-        </p>
-        {key ? (
-          <div className="agent-setup">
-            <p className="helper">
-              Në një kompjuter që qëndron ndezur në lokal (Windows, Mac ose Linux, me Node.js), shkarkoni
-              agjentin dhe nisni këtë komandë. Çelësi shfaqet vetëm tani.
-            </p>
-            <code>{command}</code>
-            <button onClick={() => navigator.clipboard?.writeText(command).then(() => notify("Komanda u kopjua."))}>
-              Kopjo komandën
-            </button>
-          </div>
-        ) : (
-          <p className="helper">
-            Një çelës i ri shkëput agjentin e mëparshëm.
-          </p>
-        )}
-        <div className="actions">
-          <a className="button-link" href="/bluebar-print.mjs" download>
-            <Icon name="print" size={16} /> Shkarko agjentin
-          </a>
-          <button
-            onClick={() =>
-              createPrintKey()
-                .then((r) => setKey(r.key))
-                .catch((e) => notify(e.message, "error"))
-            }
-          >
-            {status?.configured ? "Çelës i ri" : "Krijo çelësin"}
-          </button>
-        </div>
-      </section>
+      <PrintComputer status={status} notify={notify} />
     </>
+  );
+}
+
+const SYSTEMS = [
+  ["windows", "Windows"],
+  ["mac", "Mac"],
+  ["linux", "Linux"],
+];
+const thisSystem = () =>
+  /Windows/.test(navigator.userAgent) ? "windows" : /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent) ? "linux" : "mac";
+
+// The venue computer that carries print jobs to the printers. Pairing gives a one-time
+// code baked into an installer: double-click on Windows, one pasted line on Mac/Linux.
+function PrintComputer({ status, notify }) {
+  const [pairing, setPairing] = useState(null);
+  const [system, setSystem] = useState(thisSystem);
+  const [busy, setBusy] = useState(false);
+  const base = `${window.location.origin}/api/print/install/${pairing?.code}`;
+  const line = system === "windows" ? `irm ${base}.ps1 | iex` : `curl -fsSL ${base}.sh | bash`;
+  // Paired once the agent checks in after this code was made.
+  const paired =
+    pairing && status?.lastSeen && new Date(status.lastSeen) > new Date(pairing.expiresAt) - 10 * 60_000;
+  useEffect(() => {
+    if (!paired) return;
+    setPairing(null);
+    notify("Kompjuteri u lidh. Fletët printohen tani prej tij.");
+  }, [paired]);
+
+  async function start() {
+    setBusy(true);
+    try {
+      setPairing(await createPrintPairing());
+    } catch (e) {
+      notify(e.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const copy = () => navigator.clipboard?.writeText(line).then(() => notify("U kopjua."));
+  const expires = pairing && new Date(pairing.expiresAt);
+  const until = expires && [expires.getHours(), expires.getMinutes()].map((n) => String(n).padStart(2, "0")).join(":");
+
+  return (
+    <section className="panel">
+      <SectionHeading
+        title="Kompjuteri i printimit"
+        description="Një kompjuter i lokalit, në të njëjtin rrjet me printerët, që dërgon fletët te ta."
+      />
+      <p className={`agent-status ${online(status) ? "on" : ""}`}>
+        <span />
+        {!status?.configured
+          ? "Asnjë kompjuter i lidhur"
+          : online(status)
+            ? `Në linjë${status.pending ? ` · ${status.pending} në radhë` : ""}`
+            : `Jashtë linje${status.pending ? ` · ${status.pending} fletë presin` : ""}`}
+      </p>
+      {pairing ? (
+        <div className="pair-setup">
+          <div className="tabs" aria-label="Sistemi i kompjuterit">
+            {SYSTEMS.map(([id, label]) => (
+              <button key={id} aria-pressed={system === id} onClick={() => setSystem(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {system === "windows" ? (
+            <ol className="pair-steps">
+              <li>
+                Në kompjuterin e lokalit, hapni BlueBar dhe shkarkoni:
+                <a className="button-link primary-link" href={`${base}.cmd`} download="BlueBar Print.cmd">
+                  <Icon name="print" size={16} /> Shkarko BlueBar Print
+                </a>
+              </li>
+              <li>Hapeni skedarin. Nëse Windows pyet, zgjidhni <strong>Run / Ekzekuto</strong>.</li>
+              <li>Kaq. Kur shfaqet “Gati!”, mund ta mbyllni dritaren.</li>
+            </ol>
+          ) : (
+            <ol className="pair-steps">
+              <li>Në kompjuterin e lokalit hapni <strong>Terminal</strong>{system === "mac" ? " (Cmd + Space, shkruani “Terminal”)" : ""}.</li>
+              <li>
+                Ngjitni këtë rresht dhe shtypni Enter:
+                <span className="pair-line">
+                  <code>{line}</code>
+                  <button onClick={copy}>Kopjo</button>
+                </span>
+              </li>
+              <li>Kaq. Kur shfaqet “Gati!”, mund ta mbyllni dritaren.</li>
+            </ol>
+          )}
+          {system === "windows" && (
+            <details className="pair-alt">
+              <summary>Ose me PowerShell</summary>
+              <span className="pair-line">
+                <code>{line}</code>
+                <button onClick={copy}>Kopjo</button>
+              </span>
+            </details>
+          )}
+          <p className="helper">
+            Kodi <strong>{pairing.code}</strong> vlen deri në {until} dhe vetëm një herë. Pastaj programi niset vetë sa herë
+            ndizet kompjuteri.
+          </p>
+          <button className="text-button" onClick={() => setPairing(null)}>Anulo</button>
+        </div>
+      ) : (
+        <>
+          <p className="helper">
+            {status?.configured
+              ? "Lidhja e një kompjuteri tjetër shkëput atë të mëparshmin."
+              : "Lidheni një herë: pa instalime shtesë, dhe niset vetë sa herë ndizet kompjuteri."}
+          </p>
+          <button className="primary" disabled={busy} onClick={start}>
+            <Icon name="print" size={16} />
+            {status?.configured ? "Lidh një kompjuter tjetër" : "Lidh një kompjuter"}
+          </button>
+        </>
+      )}
+    </section>
   );
 }

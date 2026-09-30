@@ -57,6 +57,7 @@ export const registerVenue = (body) => send("POST", "/venues/register", body);
 export const fetchNetwork = () => request("/venue/network");
 export const saveNetwork = (allowedIps) => send("PUT", "/venue/network", { allowedIps });
 export const saveLoginMode = (loginMode) => send("PUT", "/venue/login-mode", { loginMode });
+export const saveManagerLogin = (managerLogin) => send("PUT", "/venue/manager-login", { managerLogin });
 export function openBusiness(slug) {
   const url = new URL(window.location.href);
   url.search = "";
@@ -65,7 +66,8 @@ export function openBusiness(slug) {
   window.location.assign(url);
 }
 export const fetchPrintStatus = () => request("/print/status");
-export const createPrintKey = () => send("POST", "/print/key");
+// A one-time code (10 min) that pairs a venue computer for printing.
+export const createPrintPairing = () => send("POST", "/print/pairing");
 export const testPrinter = (printerId) => send("POST", "/print/test", { printerId });
 // { queued: false } means no network printer covers it: print from the browser instead.
 export const reprintDocument = (kind, id) => send("POST", "/print/reprint", { kind, id: String(id) });

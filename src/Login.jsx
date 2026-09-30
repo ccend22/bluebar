@@ -8,6 +8,7 @@ function PinLogin({ onSignedIn }) {
     [waiters, setWaiters] = useState(null),
     [waiterId, setWaiterId] = useState(""),
     [pin, setPin] = useState(""),
+    [managerName, setManagerName] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [venue, setVenue] = useState(null);
@@ -45,9 +46,16 @@ function PinLogin({ onSignedIn }) {
       setBusy(false);
     }
   }
-  const submit = (enteredPin) => authenticate(() => mode === "waiter"
-    ? loginWaiter(waiterFlow === "pin_only" ? undefined : Number(waiterId), enteredPin)
-    : loginManager({ pin: enteredPin }));
+  const managerByName = venue?.managerLogin === "name_pin";
+  const submit = (enteredPin) => {
+    if (mode === "manager" && managerByName && !managerName.trim()) {
+      setPin("");
+      return setError("Shkruani emrin e menaxherit.");
+    }
+    return authenticate(() => mode === "waiter"
+      ? loginWaiter(waiterFlow === "pin_only" ? undefined : Number(waiterId), enteredPin)
+      : loginManager(managerByName ? { username: managerName.trim(), pin: enteredPin } : { pin: enteredPin }));
+  };
   const submitPattern = (pattern) => authenticate(() => loginWaiterPattern(Number(waiterId), pattern));
   const tabs = [
     ["waiter", "Kamarier"],
@@ -110,6 +118,22 @@ function PinLogin({ onSignedIn }) {
               <p className="notice warning">Pattern-i i {selectedWaiter?.name} nuk është vendosur ende. Njoftoni menaxherin.</p>
             )
           ) : (
+            <>
+            {mode === "manager" && managerByName && (
+              <Field label="Emri i menaxherit">
+                <input
+                  value={managerName}
+                  onChange={(e) => setManagerName(e.target.value)}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  maxLength={60}
+                  disabled={busy}
+                  autoFocus
+                />
+              </Field>
+            )}
             <fieldset className="pin-field" disabled={busy}>
               <legend>
                 {mode === "waiter" && selectedWaiter && waiterFlow === "name_pin"
@@ -118,6 +142,7 @@ function PinLogin({ onSignedIn }) {
               </legend>
               <PinPad value={pin} onChange={setPin} onComplete={submit} disabled={busy} />
             </fieldset>
+            </>
           )}
           {busy && (
             <p className="helper" role="status">
@@ -132,7 +157,7 @@ function PinLogin({ onSignedIn }) {
 
 
 export function Login({ onSignedIn }) {
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).has("regjistro"));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
@@ -149,7 +174,7 @@ export function Login({ onSignedIn }) {
     submitting.current = true;
     setBusy(true);
     try {
-      await registerVenue({ slug, name: String(form.get("name")).trim(), pin: form.get("pin") });
+      await registerVenue({ slug, name: String(form.get("name")).trim(), pin: form.get("pin"), website: String(form.get("website") || "") });
       openBusiness(slug);
     } catch (err) {
       setError(err.message);
@@ -158,13 +183,19 @@ export function Login({ onSignedIn }) {
     }
   }
   return <main className="database-setup business-entry">
-    <span className="brand">BlueBar</span>
+    <a className="brand" href="/">BlueBar</a>
     <h1>{creating ? "Krijoni biznesin tuaj" : "Mirë se vini"}</h1>
     <p>{creating ? "Tavolinat, stafi dhe faturat tuaja në një hapësirë të veçantë." : "Vendosni kodin e biznesit për të hyrë në hapësirën e lokalit."}</p>
     {error && <div className="notice error" role="alert">{error}</div>}
     <form className="stack-form" onSubmit={submit} key={String(creating)}>
       <fieldset className="business-fields" disabled={busy}>
         {creating && <Field label="Emri i biznesit" name="name" required minLength={2} maxLength={80} autoComplete="organization" placeholder="p.sh. Bar Aurora" />}
+        {creating && (
+          <label className="honeypot" aria-hidden="true">
+            Website
+            <input name="website" tabIndex={-1} autoComplete="off" />
+          </label>
+        )}
         <Field label="Kodi i biznesit" name="slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9-]{2,39}" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={creating ? "p.sh. bar-aurora" : "p.sh. bluebar"} />
         <p className="helper">{creating ? "3–40 shkronja të vogla, numra ose viza. Ndajeni këtë kod me stafin." : "Për lokalin ekzistues, përdorni kodin bluebar."}</p>
         {creating && <>

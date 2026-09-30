@@ -4,8 +4,9 @@ import { money, total } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
-import { LoginModeSettings } from "./LoginModeSettings.jsx";
+import { LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
+import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js";
 import { NetworkPrinters } from "./NetworkPrinters.jsx";
 import { WaiterPatternEditor } from "./PatternPad.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
@@ -262,7 +263,8 @@ function App({ user, onLogout }) {
     [fiscalizeChoice, setFiscalizeChoice] = useState(false),
     [ticketPrint, setTicketPrint] = useState(null),
     [deptFilter, setDeptFilter] = useState("Të gjitha"),
-    [moreOpen, setMoreOpen] = useState(false);
+    [moreOpen, setMoreOpen] = useState(false),
+    [paper, setPaper] = useState(paperWidth);
   const dialog = useRef(null),
     dialogTrigger = useRef(null),
     heading = useRef(null),
@@ -437,7 +439,7 @@ function App({ user, onLogout }) {
   const menuProducts = filteredProducts.filter(
     (p) =>
       deptFilter === "Të gjitha" ||
-      (deptFilter === "Pa nënkategori" ? !p.department : p.department === deptFilter),
+      (deptFilter === "Pa kategori" ? !p.department : p.department === deptFilter),
   );
   const unrouted = state.products.filter((p) => !p.department).length;
   const filteredStock = state.products.filter(
@@ -450,13 +452,13 @@ function App({ user, onLogout }) {
   const print = (invoice) => {
     setTicketPrint(null);
     setReceipt(invoice);
-    setTimeout(() => window.print(), 100);
+    setTimeout(printFitted, 100);
   };
   // One print job, one page per station — on a thermal printer each ticket is cut
   // separately, so the kitchen slip and the bar slip come out apart.
   const printTickets = (tickets) => {
     setTicketPrint(tickets);
-    setTimeout(() => window.print(), 100);
+    setTimeout(printFitted, 100);
   };
   // The waiter's device doesn't print: each department's own device (Repartet →
   // "Printeri i kësaj pajisjeje") prints its own ticket. "Printo fletët" on the
@@ -595,7 +597,7 @@ function App({ user, onLogout }) {
       return notify("Vendosni një emër dhe një çmim të vlefshëm.", "error");
     // Without a department the product's tickets can't reach any station.
     if (state.departments.length && !form.get("department"))
-      return notify("Zgjidhni nënkategorinë — reparti ku përgatitet produkti.", "error");
+      return notify("Zgjidhni kategorinë: ku përgatitet produkti (bar, kuzhinë…).", "error");
     if (
       state.products.some(
         (p) =>
@@ -622,7 +624,7 @@ function App({ user, onLogout }) {
   }
   // The shift report goes to the cashier's network printer when there is one.
   const printShiftReport = async (r) => {
-    if (!cashierPrinter) return window.print();
+    if (!cashierPrinter) return printFitted();
     try {
       await reprintDocument("shift", r.shift.id);
       notify(`Raporti u dërgua te ${cashierPrinter.name}.`);
@@ -1468,7 +1470,7 @@ function App({ user, onLogout }) {
                         <Icon name="receipt" />
                         <span>
                           Paguani dhe printoni
-                          <small>Cash ose kartë · format 88mm</small>
+                          <small>Cash ose kartë</small>
                         </span>
                       </div>
                       <div className="guide-footer">
@@ -1501,9 +1503,6 @@ function App({ user, onLogout }) {
                 stationDepartments={stationDepartments}
                 onToggleStation={toggleStation}
                 onPrint={reprintTickets}
-                onDone={(k) =>
-                  update("ticket.done", { id: k.id }, k.cancelledAt ? "Fleta u hoq." : `Tavolina ${k.table} · ${k.department}: gati.`)
-                }
                 time={time}
               />
             )}
@@ -1701,9 +1700,18 @@ function App({ user, onLogout }) {
                         Mbyll
                       </button>
                     </div>
+                    <div className="paper-choice">
+                      <span>Letra e printerit</span>
+                      <div className="tabs" aria-label="Gjerësia e letrës">
+                        {PAPERS.map((mm) => (
+                          <button key={mm} aria-pressed={paper === mm} onClick={() => (setPaperWidth(mm), setPaper(mm))}>
+                            {mm} mm
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <p className="helper">
-                      Zgjidhni letër 88mm dhe hiqni header/footer në dialogun e
-                      printimit.
+                      Fatura printohet e plotë, në gjatësinë e vet. Kjo pajisje e mban mend letrën.
                     </p>
                   </aside>
                 )}
@@ -1724,7 +1732,7 @@ function App({ user, onLogout }) {
                   <div className="toolbar">
                     <Search
                       label="Kërko në inventar"
-                      placeholder="Kërko produkt ose kategori…"
+                      placeholder="Kërko produkt ose nënkategori…"
                       value={query}
                       onChange={setQuery}
                     />
@@ -1746,7 +1754,7 @@ function App({ user, onLogout }) {
                         <thead>
                           <tr>
                             <th>Produkti</th>
-                            <th>Kategoria</th>
+                            <th>Nënkategoria</th>
                             <th>Gjendja</th>
                             <th>E disponueshme</th>
                             <th>Hyrje stoku</th>
@@ -1758,7 +1766,7 @@ function App({ user, onLogout }) {
                               <td data-label="Produkti">
                                 <strong>{p.name}</strong>
                               </td>
-                              <td data-label="Kategoria">{p.category}</td>
+                              <td data-label="Nënkategoria">{p.category}</td>
                               <td data-label="Gjendja">
                                 <Badge
                                   tone={
@@ -1900,7 +1908,7 @@ function App({ user, onLogout }) {
                 <section className="panel">
                   <SectionHeading
                     title="Menuja e lokalit"
-                    description={`${state.products.length} produkte · ${state.categories.length} kategori`}
+                    description={`${state.products.length} produkte · ${state.departments.length} kategori`}
                   />
                   <div className="toolbar">
                     <Search
@@ -1911,23 +1919,23 @@ function App({ user, onLogout }) {
                     />
                     <ChoiceField
                       label="Kategoria"
+                      options={["Të gjitha", ...state.departments, "Pa kategori"].map((item) => ({ value: item, label: item }))}
+                      value={deptFilter}
+                      onChange={setDeptFilter}
+                    />
+                    <ChoiceField
+                      label="Nënkategoria"
                       options={["Të gjitha", ...state.categories].map((item) => ({ value: item, label: item }))}
                       value={category}
                       onChange={setCategory}
                     />
-                    <ChoiceField
-                      label="Nënkategoria"
-                      options={["Të gjitha", ...state.departments, "Pa nënkategori"].map((item) => ({ value: item, label: item }))}
-                      value={deptFilter}
-                      onChange={setDeptFilter}
-                    />
                   </div>
-                  {unrouted > 0 && deptFilter !== "Pa nënkategori" && (
+                  {unrouted > 0 && deptFilter !== "Pa kategori" && (
                     <div className="notice warning">
                       <span>
-                        {unrouted} {unrouted === 1 ? "produkt nuk ka" : "produkte nuk kanë"} nënkategori — kur porositen, fleta e tyre nuk shkon në asnjë repart.
+                        {unrouted} {unrouted === 1 ? "produkt nuk ka" : "produkte nuk kanë"} kategori. Kur porositen, fleta e tyre nuk del në asnjë printer.
                       </span>
-                      <button onClick={() => setDeptFilter("Pa nënkategori")}>Shfaqi</button>
+                      <button onClick={() => setDeptFilter("Pa kategori")}>Shfaqi</button>
                     </div>
                   )}
                   {menuProducts.length ? (
@@ -1952,14 +1960,14 @@ function App({ user, onLogout }) {
                                 <small>{p.stock} copë në stok</small>
                               </td>
                               <td data-label="Kategoria">
-                                <Badge>{p.category}</Badge>
-                              </td>
-                              <td data-label="Nënkategoria">
                                 {p.department ? (
                                   <DepartmentTag name={p.department} />
                                 ) : (
-                                  <small className="warning-text">Pa nënkategori</small>
+                                  <small className="warning-text">Pa kategori</small>
                                 )}
+                              </td>
+                              <td data-label="Nënkategoria">
+                                <Badge>{p.category}</Badge>
                               </td>
                               <td data-label="Çmimi" className="numeric">
                                 <strong>{money(p.price)}</strong>
@@ -1994,7 +2002,7 @@ function App({ user, onLogout }) {
                         </button>
                       }
                     >
-                      {state.products.length ? "Provoni një emër tjetër ose ndryshoni kategorinë." : "Krijoni kategorinë e parë te Kategoritë, pastaj shtoni produktet dhe çmimet."}
+                      {state.products.length ? "Provoni një emër tjetër ose ndryshoni filtrat." : "Krijoni kategoritë dhe nënkategoritë anash, pastaj shtoni produktet dhe çmimet."}
                     </Empty>
                   )}
                 </section>
@@ -2028,18 +2036,18 @@ function App({ user, onLogout }) {
                         />
                         <ChoiceField
                           label="Kategoria"
-                          name="category"
-                          defaultValue={editor.category || state.categories[0]}
-                          options={state.categories.map((item) => ({ value: item, label: item }))}
-                        />
-                        <ChoiceField
-                          label="Nënkategoria (reparti)"
                           name="department"
                           defaultValue={editor.department || ""}
                           options={[
-                            { value: "", label: state.departments.length ? "— Zgjidhni repartin —" : "— Asnjë —" },
+                            { value: "", label: state.departments.length ? "— Zgjidhni kategorinë —" : "— Asnjë —" },
                             ...state.departments.map((item) => ({ value: item, label: item })),
                           ]}
+                        />
+                        <ChoiceField
+                          label="Nënkategoria"
+                          name="category"
+                          defaultValue={editor.category || state.categories[0]}
+                          options={state.categories.map((item) => ({ value: item, label: item }))}
                         />
                         <Field
                           label="Çmimi (Lek)"
@@ -2066,7 +2074,61 @@ function App({ user, onLogout }) {
                   <section className="panel">
                     <SectionHeading
                       title="Kategoritë"
-                      description="Organizoni produktet për t’i gjetur më shpejt."
+                      description="Ku përgatitet porosia: bar, kuzhinë, ëmbëltore. Çdo kategori mund të ketë printerin e vet."
+                    />
+                    <div className="category-list">
+                      {state.departments.map((d) => (
+                        <span key={d} className="department-chip">
+                          <span>{d}</span>
+                          <Badge>
+                            {state.products.filter((p) => p.department === d).length}
+                          </Badge>
+                        </span>
+                      ))}
+                    </div>
+                    <form
+                      className="stack-form category-form"
+                      onSubmit={async (e) => {
+                        const formElement = e.currentTarget;
+                        e.preventDefault();
+                        const name = new FormData(e.currentTarget)
+                          .get("department")
+                          .trim();
+                        if (!name)
+                          return notify("Vendosni emrin e kategorisë.", "error");
+                        if (
+                          state.departments.some(
+                            (d) => d.toLowerCase() === name.toLowerCase(),
+                          )
+                        )
+                          return notify("Kjo kategori ekziston tashmë.", "error");
+                        if (
+                          await update(
+                            "department.create",
+                            { name },
+                            "Kategoria u shtua.",
+                          )
+                        )
+                          formElement.reset();
+                      }}
+                    >
+                      <Field
+                        label="Kategori e re"
+                        name="department"
+                        placeholder="p.sh. Grill"
+                        maxLength={40}
+                        required
+                      />
+                      <button>
+                        <Icon name="plus" size={16} />
+                        Shto kategori
+                      </button>
+                    </form>
+                  </section>
+                  <section className="panel">
+                    <SectionHeading
+                      title="Nënkategoritë"
+                      description="Grupet e menusë që sheh kamarieri: kafe, pije, birra…"
                     />
                     <div className="category-list">
                       {state.categories.map((c) => (
@@ -2097,7 +2159,7 @@ function App({ user, onLogout }) {
                           .trim();
                         if (!name)
                           return notify(
-                            "Vendosni emrin e kategorisë.",
+                            "Vendosni emrin e nënkategorisë.",
                             "error",
                           );
                         if (
@@ -2106,66 +2168,12 @@ function App({ user, onLogout }) {
                           )
                         )
                           return notify(
-                            "Kjo kategori ekziston tashmë.",
+                            "Kjo nënkategori ekziston tashmë.",
                             "error",
                           );
                         if (
                           await update(
                             "category.create",
-                            { name },
-                            "Kategoria u shtua.",
-                          )
-                        )
-                          formElement.reset();
-                      }}
-                    >
-                      <Field
-                        label="Kategori e re"
-                        name="category"
-                        placeholder="p.sh. Ëmbëlsira"
-                        maxLength={40}
-                        required
-                      />
-                      <button>
-                        <Icon name="plus" size={16} />
-                        Shto kategori
-                      </button>
-                    </form>
-                  </section>
-                  <section className="panel">
-                    <SectionHeading
-                      title="Nënkategoritë"
-                      description="Repartet që përgatisin porosinë — bar, kuzhinë, ëmbëltore, picë."
-                    />
-                    <div className="category-list">
-                      {state.departments.map((d) => (
-                        <span key={d} className="department-chip">
-                          <span>{d}</span>
-                          <Badge>
-                            {state.products.filter((p) => p.department === d).length}
-                          </Badge>
-                        </span>
-                      ))}
-                    </div>
-                    <form
-                      className="stack-form category-form"
-                      onSubmit={async (e) => {
-                        const formElement = e.currentTarget;
-                        e.preventDefault();
-                        const name = new FormData(e.currentTarget)
-                          .get("department")
-                          .trim();
-                        if (!name)
-                          return notify("Vendosni emrin e nënkategorisë.", "error");
-                        if (
-                          state.departments.some(
-                            (d) => d.toLowerCase() === name.toLowerCase(),
-                          )
-                        )
-                          return notify("Kjo nënkategori ekziston tashmë.", "error");
-                        if (
-                          await update(
-                            "department.create",
                             { name },
                             "Nënkategoria u shtua.",
                           )
@@ -2175,8 +2183,8 @@ function App({ user, onLogout }) {
                     >
                       <Field
                         label="Nënkategori e re"
-                        name="department"
-                        placeholder="p.sh. Grill"
+                        name="category"
+                        placeholder="p.sh. Kokteje"
                         maxLength={40}
                         required
                       />
@@ -2419,6 +2427,7 @@ function App({ user, onLogout }) {
                   <Fiscalization onChange={() => database.refresh()} />
                   <BusinessNetwork venue={user.venue} />
                   <LoginModeSettings venue={user.venue} waiters={state.waiters} />
+                  <ManagerLoginSettings venue={user.venue} name={user.name} />
                 </div>
                 <div className="settings-column">
                   <NetworkPrinters state={state} update={update} notify={notify} />

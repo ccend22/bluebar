@@ -1,5 +1,7 @@
 import Fastify from "fastify";
-import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks } from "./tenants.js";
+import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks, spendBudget } from "./tenants.js";
+import { installer } from "./installers.js";
+import { encode } from "../public/bluebar-print.mjs";
 import { AppError } from "./commands.js";
 import { readSnapshot, readRevision, bumpRevision, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
 import { seal, open } from "./secretBox.js";
@@ -9,6 +11,8 @@ import {
   agentKeyValid,
   agentStatus,
   createAgentKey,
+  createPairing,
+  redeemPairing,
   enqueueReprint,
   enqueueTest,
   finishJob,
@@ -31,7 +35,7 @@ import {
   throttle,
 } from "./auth.js";
 
-const WAITER_COMMANDS = new Set(["order.add", "order.remove", "order.assign", "order.send", "order.pay", "ticket.done"]);
+const WAITER_COMMANDS = new Set(["order.add", "order.remove", "order.assign", "order.send", "order.pay"]);
 const publicUser = ({ role, waiterId, name }) => ({ role, waiterId, name });
 const pin = { type: "string", pattern: "^[0-9]{6}$" };
 const pattern = { type: "array", minItems: 4, maxItems: 9, items: { type: "integer", minimum: 1, maximum: 9 } };
@@ -72,16 +76,21 @@ export function buildApp({
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("X-Frame-Options", "DENY");
     const host = request.headers.host?.split(":")[0];
     if (!hosts.has(host))
       return reply.code(403).send({ error: "Host i palejuar." });
+    const path = request.url.split("?")[0];
+    // Fetched by curl/PowerShell or a download link: carries only its one-time code.
+    if (request.method === "GET" && path.startsWith("/api/print/install/")) return;
     const origin = request.headers.origin;
     if (origin && !allowed.has(origin))
       return reply.code(403).send({ error: "Origin i palejuar." });
     // No CORS: cross-site browser requests cannot add this non-simple header.
     if (request.headers["x-bluebar-client"] !== "1")
       return reply.code(403).send({ error: "Kërkesë e palejuar." });
-    if (request.url.split("?")[0] === "/api/venues/register") return;
+    if (path === "/api/venues/register" || path === "/api/print/pair") return;
     requireDb();
     request.venue = await resolveVenue(pool, request.headers["x-bluebar-venue"] || "bluebar");
     request.db = tenantPool(pool, request.venue.schema_name);
@@ -214,17 +223,22 @@ export function buildApp({
     reply.header("Set-Cookie", sessionCookie(secureCookies, token, 12 * 3600, request.venue.slug));
     return { ...publicUser(await findSession(request.db, token)), venue: publicVenue(request.venue) };
   };
-  const attempt = (request) => {
-    if (!loginBudget(request.ip))
+  // Sign-in and registration attempts: a fast in-memory check, then an hourly budget
+  // in the database that every serverless instance shares.
+  const attempt = async (request) => {
+    if (!loginBudget(request.ip) || (await spendBudget(pool, `login:${request.ip}`)) > 300)
       throw new AppError("Shumë përpjekje. Provoni pas pak minutash.", 429);
   };
 
   app.post("/api/venues/register", {
     schema: { body: { type: "object", additionalProperties: false, required: ["slug", "name", "pin"],
-      properties: { slug: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{2,39}$" }, name: { type: "string", minLength: 2, maxLength: 80 }, pin } } },
+      properties: { slug: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{2,39}$" }, name: { type: "string", minLength: 2, maxLength: 80 }, pin,
+        website: { type: "string", maxLength: 200 } } } },
   }, async (request, reply) => {
     requireDb();
-    attempt(request);
+    await attempt(request);
+    // Honeypot: the form hides this field from people; anything that fills it is a bot.
+    if (request.body.website) throw new AppError("Regjistrimi nuk u pranua.", 400);
     const { venue, accountId } = await registerVenue(pool, request.body, request.ip);
     request.venue = venue;
     request.db = tenantPool(pool, venue.schema_name);
@@ -295,9 +309,50 @@ export function buildApp({
     if (!(await agentKeyValid(request.db, key)))
       throw new AppError("Çelësi i agjentit të printimit është i pavlefshëm.", 401);
   };
-  app.get("/api/print/jobs", { preValidation: printAgent }, async (request) => ({
-    jobs: await pendingJobs(request.db, request.venue.name),
-  }));
+  app.get("/api/print/jobs", { preValidation: printAgent }, async (request, reply) => {
+    // "x-bluebar-usb: queue1,queue2": the print computer's local printers, offered in the form.
+    const usb = request.headers["x-bluebar-usb"];
+    const usbPrinters =
+      typeof usb === "string"
+        ? usb.split(",").map((q) => q.trim()).filter((q) => /^[A-Za-z0-9_.-]{1,60}$/.test(q)).slice(0, 20)
+        : null;
+    const jobs = await pendingJobs(request.db, request.venue.name, usbPrinters);
+    if (request.query.format !== "lines") return { jobs };
+    // For the script agents (bash/PowerShell): "id host port base64(ESC/POS)" per line.
+    reply.type("text/plain; charset=utf-8");
+    return jobs
+      .map((j) => `${j.id} ${j.printer.host} ${j.printer.port} ${encode(j.document, j.printer.width, { ascii: j.printer.ascii, cut: j.printer.cutter }).toString("base64")}`)
+      .join("\n");
+  });
+  // Pairing a venue computer: the manager gets a one-time code; the installer that
+  // carries it trades it for the agent key. A new pairing disconnects the old computer.
+  app.post("/api/print/pairing", { preValidation: session("manager") }, async (request) =>
+    createPairing(pool, request.venue.slug));
+  app.get("/api/print/install/:file", async (request, reply) => {
+    const [, code, kind] = /^(\d{6})\.(sh|ps1|cmd)$/.exec(request.params.file) || [];
+    if (!code) throw new AppError("Nuk u gjet.", 404);
+    const host = request.headers.host;
+    const url = `${/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) ? "http" : "https"}://${host}`;
+    if (kind === "cmd")
+      reply.type("application/octet-stream").header("Content-Disposition", 'attachment; filename="BlueBar Print.cmd"');
+    else reply.type("text/plain; charset=utf-8");
+    return installer(kind, url, code);
+  });
+  app.post("/api/print/pair", {
+    schema: { body: { type: "object", additionalProperties: false, required: ["code"],
+      properties: { code: { type: "string", pattern: "^[0-9]{6}$" } } } },
+  }, async (request, reply) => {
+    requireDb();
+    if ((await spendBudget(pool, `pair:${request.ip}`)) > 20)
+      throw new AppError("Shumë përpjekje. Provoni pas një ore.", 429);
+    const slug = await redeemPairing(pool, request.body.code);
+    if (!slug) throw new AppError("Kodi nuk vlen më. Krijoni një të ri te Cilësimet → Printerët.", 400);
+    const venue = await resolveVenue(pool, slug);
+    const key = await createAgentKey(tenantPool(pool, venue.schema_name));
+    if (request.query.format !== "lines") return { venue: venue.slug, name: venue.name, key };
+    reply.type("text/plain; charset=utf-8");
+    return [venue.slug, key, venue.name.replace(/\s+/g, " ")].join("\n");
+  });
   app.post("/api/print/jobs/:id", {
     preValidation: printAgent,
     schema: {
@@ -341,6 +396,14 @@ export function buildApp({
     return report;
   });
 
+  app.put("/api/venue/manager-login", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["managerLogin"],
+      properties: { managerLogin: { type: "string", enum: ["pin_only", "name_pin"] } } } },
+  }, async (request) => {
+    await pool.query("UPDATE bluebar_catalog.venues SET manager_login=$1 WHERE slug=$2", [request.body.managerLogin, request.venue.slug]);
+    return { managerLogin: request.body.managerLogin };
+  });
   app.put("/api/venue/login-mode", {
     preValidation: session("manager"),
     schema: { body: { type: "object", additionalProperties: false, required: ["loginMode"],
@@ -400,7 +463,7 @@ export function buildApp({
       requireDb();
       if (!waiterIpOk(request))
         throw new AppError("Kamarierët hyjnë vetëm nga rrjeti i lokalit.", 403);
-      attempt(request);
+      await attempt(request);
       if (request.venue.login_mode === "pattern")
         throw new AppError("Përdorni pattern për të hyrë.", 403);
       const accountId = request.body.waiterId
@@ -417,14 +480,18 @@ export function buildApp({
           type: "object",
           additionalProperties: false,
           required: ["pin"],
-          properties: { pin },
+          properties: { pin, username: { type: "string", maxLength: 60 } },
         },
       },
     },
     async (request, reply) => {
       requireDb();
-      attempt(request);
-      return start(request, reply, await loginManager(request.db, request.body));
+      await attempt(request);
+      // "Emri + kodi": the name is required and must match. "Vetëm kodi": the PIN alone.
+      const byName = request.venue.manager_login === "name_pin";
+      const username = request.body.username?.trim();
+      if (byName && !username) throw new AppError("Shkruani emrin e menaxherit.", 400);
+      return start(request, reply, await loginManager(request.db, { pin: request.body.pin, username: byName ? username : undefined }));
     },
   );
   app.get("/api/auth/session", { preValidation: session() }, async (request) =>
@@ -481,7 +548,7 @@ export function buildApp({
       requireDb();
       if (!waiterIpOk(request))
         throw new AppError("Kamarierët hyjnë vetëm nga rrjeti i lokalit.", 403);
-      attempt(request);
+      await attempt(request);
       if (request.venue.login_mode !== "pattern")
         throw new AppError("Hyrja me pattern nuk është aktive për këtë lokal.", 403);
       return start(request, reply, await loginWaiterPattern(request.db, request.body));
@@ -542,7 +609,6 @@ export function buildApp({
                 "order.send",
                 "order.pay",
                 "order.cancel",
-                "ticket.done",
                 "printer.save",
                 "printer.delete",
                 "table.save",

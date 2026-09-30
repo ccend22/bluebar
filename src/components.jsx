@@ -304,12 +304,6 @@ const tableShapes = {
         stroke="currentColor"
         strokeWidth="1.5"
       />
-      <path
-        d="M37 8V5h8v3M37 50v3h8v-3M14 25h-3v8h3M70 25h3v8h-3"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
     </>
   ),
   Katror: (
@@ -325,15 +319,8 @@ const tableShapes = {
         stroke="currentColor"
         strokeWidth="1.5"
       />
-      <path
-        d="M33 7V5h16v2M33 51v2h16v-2M18 22h-2v14h2M66 22h2v14h-2"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
     </>
   ),
-  // A counter: stools sit on one side only, no chairs opposite.
   Bar: (
     <>
       <rect
@@ -346,12 +333,6 @@ const tableShapes = {
         fillOpacity=".045"
         stroke="currentColor"
         strokeWidth="1.5"
-      />
-      <path
-        d="M22 33v9M41 33v9M60 33v9"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
       />
     </>
   ),
@@ -366,12 +347,6 @@ const tableShapes = {
         fillOpacity=".045"
         stroke="currentColor"
         strokeWidth="1.5"
-      />
-      <path
-        d="M31 8V5h20v3M31 50v3h20v-3M11 24h-3v10h3M71 24h3v10h-3"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
       />
     </>
   ),
@@ -398,12 +373,6 @@ export function TableSymbol({ shape }) {
             fillOpacity=".045"
             stroke="currentColor"
             strokeWidth="1.5"
-          />
-          <path
-            d="M29 7V5h24v2M29 51v2h24v-2M12 22h-2v14h2M70 22h2v14h-2"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
           />
         </>
       )}

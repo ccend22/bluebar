@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { shiftReport } from "./shiftReport.js";
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
@@ -29,6 +29,32 @@ export async function createAgentKey(db) {
   );
   return key;
 }
+// A 6-digit code, valid 10 minutes and once, that a venue computer trades for the agent
+// key. Creating one drops the venue's previous unused code.
+export async function createPairing(pool, slug) {
+  await pool.query("DELETE FROM bluebar_catalog.print_pairings WHERE venue_slug = $1 OR expires_at < now()", [slug]);
+  for (;;) {
+    const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const row = (
+      await pool.query(
+        `INSERT INTO bluebar_catalog.print_pairings(code_hash, venue_slug, expires_at)
+         VALUES ($1, $2, now() + interval '10 minutes') ON CONFLICT DO NOTHING RETURNING expires_at`,
+        [sha256(code), slug],
+      )
+    ).rows[0];
+    if (row) return { code, expiresAt: new Date(row.expires_at).toISOString() };
+  }
+}
+// The venue slug the code belongs to, or null. Using a code consumes it.
+export async function redeemPairing(pool, code) {
+  const row = (
+    await pool.query(
+      "DELETE FROM bluebar_catalog.print_pairings WHERE code_hash = $1 AND expires_at > now() RETURNING venue_slug",
+      [sha256(String(code))],
+    )
+  ).rows[0];
+  return row?.venue_slug ?? null;
+}
 export async function agentKeyValid(db, key) {
   if (typeof key !== "string" || key.length < 20) return false;
   const row = (await db.query("SELECT token_hash FROM bluebar.print_agent WHERE id = 1")).rows[0];
@@ -38,7 +64,7 @@ export async function agentKeyValid(db, key) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 export async function agentStatus(db) {
-  const row = (await db.query("SELECT last_seen FROM bluebar.print_agent WHERE id = 1")).rows[0];
+  const row = (await db.query("SELECT last_seen, usb_printers FROM bluebar.print_agent WHERE id = 1")).rows[0];
   const pending = (
     await db.query(
       `SELECT count(*)::integer AS n FROM bluebar.print_jobs
@@ -48,6 +74,7 @@ export async function agentStatus(db) {
   return {
     configured: Boolean(row),
     lastSeen: row?.last_seen ? new Date(row.last_seen).toISOString() : null,
+    usbPrinters: row?.usb_printers ?? [],
     pending,
   };
 }
@@ -185,12 +212,16 @@ async function testDocument(db, printerId) {
   ];
 }
 
-// Called by the agent every couple of seconds; doubles as its heartbeat.
-export async function pendingJobs(db, venueName) {
-  await db.query("UPDATE bluebar.print_agent SET last_seen = now() WHERE id = 1");
+// Called by the agent every couple of seconds; doubles as its heartbeat. usbPrinters:
+// the print queues the agent's computer reported (null when it didn't say).
+export async function pendingJobs(db, venueName, usbPrinters = null) {
+  await db.query(
+    "UPDATE bluebar.print_agent SET last_seen = now(), usb_printers = COALESCE($1, usb_printers) WHERE id = 1",
+    [usbPrinters],
+  );
   const rows = (
     await db.query(
-      `SELECT j.*, p.host, p.port, p.width, i.fiscal_status
+      `SELECT j.*, p.host, p.port, p.width, p.ascii, p.cutter, i.fiscal_status
        FROM bluebar.print_jobs j
        JOIN bluebar.printers p ON p.id = j.printer_id
        LEFT JOIN bluebar.invoices i ON j.kind = 'invoice' AND i.id::text = j.ref
@@ -216,7 +247,7 @@ export async function pendingJobs(db, venueName) {
       await finishJob(db, j.id, true);
       continue;
     }
-    jobs.push({ id: j.id, printer: { host: j.host, port: j.port, width: j.width }, document });
+    jobs.push({ id: j.id, printer: { host: j.host, port: j.port, width: j.width, ascii: j.ascii, cutter: j.cutter }, document });
   }
   return jobs;
 }

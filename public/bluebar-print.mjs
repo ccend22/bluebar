@@ -9,10 +9,12 @@
 // Options can also come from BLUEBAR_URL, BLUEBAR_VENUE, BLUEBAR_PRINT_KEY. Add --ascii
 // for printers without code page 850 (prints ë as e).
 import net from "node:net";
+import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ESC = 0x1b;
 const GS = 0x1d;
+const FS = 0x1c;
 // Code page 850 covers the Albanian letters; everything else falls back to plain ASCII.
 const CP850 = {
   Ç: 0x80, ü: 0x81, é: 0x82, â: 0x83, ä: 0x84, à: 0x85, ç: 0x87, ê: 0x88, ë: 0x89,
@@ -26,6 +28,8 @@ export function textBytes(text, ascii = false) {
   const out = [];
   for (const ch of String(text)) {
     const code = ch.codePointAt(0);
+    // Control characters (ESC, GS, …) would be read as printer commands: drop them.
+    if (code < 0x20 || code === 0x7f) continue;
     if (code < 0x80) out.push(code);
     else if (!ascii && CP850[ch]) out.push(CP850[ch]);
     else if (ch === "·") out.push(0x2d);
@@ -62,8 +66,11 @@ const pair = (left, right, width) => {
 
 // document: the block list BlueBar's /api/print/jobs returns. width: characters per line
 // in the normal font (56 on 88mm paper, 48 on 80mm, 32 on 58mm).
-export function encode(document, width = 56, { ascii = false } = {}) {
-  const out = [ESC, 0x40, ESC, 0x74, 0x02]; // init, code page 850
+export function encode(document, width = 56, { ascii = false, cut = true } = {}) {
+  // init; Chinese double-byte mode off (many Chinese-made printers start in it and turn
+  // ë/ç into other symbols); font A (some start in a tiny font that prints too faint
+  // to read); code page 850.
+  const out = [ESC, 0x40, FS, 0x2e, ESC, 0x4d, 0x00, ESC, 0x74, 0x02];
   const text = (t) => out.push(...textBytes(t, ascii), 0x0a);
   const align = (n) => out.push(ESC, 0x61, n);
   const size = (n) => out.push(GS, 0x21, n);
@@ -113,11 +120,30 @@ export function encode(document, width = 56, { ascii = false } = {}) {
         wrap(block.text ?? "", width).forEach(text);
     }
   }
-  out.push(ESC, 0x64, 0x04, GS, 0x56, 0x42, 0x00); // feed, partial cut
+  // Feed the last printed line past the cutter / tear bar (a few cm above the print
+  // head), then cut with "GS V 1", the basic cut every cutter knows. Without a working
+  // cutter no cut is sent: a jammed cutter stops the printer mid-receipt.
+  out.push(ESC, 0x64, cut ? 0x06 : 0x08);
+  if (cut) out.push(GS, 0x56, 0x01);
   return Buffer.from(out);
 }
 
+// "usb:<queue>": a printer on this computer, sent raw through its print queue (CUPS).
+function sendToQueue(queue, data) {
+  return new Promise((resolve, reject) => {
+    const lp = spawn("lp", ["-d", queue, "-o", "raw"], { stdio: ["pipe", "ignore", "pipe"] });
+    let error = "";
+    lp.stderr.on("data", (c) => (error += c));
+    lp.once("error", reject);
+    lp.once("close", (code) => (code === 0 ? resolve() : reject(new Error(error.trim() || `lp doli me kodin ${code}`))));
+    lp.stdin.end(data);
+  });
+}
+const localPrinters = () =>
+  new Promise((resolve) => execFile("lpstat", ["-e"], (e, out) => resolve(e ? "" : out.trim().split(/\s+/).join(","))));
+
 export function sendToPrinter({ host, port }, data, timeout = 5000) {
+  if (host.startsWith("usb:")) return sendToQueue(host.slice(4), data);
   return new Promise((resolve, reject) => {
     const socket = net.connect({ host, port });
     socket.setTimeout(timeout, () => socket.destroy(new Error("Printeri nuk u përgjigj (timeout).")));
@@ -135,6 +161,7 @@ export async function runOnce({ url, venue, key, ascii = false, send = sendToPri
     "x-bluebar-client": "1",
     "x-bluebar-venue": venue,
     authorization: `Bearer ${key}`,
+    "x-bluebar-usb": await localPrinters(),
   };
   const response = await fetch(`${url}/api/print/jobs`, { headers });
   const body = await response.json().catch(() => ({}));
@@ -156,7 +183,7 @@ export async function runOnce({ url, venue, key, ascii = false, send = sendToPri
     [...byPrinter].map(async ([target, jobs]) => {
       for (const job of jobs) {
         try {
-          await send(job.printer, encode(job.document, job.printer.width, { ascii }));
+          await send(job.printer, encode(job.document, job.printer.width, { ascii: ascii || job.printer.ascii, cut: job.printer.cutter !== false }));
           await report(job.id, { ok: true });
           printed++;
           log(`✓ ${target} · ${job.document[0]?.text ?? ""}`);

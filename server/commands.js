@@ -22,7 +22,10 @@ const name = (v, max = 80) => {
 const nextId = (items) => Math.max(0, ...items.map((x) => x.id)) + 1;
 // The print agent opens a raw TCP connection to this address from inside the venue,
 // so only LAN addresses are accepted — never a public host.
+// A USB printer on the print computer is "usb:" + its system print-queue name.
+export const USB_QUEUE = /^usb:[A-Za-z0-9_.-]{1,60}$/;
 const printerHost = (v) => {
+  if (typeof v === "string" && USB_QUEUE.test(v.trim())) return v.trim();
   const host = typeof v === "string" ? v.trim().toLowerCase() : "";
   const ip = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)?.slice(1).map(Number);
   const lan =
@@ -71,12 +74,21 @@ const unique = (items, value, except) => {
 // A table's current order's tickets: not yet closed by payment or cancellation.
 const openTickets = (tickets, tableId) =>
   tickets.filter((k) => k.table === tableId && !k.invoice && !k.cancelledAt);
-// Closing an order: finished tickets are done with; unfinished ones stay on the
-// station's screen, marked paid (invoice) or cancelled so the station knows.
+// Closing an order marks its tickets paid (invoice) or cancelled. They leave the
+// stations' screens at once, but stay stored a while (see pruneTickets) so a queued
+// print job or a station's cancellation slip can still find them.
 export const closeTickets = (tickets, tableId, patch) =>
   tickets.flatMap((k) =>
     k.table !== tableId || k.invoice || k.cancelledAt ? [k] : k.doneAt ? [] : [{ ...k, ...patch }],
   );
+const CLOSED_TICKET_TTL = 60 * 60_000;
+// Tickets closed over an hour ago (paid, cancelled, or marked done before "Gati" was
+// removed) are dropped, so the table never grows without bound.
+export const pruneTickets = (tickets, invoices, now = Date.now()) =>
+  tickets.filter((k) => {
+    const closed = k.cancelledAt || k.doneAt || (k.invoice && (invoices.find((i) => i.id === k.invoice)?.date ?? 0));
+    return !closed || now - new Date(closed) < CLOSED_TICKET_TTL;
+  });
 export function applyCommand(state, type, payload, actor = null) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
     fail("Kërkesë e pavlefshme.");
@@ -183,7 +195,9 @@ export function applyCommand(state, type, payload, actor = null) {
         existing = state.printers.find((x) => x.id === p.id);
         if (!existing) fail("Printeri nuk ekziston.");
       }
-      const printer = { id: existing?.id || nextId(state.printers), name: printerName, host, port, width, departments, receipts };
+      const ascii = p.ascii === true;
+      const cutter = p.cutter !== false;
+      const printer = { id: existing?.id || nextId(state.printers), name: printerName, host, port, width, departments, receipts, ascii, cutter };
       // A department (and the cashier's invoices) prints on exactly one printer:
       // assigning it here takes it away from wherever it was before.
       const others = state.printers
@@ -200,23 +214,6 @@ export function applyCommand(state, type, payload, actor = null) {
       integer(p.id);
       if (!state.printers.some((x) => x.id === p.id)) fail("Printeri nuk ekziston.");
       next = { ...state, printers: state.printers.filter((x) => x.id !== p.id) };
-      break;
-    }
-    case "ticket.done": {
-      // "Gati" from the station. A ticket whose order is already closed (paid or
-      // cancelled) has nothing left to report to the waiter, so it's simply removed.
-      if (typeof p.id !== "string") fail("Fleta nuk ekziston.");
-      const k = state.tickets.find((x) => x.id === p.id);
-      if (!k) fail("Fleta nuk ekziston.");
-      next = {
-        ...state,
-        tickets:
-          k.invoice || k.cancelledAt
-            ? state.tickets.filter((x) => x.id !== k.id)
-            : state.tickets.map((x) =>
-                x.id === k.id ? { ...x, doneAt: x.doneAt || new Date().toISOString() } : x,
-              ),
-      };
       break;
     }
     case "order.assign":
@@ -378,13 +375,13 @@ export function applyCommand(state, type, payload, actor = null) {
       const productName = name(p.name),
         price = integer(p.price, 1, 1000000),
         category = name(p.category, 40);
-      if (!state.categories.includes(category)) fail("Kategoria nuk ekziston.");
+      if (!state.categories.includes(category)) fail("Nënkategoria nuk ekziston.");
       // Department (which station prepares it) is optional — a manager can leave
       // existing products unrouted, or route them later once departments exist.
       let department = null;
       if (p.department !== undefined && p.department !== null && p.department !== "") {
         department = name(p.department, 40);
-        if (!state.departments.includes(department)) fail("Nënkategoria nuk ekziston.");
+        if (!state.departments.includes(department)) fail("Kategoria nuk ekziston.");
       }
       let existing;
       if (p.id !== undefined) {
@@ -416,7 +413,7 @@ export function applyCommand(state, type, payload, actor = null) {
           (c) => c.toLocaleLowerCase() === category.toLocaleLowerCase(),
         )
       )
-        fail("Kategoria ekziston.");
+        fail("Nënkategoria ekziston.");
       next = { ...state, categories: [...state.categories, category] };
       break;
     }
@@ -427,7 +424,7 @@ export function applyCommand(state, type, payload, actor = null) {
           (d) => d.toLocaleLowerCase() === department.toLocaleLowerCase(),
         )
       )
-        fail("Nënkategoria ekziston.");
+        fail("Kategoria ekziston.");
       next = { ...state, departments: [...state.departments, department] };
       break;
     }
@@ -557,5 +554,6 @@ export function applyCommand(state, type, payload, actor = null) {
       }),
     };
   }
+  if (next.tickets) next = { ...next, tickets: pruneTickets(next.tickets, next.invoices) };
   return { state: next, result };
 }

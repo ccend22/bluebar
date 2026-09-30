@@ -117,7 +117,7 @@ const reserve = async (pool, waiterId, username) =>
       `UPDATE bluebar.accounts a
        SET failed_attempts = failed_attempts + 1,
            locked_until = CASE WHEN failed_attempts + 1 >= 5 THEN now() + interval '15 minutes' ELSE locked_until END
-       WHERE ((a.role = 'waiter' AND a.waiter_id = $1) OR (a.role = 'manager' AND a.username = $2))
+       WHERE ((a.role = 'waiter' AND a.waiter_id = $1) OR (a.role = 'manager' AND lower(a.username) = lower($2)))
          AND a.active AND (a.locked_until IS NULL OR a.locked_until <= now())
          AND (a.role = 'manager' OR EXISTS (SELECT 1 FROM bluebar.waiters w WHERE w.id = a.waiter_id AND w.active))
        RETURNING a.id, a.secret_hash, a.pattern_hash`,
@@ -170,7 +170,15 @@ const reserveManagers = async (pool) =>
        RETURNING a.id, a.secret_hash`,
     )
   ).rows;
-export async function loginManager(pool, { pin }) {
+// With a username ("Emri + kodi" sign-in) only that manager's account is tried.
+export async function loginManager(pool, { pin, username }) {
+  if (username) {
+    const a = await reserve(pool, null, username.trim());
+    const ok = await verifySecret(pin, a?.secret_hash ?? (await decoyHash()));
+    if (!a || !ok) throw bad();
+    await clear(pool, a.id);
+    return a.id;
+  }
   const candidates = await reserveManagers(pool);
   for (const c of candidates)
     if (await verifySecret(pin, c.secret_hash)) {

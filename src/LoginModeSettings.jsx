@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { saveLoginMode } from "./api.js";
+import { saveLoginMode, saveManagerLogin } from "./api.js";
 import { SectionHeading } from "./components.jsx";
 
 const MODES = [
@@ -112,6 +112,60 @@ export function LoginModeSettings({ venue, waiters = [] }) {
       </div>
       {missingPatterns > 0 && <p className="helper">Për të aktivizuar pattern-in, vendoseni për të gjithë {missingPatterns} kamarierët aktivë te lista e ekipit.</p>}
       {missingPins > 0 && <p className="helper">Për hyrjen me PIN, vendoseni për të gjithë {missingPins} kamarierët aktivë te lista e ekipit.</p>}
+    </section>
+  );
+}
+
+const MANAGER_MODES = [
+  { id: "pin_only", title: "Vetëm kodi", description: "Menaxheri fut vetëm kodin 6-shifror." },
+  { id: "name_pin", title: "Emri + kodi", description: "Menaxheri shkruan emrin, pastaj kodin. Më e sigurt." },
+];
+
+export function ManagerLoginSettings({ venue, name }) {
+  const [mode, setMode] = useState(venue?.managerLogin || "pin_only");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  async function choose(id) {
+    if (id === mode || busy) return;
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      await saveManagerLogin(id);
+      setMode(id);
+      setMessage("Hyrja e menaxherit u ndryshua.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="panel">
+      <SectionHeading title="Hyrja e menaxherit" description="Si hyn menaxheri në ekranin e hyrjes." />
+      {error && <p className="notice error" role="alert">{error}</p>}
+      {message && <p className="notice" role="status">{message}</p>}
+      <div className="login-mode-grid manager-login-grid" role="group" aria-label="Hyrja e menaxherit">
+        {MANAGER_MODES.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className={`login-mode-card ${mode === m.id ? "selected" : ""}`}
+            aria-pressed={mode === m.id}
+            disabled={busy}
+            onClick={() => choose(m.id)}
+          >
+            <strong>{m.title}</strong>
+            <small>{m.description}</small>
+          </button>
+        ))}
+      </div>
+      {mode === "name_pin" && (
+        <p className="helper">
+          Emri juaj për hyrje: <strong>{name}</strong>
+        </p>
+      )}
     </section>
   );
 }

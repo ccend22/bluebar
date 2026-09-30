@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { migrate } from "./migrate.js";
 import { buildApp } from "./app.js";
+import { pruneTickets } from "./commands.js";
 import { execute, readSnapshot } from "./repository.js";
 import { createManager, ipPolicy, setWaiterPattern, setWaiterPin } from "./auth.js";
 
@@ -65,7 +66,7 @@ test("manager signs in with a PIN; sessions are HttpOnly and revocable", async (
     );
     const ok = await t.managerLogin();
     assert.equal(ok.statusCode, 200);
-    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss", venue: { slug: "bluebar", name: "BlueBar", loginMode: "name_pin" } });
+    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss", venue: { slug: "bluebar", name: "BlueBar", loginMode: "name_pin", managerLogin: "pin_only" } });
     const setCookie = ok.headers["set-cookie"];
     assert.match(setCookie, /HttpOnly/);
     assert.match(setCookie, /SameSite=Strict/);
@@ -372,7 +373,7 @@ test("legacy fingerprint preview returns to working PIN login during migration",
   }
 });
 
-test("order.send gives each department its own ticket; stations mark them done; tickets outlive payment", async () => {
+test("order.send gives each department its own ticket; closing the order closes them; old closed tickets are pruned", async () => {
   const t = await setup();
   try {
     await t.send("shift.open", { opening: 1000 });
@@ -410,35 +411,34 @@ test("order.send gives each department its own ticket; stations mark them done; 
     const second = (await cmd(waiter, "order.send", { tableId: 1 })).json().result;
     assert.deepEqual(second.tickets.map((k) => [k.round, k.department, k.lines[0].qty]), [[2, "Bar", 1]]);
 
-    // The bar finishes both of its tickets (a waiter account on the bar's device).
-    const tickets = (await state()).tickets;
-    assert.equal(tickets.length, 4);
-    for (const k of tickets.filter((k) => k.department === "Bar"))
-      assert.equal((await cmd(waiter, "ticket.done", { id: k.id })).statusCode, 200);
+    assert.equal((await state()).tickets.length, 4);
+    // There's no "Gati" step any more.
+    assert.equal((await cmd(waiter, "ticket.done", { id: "x" })).statusCode, 400);
 
-    // The customer pays before the pizza is made: one full invoice of everything,
-    // finished bar tickets are gone, but the kitchen and pastry still see theirs.
+    // Paying: one full invoice of everything; every ticket is closed as paid, kept a
+    // while so queued prints still find it.
     const pay = await cmd(manager, "order.pay", { tableId: 1, method: "Kartë" });
     const invoiceId = pay.json().result.invoiceId;
     const invoice = pay.json().state.invoices.find((i) => i.id === invoiceId);
     assert.deepEqual(invoice.lines.map((l) => [l.name, l.qty]), [["Macchiato", 3], ["Tiramisu", 1], ["Picë", 1]]);
-    const after = (await state()).tickets;
-    assert.deepEqual(after.map((k) => [k.department, k.invoice]), [["Ëmbëltore", invoiceId], ["Restorant", invoiceId]]);
+    assert.ok((await state()).tickets.every((k) => k.invoice === invoiceId));
 
     // The next customer at the same table starts again at round 1.
     await add(2);
     const next = (await cmd(waiter, "order.send", { tableId: 1 })).json().result;
     assert.equal(next.round, 1);
 
-    // Finishing a paid ticket removes it from the station.
-    for (const k of after) await cmd(waiter, "ticket.done", { id: k.id });
-    assert.deepEqual((await state()).tickets.map((k) => [k.department, k.round, k.invoice]), [["Ëmbëltore", 1, null]]);
-
-    // Cancelling an order leaves the unfinished ticket on the station, marked cancelled.
+    // Cancelling an order closes its open ticket as cancelled (the station prints a slip).
     await cmd(manager, "order.cancel", { tableId: 1, reason: "Klienti iku" });
-    const cancelled = (await state()).tickets;
-    assert.equal(cancelled.length, 1);
-    assert.ok(cancelled[0].cancelledAt);
+    const tickets = (await state()).tickets;
+    assert.equal(tickets.length, 5);
+    assert.ok(tickets.find((k) => k.round === 1 && k.department === "Ëmbëltore" && !k.invoice).cancelledAt);
+
+    // An hour after closing, they're dropped; an open ticket never is.
+    const hourLater = Date.now() + 61 * 60_000;
+    const open = { id: "o", table: 2, invoice: null, cancelledAt: null, doneAt: null, date: new Date(0).toISOString() };
+    assert.deepEqual(pruneTickets([...tickets, open], (await state()).invoices, hourLater), [open]);
+    assert.equal(pruneTickets(tickets, (await state()).invoices).length, 5, "not yet");
   } finally {
     await t.close();
   }
@@ -775,6 +775,39 @@ test("Turnet: cash in/out feeds the expected drawer, counts must add up, waiters
     // History reloads with the same numbers the close produced.
     const history = (await t.call("GET", "/api/state", { cookie: boss })).json().state.shifts[0];
     assert.deepEqual(history.sales, shift.sales);
+  } finally {
+    await t.close();
+  }
+});
+
+test("manager login: code only by default; with \"Emri + kodi\" the name is required and must match", async () => {
+  const t = await setup();
+  try {
+    const path = "/api/venue/manager-login";
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("PUT", path, { cookie: waiter, body: { managerLogin: "name_pin" } })).statusCode, 403);
+    const manager = t.cookieOf(await t.managerLogin());
+    assert.equal((await t.call("PUT", path, { cookie: manager, body: { managerLogin: "fingerprint" } })).statusCode, 400);
+    assert.equal((await t.call("PUT", path, { cookie: manager, body: { managerLogin: "name_pin" } })).statusCode, 200);
+    assert.equal((await t.call("GET", "/api/venue")).json().managerLogin, "name_pin");
+
+    assert.equal((await t.managerLogin()).statusCode, 400, "the code alone is no longer enough");
+    assert.equal((await t.managerLogin({ username: "someone" })).statusCode, 401);
+    assert.equal((await t.managerLogin({ username: " Boss " })).statusCode, 200, "name is trimmed and case-insensitive");
+
+    await t.call("PUT", path, { cookie: manager, body: { managerLogin: "pin_only" } });
+    assert.equal((await t.managerLogin()).statusCode, 200, "back to code only");
+  } finally {
+    await t.close();
+  }
+});
+
+test("registration: a filled honeypot field (bots) is refused", async () => {
+  const t = await setup();
+  try {
+    const bot = await t.call("POST", "/api/venues/register", { body: { slug: "bot-bar", name: "Bot Bar", pin: "482915", website: "http://spam.example" } });
+    assert.equal(bot.statusCode, 400);
+    assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar_catalog.venues WHERE slug = 'bot-bar'")).rows[0].n, 0);
   } finally {
     await t.close();
   }
