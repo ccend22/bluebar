@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { saveLoginMode, saveManagerLogin } from "./api.js";
-import { SectionHeading } from "./components.jsx";
+import { saveLoginMode, saveManagerLogin, updateMyAccount } from "./api.js";
+import { Field, SectionHeading } from "./components.jsx";
 
 const MODES = [
   {
@@ -166,6 +166,68 @@ export function ManagerLoginSettings({ venue, name }) {
           Emri juaj për hyrje: <strong>{name}</strong>
         </p>
       )}
+    </section>
+  );
+}
+
+// The manager's own sign-in name and PIN. Every change asks for the current PIN.
+export function AccountSettings({ name, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  async function save(e) {
+    e.preventDefault();
+    const formElement = e.currentTarget;
+    const form = new FormData(formElement);
+    const username = String(form.get("username")).trim().toLowerCase();
+    const newPin = String(form.get("newPin"));
+    setMessage("");
+    setError("");
+    if (newPin && newPin !== form.get("confirmPin")) return setError("PIN-et e reja nuk përputhen.");
+    if (username === name && !newPin) return setError("Nuk ka asgjë për të ndryshuar.");
+    setBusy(true);
+    try {
+      const user = await updateMyAccount({
+        currentPin: String(form.get("currentPin")),
+        ...(username !== name && { username }),
+        ...(newPin && { newPin }),
+      });
+      onChange?.(user);
+      formElement.reset();
+      setMessage(newPin ? "U ruajt. Pajisjet e tjera duhet të hyjnë përsëri me PIN-in e ri." : "Emri u ndryshua.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="panel">
+      <SectionHeading title="Llogaria juaj" description="Ndryshoni emrin dhe PIN-in me të cilin hyni si menaxher." />
+      {error && <p className="notice error" role="alert">{error}</p>}
+      {message && <p className="notice" role="status">{message}</p>}
+      <form className="stack-form" onSubmit={save} key={name}>
+        <fieldset className="business-fields" disabled={busy}>
+          <Field
+            label="Emri për hyrje"
+            name="username"
+            defaultValue={name}
+            required
+            minLength={3}
+            maxLength={32}
+            pattern="[a-zA-Z0-9._\-]{3,32}"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoComplete="username"
+          />
+          <p className="helper">3–32 shkronja, numra, pikë ose vizë, pa hapësira.</p>
+          <Field label="PIN-i i ri (6 shifra, opsional)" name="newPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="new-password" />
+          <Field label="Përsëritni PIN-in e ri" name="confirmPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="new-password" />
+          <Field label="PIN-i aktual" name="currentPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="current-password" required />
+          <button className="primary full-width">{busy ? "Po ruhet…" : "Ruaj ndryshimet"}</button>
+        </fieldset>
+      </form>
     </section>
   );
 }

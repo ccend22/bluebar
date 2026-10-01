@@ -33,6 +33,7 @@ import {
   sessionCookie,
   setWaiterPin,
   throttle,
+  updateManagerAccount,
 } from "./auth.js";
 
 const WAITER_COMMANDS = new Set(["order.add", "order.remove", "order.assign", "order.send", "order.pay"]);
@@ -329,7 +330,7 @@ export function buildApp({
   app.post("/api/print/pairing", { preValidation: session("manager") }, async (request) =>
     createPairing(pool, request.venue.slug));
   app.get("/api/print/install/:file", async (request, reply) => {
-    const [, code, kind] = /^(\d{6})\.(sh|ps1|cmd)$/.exec(request.params.file) || [];
+    const [, code, kind] = /^([A-Za-z0-9_-]{32})\.(sh|ps1|cmd)$/.exec(request.params.file) || [];
     if (!code) throw new AppError("Nuk u gjet.", 404);
     const host = request.headers.host;
     const url = `${/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) ? "http" : "https"}://${host}`;
@@ -340,7 +341,7 @@ export function buildApp({
   });
   app.post("/api/print/pair", {
     schema: { body: { type: "object", additionalProperties: false, required: ["code"],
-      properties: { code: { type: "string", pattern: "^[0-9]{6}$" } } } },
+      properties: { code: { type: "string", pattern: "^[A-Za-z0-9_-]{32}$" } } } },
   }, async (request, reply) => {
     requireDb();
     if ((await spendBudget(pool, `pair:${request.ip}`)) > 20)
@@ -516,6 +517,27 @@ export function buildApp({
     async (request) => {
       await setWaiterPin(request.db, request.params.id, request.body.pin);
       return { ok: true };
+    },
+  );
+  // The signed-in manager's own name and PIN (Cilësimet → Llogaria juaj).
+  app.put(
+    "/api/accounts/me",
+    {
+      preValidation: session("manager"),
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["currentPin"],
+          properties: { currentPin: { type: "string", maxLength: 6 }, username: { type: "string", maxLength: 40 }, newPin: pin },
+        },
+      },
+    },
+    async (request) => {
+      await attempt(request);
+      const username = request.body.username?.trim().toLowerCase();
+      await updateManagerAccount(request.db, request.user.id, { ...request.body, username }, request.sessionToken);
+      return publicUser(await findSession(request.db, request.sessionToken));
     },
   );
   app.put(

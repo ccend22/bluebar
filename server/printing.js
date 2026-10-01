@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { shiftReport } from "./shiftReport.js";
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
@@ -29,12 +29,13 @@ export async function createAgentKey(db) {
   );
   return key;
 }
-// A 6-digit code, valid 10 minutes and once, that a venue computer trades for the agent
-// key. Creating one drops the venue's previous unused code.
+// A one-time code, valid 10 minutes and once, that a venue computer trades for the
+// agent key. Nobody types it (it travels inside the installer link), so it is long and
+// random — 192 bits — not a guessable short number. Creating one drops the previous.
 export async function createPairing(pool, slug) {
   await pool.query("DELETE FROM bluebar_catalog.print_pairings WHERE venue_slug = $1 OR expires_at < now()", [slug]);
   for (;;) {
-    const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const code = randomBytes(24).toString("base64url");
     const row = (
       await pool.query(
         `INSERT INTO bluebar_catalog.print_pairings(code_hash, venue_slug, expires_at)

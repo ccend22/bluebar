@@ -58,6 +58,8 @@ export const fetchNetwork = () => request("/venue/network");
 export const saveNetwork = (allowedIps) => send("PUT", "/venue/network", { allowedIps });
 export const saveLoginMode = (loginMode) => send("PUT", "/venue/login-mode", { loginMode });
 export const saveManagerLogin = (managerLogin) => send("PUT", "/venue/manager-login", { managerLogin });
+// The signed-in manager's own name and/or PIN; the current PIN is always required.
+export const updateMyAccount = (body) => send("PUT", "/accounts/me", body);
 export function openBusiness(slug) {
   const url = new URL(window.location.href);
   url.search = "";

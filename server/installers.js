@@ -6,7 +6,7 @@
 //
 // The texts below are raw strings — the only JS interpolation is ${"$"} where bash needs a
 // literal "${". __URL__ and __CODE__ are filled in per request, and are validated to be
-// nothing but a URL and 6 digits.
+// nothing but a URL and the 32-character pairing code.
 
 const SH = String.raw`#!/bin/bash
 # BlueBar Print — installer for macOS and Linux.
@@ -213,6 +213,6 @@ const CMD = [
 const TEMPLATES = { sh: SH, ps1: PS1, cmd: CMD };
 
 export function installer(kind, url, code) {
-  if (!/^https?:\/\/[a-z0-9.:-]+$/i.test(url) || !/^\d{6}$/.test(code)) throw new Error("Invalid installer input");
+  if (!/^https?:\/\/[a-z0-9.:-]+$/i.test(url) || !/^[A-Za-z0-9_-]{32}$/.test(code)) throw new Error("Invalid installer input");
   return TEMPLATES[kind].replaceAll("__URL__", url).replaceAll("__CODE__", code);
 }

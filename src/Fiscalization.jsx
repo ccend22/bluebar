@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import { disconnectBlueBill, fetchBlueBill, saveBlueBill, testBlueBill } from "./api.js";
 import { Badge, Field, Icon, SectionHeading } from "./components.jsx";
 
+// BlueBill's own web app (sign-in, then API tokens), opened in a new tab.
+const BLUEBILL_URL = "https://bluebill-745501573999.europe-north1.run.app/";
+
 const when = (iso) => {
   const d = new Date(iso);
   const p = (n) => String(n).padStart(2, "0");
@@ -120,7 +123,13 @@ export function Fiscalization({ onChange }) {
             <form className="stack-form" onSubmit={save}>
               {!status.enabled && (
                 <ol className="fiscal-steps">
-                  <li>Hyni në BlueBill dhe krijoni një API token për këtë lokal.</li>
+                  <li>
+                    Hyni në{" "}
+                    <a href={BLUEBILL_URL} target="_blank" rel="noopener noreferrer">
+                      BlueBill
+                    </a>{" "}
+                    dhe krijoni një API token për këtë lokal.
+                  </li>
                   <li>Kopjojeni të plotë dhe ngjiteni më poshtë.</li>
                   <li>BlueBar e verifikon me BlueBill para se ta ruajë.</li>
                 </ol>

@@ -4,7 +4,7 @@ import { money, total } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
-import { LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
+import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
 import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js";
 import { NetworkPrinters } from "./NetworkPrinters.jsx";
@@ -222,7 +222,7 @@ function StationTicket({ ticket, waiterName }) {
     </>
   );
 }
-function App({ user, onLogout }) {
+function App({ user, onLogout, onUserChange }) {
   const database = useDatabase();
   const online = useOnline();
   const installOffer = useInstall();
@@ -2397,7 +2397,7 @@ function App({ user, onLogout }) {
                     <div>
                       <strong>Hyrja e kamarierit</strong>
                       <p>
-                        Vendosni PIN ose pattern për çdo kamarier dhe zgjidhni mënyrën e hyrjes më sipër.
+                        Vendosni PIN ose pattern për çdo kamarier. Mënyrën e hyrjes e zgjidhni te Cilësimet.
                         Pas 5 përpjekjeve të gabuara llogaria bllokohet për 15
                         minuta; vendosja e një PIN-i ose pattern-i të ri e zhbllokon. Kamarierët
                         hyjnë vetëm nga rrjeti i lokalit.
@@ -2428,6 +2428,7 @@ function App({ user, onLogout }) {
                   <BusinessNetwork venue={user.venue} />
                   <LoginModeSettings venue={user.venue} waiters={state.waiters} />
                   <ManagerLoginSettings venue={user.venue} name={user.name} />
+                  <AccountSettings name={user.name} onChange={onUserChange} />
                 </div>
                 <div className="settings-column">
                   <NetworkPrinters state={state} update={update} notify={notify} />
@@ -2647,6 +2648,6 @@ function Root() {
         </button>
       </main>
     );
-  return user ? <App user={user} onLogout={leave} /> : <Login onSignedIn={enter} />;
+  return user ? <App user={user} onLogout={leave} onUserChange={(u) => setUser((prev) => ({ ...prev, ...u }))} /> : <Login onSignedIn={enter} />;
 }
 if (launch()) createRoot(document.getElementById("root")).render(<Root />);

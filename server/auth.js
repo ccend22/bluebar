@@ -249,3 +249,32 @@ export async function createManager(pool, username) {
   await pool.query("UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1");
   return { id: r.rows[0].id, pin };
 }
+
+// The manager changes their own sign-in name and/or PIN. The current PIN is required
+// and counted like a sign-in attempt (same lockout). A new PIN signs out the
+// manager's other devices; this one (keepToken) stays signed in.
+export const validUsername = (u) => typeof u === "string" && /^[a-z0-9._-]{3,32}$/.test(u);
+export async function updateManagerAccount(pool, accountId, { currentPin, username, newPin }, keepToken) {
+  const me = (await pool.query("SELECT username FROM bluebar.accounts WHERE id = $1 AND role = 'manager'", [accountId])).rows[0];
+  const a = me && (await reserve(pool, null, me.username));
+  const ok = await verifySecret(String(currentPin), a?.secret_hash ?? (await decoyHash()));
+  // 400, not 401: a wrong PIN here must not sign the manager out of the app.
+  if (!a || !ok) throw new AppError("PIN-i aktual nuk është i saktë.", 400);
+  await clear(pool, a.id);
+  if (username !== undefined && !validUsername(username))
+    throw new AppError("Emri: 3–32 shkronja të vogla, numra, pikë ose vizë, pa hapësira.", 400);
+  if (newPin !== undefined && !validPin(newPin))
+    throw new AppError("PIN-i i ri është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.", 400);
+  try {
+    await pool.query(
+      "UPDATE bluebar.accounts SET username = COALESCE($2, username), secret_hash = COALESCE($3, secret_hash) WHERE id = $1",
+      [a.id, username ?? null, newPin === undefined ? null : await hashSecret(newPin)],
+    );
+  } catch (e) {
+    if (e.code === "23505") throw new AppError("Ky emër përdoret nga një menaxher tjetër.", 409);
+    throw e;
+  }
+  if (newPin !== undefined)
+    await pool.query("DELETE FROM bluebar.sessions WHERE account_id = $1 AND token_hash <> $2", [a.id, sha256(keepToken)]);
+  await pool.query("UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1");
+}

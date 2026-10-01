@@ -337,7 +337,7 @@ function CloseShift({ state, update, nav, onCancel, onClosed, d, shiftInvoices }
           <div className={`close-check ${open.length ? "blocked" : "ok"}`}>
             <Icon name={open.length ? "tables" : "check"} size={20} />
             <div>
-              <strong>{open.length ? `${open.length} tavolina kanë porosi të hapura` : "Të gjitha tavolinat janë të lira"}</strong>
+              <strong>{open.length ? (open.length === 1 ? "1 tavolinë ka porosi të hapur" : `${open.length} tavolina kanë porosi të hapura`) : "Të gjitha tavolinat janë të lira"}</strong>
               <small>{open.length ? "Paguani ose anuloni porositë përpara mbylljes." : "Asnjë porosi e papaguar."}</small>
             </div>
             {open.length > 0 && <button onClick={() => nav("Porositë")}>Porositë</button>}

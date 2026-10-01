@@ -5005,3 +5005,8 @@ textarea {
   height: 1px;
   overflow: hidden;
 }
+.fiscal-steps a {
+  color: var(--blue);
+  font-weight: 600;
+  text-underline-offset: 2px;
+}

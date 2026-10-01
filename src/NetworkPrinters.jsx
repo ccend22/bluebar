@@ -287,8 +287,7 @@ function PrintComputer({ status, notify }) {
             </details>
           )}
           <p className="helper">
-            Kodi <strong>{pairing.code}</strong> vlen deri në {until} dhe vetëm një herë. Pastaj programi niset vetë sa herë
-            ndizet kompjuteri.
+            Kjo lidhje vlen deri në {until} dhe vetëm një herë. Pastaj programi niset vetë sa herë ndizet kompjuteri.
           </p>
           <button className="text-button" onClick={() => setPairing(null)}>Anulo</button>
         </div>

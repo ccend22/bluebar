@@ -21,8 +21,12 @@ function getApp() {
       origins: list(process.env.APP_ORIGINS),
       allowedHosts: list(process.env.ALLOWED_HOSTS),
       allowedIps: list(process.env.WAITER_ALLOWED_IPS),
-      // Vercel's edge is the one hop in front of this function.
-      trustProxy: true,
+      // Vercel's edge is the one hop in front of this function: trust exactly that hop,
+      // so the client's IP is the last X-Forwarded-For entry (the one Vercel added),
+      // never an address a client wrote in front of it — the waiter network rule and
+      // every rate limit depend on it. (A numeric hop count would make Fastify ignore
+      // the header entirely, and every visitor would share Vercel's internal IP.)
+      trustProxy: (_address, hop) => hop === 0,
       secureCookies: true,
     });
     appPromise = app.ready().then(() => app);

@@ -192,7 +192,7 @@ test("pairing a venue computer: one-time code → installer → key → the bash
     const ana = await login("/api/auth/waiter-login", { waiterId: 1, pin: "482913" });
     assert.equal((await call("POST", "/api/print/pairing", { cookie: ana })).status, 403);
     const { code } = await (await call("POST", "/api/print/pairing", { cookie: boss })).json();
-    assert.match(code, /^\d{6}$/);
+    assert.match(code, /^[A-Za-z0-9_-]{32}$/, "a long random code, not a guessable number");
 
     // The installer needs no BlueBar header (curl | bash, a download link) and knows this server.
     const sh = await (await call("GET", `/api/print/install/${code}.sh`, { headers: {} })).text();
@@ -202,10 +202,10 @@ test("pairing a venue computer: one-time code → installer → key → the bash
     assert.match(cmd.headers.get("content-disposition"), /attachment; filename="BlueBar Print.cmd"/);
     assert.match(await cmd.text(), /\r\n/);
     assert.ok((await (await call("GET", `/api/print/install/${code}.ps1`, { headers: {} })).text()).includes(`$Code = '${code}'`));
-    assert.equal((await call("GET", "/api/print/install/12345.sh", { headers: {} })).status, 404);
+    assert.equal((await call("GET", "/api/print/install/123456.sh", { headers: {} })).status, 404, "short codes are not accepted");
 
     // The code works once, and only the right one.
-    const wrong = code === "000000" ? "000001" : "000000";
+    const wrong = "A".repeat(32);
     assert.equal((await call("POST", "/api/print/pair", { body: { code: wrong } })).status, 400);
     const paired = await call("POST", "/api/print/pair?format=lines", { body: { code } });
     assert.equal(paired.status, 200);
@@ -298,7 +298,7 @@ test("USB printers: saved as usb:<queue>, printed raw through lp, optionally wit
     await chmod(join(bin, "lpstat"), 0o755);
     await mkdir(join(home, ".bluebar-print"));
     await writeFile(join(home, ".bluebar-print", "config"), `URL='${url}'\nVENUE='bluebar'\nKEY='${key}'\n`);
-    const sh = installer("sh", url, "123456");
+    const sh = installer("sh", url, "C".repeat(32));
     const agentScript = sh.split("<<'AGENT'\n")[1].split("\nAGENT\n")[0];
     agent = spawn("bash", ["-c", agentScript], { env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` }, stdio: "ignore" });
     let args = "";

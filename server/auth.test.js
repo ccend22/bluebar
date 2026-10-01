@@ -48,7 +48,7 @@ async function setup(options = {}) {
     await app.close();
     await db.close();
   };
-  return { call, send, manager, managerLogin, waiterLogin, cookieOf, close, pool };
+  return { call, send, manager, managerLogin, waiterLogin, cookieOf, close, pool, inject: (o) => app.inject(o) };
 }
 
 test("manager signs in with a PIN; sessions are HttpOnly and revocable", async () => {
@@ -808,6 +808,61 @@ test("registration: a filled honeypot field (bots) is refused", async () => {
     const bot = await t.call("POST", "/api/venues/register", { body: { slug: "bot-bar", name: "Bot Bar", pin: "482915", website: "http://spam.example" } });
     assert.equal(bot.statusCode, 400);
     assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar_catalog.venues WHERE slug = 'bot-bar'")).rows[0].n, 0);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a manager changes their own name and PIN: current PIN required, other devices signed out", async () => {
+  const t = await setup();
+  try {
+    const path = "/api/accounts/me";
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("PUT", path, { cookie: waiter, body: { currentPin: "482913", username: "ana" } })).statusCode, 403);
+    const here = t.cookieOf(await t.managerLogin());
+    const phone = t.cookieOf(await t.managerLogin());
+
+    // Wrong current PIN: refused with 400 (not 401, which would sign this device out).
+    const wrong = await t.call("PUT", path, { cookie: here, body: { currentPin: "000000", username: "drita" } });
+    assert.equal(wrong.statusCode, 400);
+    assert.match(wrong.json().error, /PIN-i aktual/);
+    // Bad name or too simple a PIN.
+    assert.equal((await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, username: "a b" } })).statusCode, 400);
+    assert.equal((await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, newPin: "123456" } })).statusCode, 400);
+
+    // Name only: both devices stay signed in, and the new name shows.
+    const renamed = await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, username: "Drita" } });
+    assert.equal(renamed.statusCode, 200);
+    assert.equal(renamed.json().name, "drita");
+    assert.equal((await t.call("GET", "/api/auth/session", { cookie: phone })).statusCode, 200);
+
+    // New PIN: this device stays, the other is signed out; the old PIN stops working.
+    const changed = await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, newPin: "591738" } });
+    assert.equal(changed.statusCode, 200);
+    assert.equal((await t.call("GET", "/api/auth/session", { cookie: here })).statusCode, 200);
+    assert.equal((await t.call("GET", "/api/auth/session", { cookie: phone })).statusCode, 401);
+    assert.equal((await t.managerLogin()).statusCode, 401);
+    assert.equal((await t.managerLogin({ pin: "591738" })).statusCode, 200);
+
+    // A name another manager already has is refused.
+    await t.pool.query("INSERT INTO bluebar.accounts(role, username, secret_hash) VALUES('manager', 'beni', 'x')");
+    assert.equal((await t.call("PUT", path, { cookie: here, body: { currentPin: "591738", username: "beni" } })).statusCode, 409);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a client-written X-Forwarded-For can't fake the venue network", async () => {
+  // Behind one trusted proxy (Vercel), only the address that proxy saw counts.
+  const t = await setup({ trustProxy: (_address, hop) => hop === 0, allowedIps: ["203.0.113.50"] });
+  try {
+    // The proxy (10.0.0.1) reports the real client 198.51.100.7 after a spoofed entry.
+    const spoofed = await t.inject({ method: "GET", url: "/api/auth/waiters", remoteAddress: "10.0.0.1",
+      headers: { host: "localhost", "x-bluebar-client": "1", "x-forwarded-for": "203.0.113.50, 198.51.100.7" } });
+    assert.equal(spoofed.json().allowed, false, "the spoofed venue IP is ignored");
+    const real = await t.inject({ method: "GET", url: "/api/auth/waiters", remoteAddress: "10.0.0.1",
+      headers: { host: "localhost", "x-bluebar-client": "1", "x-forwarded-for": "203.0.113.50" } });
+    assert.equal(real.json().allowed, true, "the address the proxy saw is used");
   } finally {
     await t.close();
   }
