@@ -116,11 +116,14 @@ test("BlueBill connection check is manager-only and bound to its configured busi
 
 test("invoice fiscalization: not manager-only, best-effort, persisted, and idempotent on retry", async () => {
   let calls = 0;
+  let refuse = false;
   const blueBill = {
     token: "test-secret",
     venueSlug: "bluebar",
     fetchImpl: async (url) => {
       calls++;
+      if (refuse && url.endsWith("/fiscalize"))
+        return new Response(JSON.stringify({ error: { code: "66", message: "Type of invoice doesn't match payment method" } }), { status: 422 });
       if (url.endsWith("/invoices"))
         return new Response(JSON.stringify({ data: { id: "bb-1", status: "draft" }, meta: {} }), { status: 201 });
       return new Response(
@@ -150,6 +153,13 @@ test("invoice fiscalization: not manager-only, best-effort, persisted, and idemp
     assert.equal((await t.call("POST", path)).statusCode, 401);
     // A waiter (not just a manager) can fiscalize — matches order.pay's own permission.
     const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    // Refused by the tax office: recorded as failed, and the person is told why.
+    refuse = true;
+    const failed = (await t.call("POST", path, { cookie: waiter })).json();
+    assert.equal(failed.state.invoices.find((i) => i.id === invoiceId).fiscalStatus, "dështoi");
+    assert.match(failed.fiscalError, /kodi 66/);
+    refuse = false;
+    calls = 0;
     const fiscalized = await t.call("POST", path, { cookie: waiter });
     assert.equal(fiscalized.statusCode, 200);
     const invoice = fiscalized.json().state.invoices.find((i) => i.id === invoiceId);
@@ -187,7 +197,7 @@ test("a manager connects the business's own BlueBill token: verified, encrypted,
       if (options.method === "GET") return new Response("[]", { status: 200 });
       if (url.endsWith("/invoices"))
         return new Response(JSON.stringify({ data: { id: "bb-1" } }), { status: 201 });
-      return new Response(JSON.stringify({ data: { fiscal: { iic: "IIC", fic: "FIC", verificationUrl: "v" } } }), { status: 200 });
+      return new Response(JSON.stringify({ data: { status: "fiscalized", fiscal: { iic: "IIC", fic: "FIC", verificationUrl: "v" } } }), { status: 200 });
     },
   };
   const t = await setup({ blueBill, secretKey: "test-secret-key-for-bluebar-tests" });

@@ -9,7 +9,8 @@
   ],
   "functions": {
     "api/index.js": {
-      "includeFiles": "server/**/*.sql"
+      "includeFiles": "server/**/*.sql",
+      "maxDuration": 30
     }
   },
   "headers": [

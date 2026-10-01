@@ -5,7 +5,7 @@ import { encode } from "../public/bluebar-print.mjs";
 import { AppError } from "./commands.js";
 import { readSnapshot, readRevision, bumpRevision, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
 import { seal, open } from "./secretBox.js";
-import { checkBlueBillConnection, fiscalizeInvoice } from "./bluebill.js";
+import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
 import {
   agentKeyValid,
@@ -214,9 +214,10 @@ export function buildApp({
         fiscalStatus: "fiskalizuar", fiscalIic: fiscal.iic, fiscalFic: fiscal.fic,
         fiscalVerificationUrl: fiscal.verificationUrl,
       });
-    } catch {
+    } catch (e) {
       await setInvoiceFiscalResult(request.db, invoiceId, { status: "dështoi" }).catch(() => {});
-      return withInvoice({ fiscalStatus: "dështoi" });
+      // Not stored: tells the person who asked why, so they know what to do next.
+      return { ...withInvoice({ fiscalStatus: "dështoi" }), fiscalError: FISCAL_FAILURE_MESSAGES[e.reason] || FISCAL_FAILURE_MESSAGES.rejected };
     }
   };
   const start = async (request, reply, accountId) => {

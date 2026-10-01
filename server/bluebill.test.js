@@ -85,3 +85,20 @@ test("fiscalizeInvoice rejects on a provider error without leaking details", asy
     /BlueBill request failed \(500\)/,
   );
 });
+
+// One fetch per failure kind; the reason is what the manager is told.
+const reasonFor = (respond) =>
+  fiscalizeInvoice("t", sampleInvoice, "k", async (url) =>
+    url.endsWith("/invoices") ? new Response(JSON.stringify({ data: { id: "x" } }), { status: 201 }) : respond(),
+  ).then(() => "ok", (e) => e.reason);
+
+test("fiscalizeInvoice names why it failed, and never accepts a half answer", async () => {
+  const json = (body, status) => () => new Response(JSON.stringify(body), { status });
+  assert.equal(await reasonFor(json({ error: { code: "66", message: "Type of invoice doesn't match" } }, 422)), "card");
+  assert.equal(await reasonFor(json({ error: { message: "bad token" } }, 401)), "token");
+  assert.equal(await reasonFor(() => { throw new TypeError("fetch failed"); }), "unreachable");
+  assert.equal(await reasonFor(json({ data: { id: "x", status: "draft", fiscal: null } }, 200)), "incomplete");
+  assert.equal(await reasonFor(json({ data: { id: "x", status: "fiscalized", fiscal: { iic: "A" } } }, 200)), "incomplete");
+  assert.equal(await reasonFor(json({ error: {} }, 500)), "rejected");
+  assert.equal(await reasonFor(json({ data: { id: "x", status: "fiscalized", fiscal: { iic: "A", fic: "F" } } }, 200)), "ok");
+});

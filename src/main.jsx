@@ -582,6 +582,7 @@ function App({ user, onLogout, onUserChange }) {
             const fiscalized = data.state.invoices.find((i) => i.id === invoice.id) || invoice;
             setReceipt((current) => (current?.id === invoice.id ? fiscalized : current));
             database.refresh();
+            if (data.fiscalError) notify(data.fiscalError, "error");
             printHere(fiscalized);
           })
           .catch(() => printHere(invoice));
@@ -1668,7 +1669,8 @@ function App({ user, onLogout, onUserChange }) {
                                     const invoice = updated.state.invoices.find((i) => i.id === receipt.id);
                                     setReceipt((current) => (current?.id === receipt.id ? invoice : current));
                                     database.refresh();
-                                    notify(`Fatura D-${receipt.id} u fiskalizua si ${method}.`);
+                                    if (updated.fiscalError) notify(updated.fiscalError, "error");
+                                    else notify(`Fatura D-${receipt.id} u fiskalizua si ${method}.`);
                                   } catch (e) {
                                     notify(e.message, "error");
                                   }

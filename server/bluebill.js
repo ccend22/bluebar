@@ -52,8 +52,22 @@ export function buildBlueBillPayload(invoice, methodOverride) {
   };
 }
 
+// Why a fiscalization failed, as a short reason a manager can act on. Never BlueBill's
+// raw text (it can carry internal ids).
+const failure = (reason, status) => Object.assign(new Error(`BlueBill request failed (${status ?? reason})`), { reason });
+export const FISCAL_FAILURE_MESSAGES = {
+  // The tax office refuses a card sale BlueBill files as a cash invoice (its code 66).
+  card: "Tatimet e refuzuan: BlueBill e dërgon pagesën me kartë si faturë cash (kodi 66). Kjo duhet rregulluar te BlueBill; fatura mbetet pa fiskalizuar.",
+  token: "BlueBill nuk e pranon token-in. Vendosni një të ri te Cilësimet → Fiskalizimi.",
+  unreachable: "BlueBill nuk u arrit. Fatura mbetet pa fiskalizuar; provoni përsëri nga Faturat.",
+  incomplete: "BlueBill nuk ktheu NIVF. Fatura mbetet pa fiskalizuar; provoni përsëri nga Faturat.",
+  rejected: "BlueBill e refuzoi faturën. Provoni përsëri nga Faturat.",
+};
+
 async function blueBillRequest(url, token, options, idempotencyKey) {
-  const response = await options.fetchImpl(url, {
+  let response;
+  try {
+    response = await options.fetchImpl(url, {
     method: options.method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -65,10 +79,14 @@ async function blueBillRequest(url, token, options, idempotencyKey) {
     // create+fiscalize run sequentially in one request; each gets a slice of the
     // server's own 20s requestTimeout (app.js), with margin for the rest of the request.
     signal: AbortSignal.timeout(8000),
-  });
+    });
+  } catch {
+    throw failure("unreachable");
+  }
   const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.data)
-    throw new Error(`BlueBill request failed (${response.status})`);
+  if (response.status === 401 || response.status === 403) throw failure("token", response.status);
+  if (String(body?.error?.code) === "66") throw failure("card", response.status);
+  if (!response.ok || !body?.data) throw failure("rejected", response.status);
   return body.data;
 }
 
@@ -87,9 +105,12 @@ export async function fiscalizeInvoice(token, invoice, idempotencyKey, fetchImpl
     { method: "POST", fetchImpl },
     `${idempotencyKey}-fiscalize`,
   );
+  // Only a real fiscalization counts: BlueBill's own status plus the tax office's codes.
+  if (fiscalized.status !== "fiscalized" || !fiscalized.fiscal?.iic || !fiscalized.fiscal?.fic)
+    throw failure("incomplete");
   return {
-    iic: fiscalized.fiscal?.iic ?? null,
-    fic: fiscalized.fiscal?.fic ?? null,
-    verificationUrl: fiscalized.fiscal?.verificationUrl ?? null,
+    iic: fiscalized.fiscal.iic,
+    fic: fiscalized.fiscal.fic,
+    verificationUrl: fiscalized.fiscal.verificationUrl ?? null,
   };
 }
