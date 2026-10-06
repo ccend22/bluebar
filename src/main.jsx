@@ -6,7 +6,6 @@ import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
-import { Landing } from "./Landing.jsx";
 import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js";
 import { NetworkPrinters } from "./NetworkPrinters.jsx";
 import { PointsOfSale } from "./PointsOfSale.jsx";
@@ -2670,7 +2669,5 @@ function Root() {
     );
   return user ? <App user={user} onLogout={leave} onUserChange={(u) => setUser((prev) => ({ ...prev, ...u }))} /> : <Login onSignedIn={enter} />;
 }
-// "/" with no business chosen is the public landing page; ?hyr / ?regjistro open the
-// business-code and registration screens; ?business=… is a venue.
-const onLanding = !["business", "source", "hyr", "regjistro"].some((k) => new URLSearchParams(window.location.search).has(k));
-if (launch()) createRoot(document.getElementById("root")).render(onLanding ? <Landing /> : <Root />);
+// Open the application directly; Login handles business selection and registration.
+if (launch()) createRoot(document.getElementById("root")).render(<Root />);
