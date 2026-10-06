@@ -260,7 +260,9 @@ export function buildApp({
     await attempt(request);
     // Honeypot: the form hides this field from people; anything that fills it is a bot.
     if (request.body.website) throw new AppError("Regjistrimi nuk u pranua.", 400);
-    const { venue, accountId } = await registerVenue(pool, request.body, request.ip);
+    const { venue, accountId } = await registerVenue(pool, request.body, request.ip).catch((error) => {
+      throw error.code === "23505" ? new AppError("Ky kod biznesi është i zënë. Zgjidhni një tjetër.", 409) : error;
+    });
     request.venue = venue;
     request.db = tenantPool(pool, venue.schema_name);
     reply.code(201);
