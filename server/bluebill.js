@@ -37,7 +37,8 @@ const UNIT_CODE = "XPP";
 // step (its internal invoice `type` won't move off CASH — see bluebill.test.js), so a
 // manager can choose to report a card sale as Cash to BlueBill until that's resolved.
 // Comped units aren't charged and a discount is spread over the lines in proportion, so
-// the lines add up to the invoice total exactly (rounding goes to the last line).
+// the lines add up to the invoice total exactly. Round cumulative allocations so
+// earlier lines cannot exhaust the total and make the last line negative.
 // Fully comped lines aren't reported (nothing was sold). A bill paid partly in cash and
 // partly by card is reported as its larger part: BlueBill takes one payment method.
 export function buildBlueBillPayload(invoice, methodOverride) {
@@ -48,14 +49,17 @@ export function buildBlueBillPayload(invoice, methodOverride) {
     .filter((l) => l.value > 0);
   const base = charged.reduce((s, l) => s + l.value, 0);
   const total = invoice.total ?? base;
-  let left = total;
+  let cumulative = 0;
+  let allocated = 0;
   return {
     externalId: `bluebar-${invoice.id}`,
     guestName: "Klient",
     paymentMethod: method === "Kartë" ? "Card" : "Cash",
     lines: charged.map((l, n) => {
-      const share = n === charged.length - 1 ? left : Math.round((l.value * total) / base);
-      left -= share;
+      cumulative += l.value;
+      const target = n === charged.length - 1 ? total : Math.round((cumulative * total) / base);
+      const share = target - allocated;
+      allocated = target;
       return { name: [l.name, ...(l.extras || []).map((x) => x.name)].join(" + "), unitCode: UNIT_CODE, quantity: l.qty - (l.comp || 0), totalAfterVat: share, vatRate: VAT_RATE };
     }),
   };

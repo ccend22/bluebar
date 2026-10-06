@@ -52,6 +52,15 @@ test("buildBlueBillPayload maps a BlueBar invoice to the documented BlueBill sha
   assert.equal(buildBlueBillPayload({ ...sampleInvoice, method: "Cash" }, "Kartë").paymentMethod, "Card");
 });
 
+test("discount allocation keeps fiscal lines nonnegative and reconciles the total", () => {
+  const lines = Array.from({ length: 4 }, (_, i) => ({ name: `Item ${i}`, price: 1, qty: 1 }));
+  for (const total of [0, 1, 2, 3, 4]) {
+    const payload = buildBlueBillPayload({ id: 1, method: "Cash", total, lines });
+    assert.equal(payload.lines.reduce((sum, line) => sum + line.totalAfterVat, 0), total);
+    assert.ok(payload.lines.every((line) => Number.isInteger(line.totalAfterVat) && line.totalAfterVat >= 0));
+  }
+});
+
 test("fiscalizeInvoice creates then fiscalizes, and extracts iic/fic/verificationUrl", async () => {
   const calls = [];
   const fic = "a39171ce-a0bb-457a-b7ca-ea9fe273bade";
