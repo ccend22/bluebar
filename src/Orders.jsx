@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { money, total } from "./domain.js";
+import { bill, money } from "./domain.js";
 import { Badge, DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
 
 export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, onSend, onReprintTicket, time }) {
@@ -75,7 +75,7 @@ export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, 
                       {t.lines.reduce((s, l) => s + l.qty, 0)} artikuj · Nisi {time(t.occupiedSince)}
                     </span>
                   </div>
-                  <strong className="orders-list-item-total">{money(total(t.lines))}</strong>
+                  <strong className="orders-list-item-total">{money(bill(t).remaining)}</strong>
                 </div>
               </button>
             ))}
@@ -114,7 +114,7 @@ export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, 
                     <DepartmentTag name={dept} />
                   </div>
                   {lines.map((l) => (
-                    <div className="receipt-line" key={l.id}>
+                    <div className="receipt-line" key={l.key || l.id}>
                       <span>
                         {l.qty} × {l.name}
                         <small>
@@ -137,10 +137,15 @@ export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, 
                   <div className="sent-ticket" key={k.id}>
                     <DepartmentTag name={k.department} />
                     <span>
-                      Raundi {k.round} · {time(k.date)} ·{" "}
-                      {k.lines.map((l) => `${l.qty}× ${l.name}`).join(", ")}
+                      {(state.stations || []).find((x) => x.id === k.station)?.name
+                        ? `${state.stations.find((x) => x.id === k.station).name} · `
+                        : ""}
+                      {k.void ? "Anulim" : `Raundi ${k.round}`} · {time(k.date)} ·{" "}
+                      {k.lines.map((l) => `${k.void ? "−" : ""}${l.qty}× ${l.name}`).join(", ")}
                     </span>
-                    {k.doneAt ? (
+                    {k.void ? (
+                      <span className="pending-mark">{k.doneAt ? "Pa nga reparti" : "Te reparti"}</span>
+                    ) : k.doneAt ? (
                       <span className="sent-mark">
                         <Icon name="check" size={12} /> Gati
                       </span>
@@ -161,7 +166,7 @@ export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, 
             )}
             <div className="orders-detail-total">
               <span>Totali</span>
-              <strong>{money(total(table.lines))}</strong>
+              <strong>{money(bill(table).remaining)}</strong>
             </div>
             <div className="receipt-actions">
               {pending > 0 && (

@@ -36,19 +36,28 @@ const UNIT_CODE = "XPP";
 // way. Exists because BlueBill currently rejects a Card-method invoice at the fiscalize
 // step (its internal invoice `type` won't move off CASH — see bluebill.test.js), so a
 // manager can choose to report a card sale as Cash to BlueBill until that's resolved.
+// Comped units aren't charged and a discount is spread over the lines in proportion, so
+// the lines add up to the invoice total exactly (rounding goes to the last line).
+// Fully comped lines aren't reported (nothing was sold). A bill paid partly in cash and
+// partly by card is reported as its larger part: BlueBill takes one payment method.
 export function buildBlueBillPayload(invoice, methodOverride) {
-  const method = methodOverride || invoice.method;
+  const mixed = invoice.method === "Përzier" ? ((invoice.card || 0) > (invoice.cash || 0) ? "Kartë" : "Cash") : invoice.method;
+  const method = methodOverride || mixed;
+  const charged = invoice.lines
+    .map((l) => ({ ...l, value: (l.qty - (l.comp || 0)) * l.price }))
+    .filter((l) => l.value > 0);
+  const base = charged.reduce((s, l) => s + l.value, 0);
+  const total = invoice.total ?? base;
+  let left = total;
   return {
     externalId: `bluebar-${invoice.id}`,
     guestName: "Klient",
     paymentMethod: method === "Kartë" ? "Card" : "Cash",
-    lines: invoice.lines.map((l) => ({
-      name: l.name,
-      unitCode: UNIT_CODE,
-      quantity: l.qty,
-      totalAfterVat: l.price * l.qty,
-      vatRate: VAT_RATE,
-    })),
+    lines: charged.map((l, n) => {
+      const share = n === charged.length - 1 ? left : Math.round((l.value * total) / base);
+      left -= share;
+      return { name: [l.name, ...(l.extras || []).map((x) => x.name)].join(" + "), unitCode: UNIT_CODE, quantity: l.qty - (l.comp || 0), totalAfterVat: share, vatRate: VAT_RATE };
+    }),
   };
 }
 

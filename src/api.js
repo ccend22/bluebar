@@ -79,3 +79,8 @@ export const saveBlueBill = (token) => send("PUT", "/integrations/bluebill", { t
 export const disconnectBlueBill = () => send("DELETE", "/integrations/bluebill");
 export const testBlueBill = () => request("/integrations/bluebill/connection");
 export const fetchShiftReport = (id) => request(`/shifts/${id}/report`);
+export const fetchTableHistory = (id) => request(`/tables/${id}/history`);
+export const fetchInvoiceHistory = (id) => request(`/invoices/${id}/history`);
+export const reportStationsSeen = (stations) => send("POST", "/stations/seen", { stations });
+export const fetchReport = (params) =>
+  request(`/reports?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null))}`);

@@ -61,7 +61,9 @@ export function ChoiceField({
     }
     const rect = trigger.current.getBoundingClientRect();
     const width = Math.min(Math.max(rect.width, 210), window.innerWidth - 16);
-    const height = Math.min(options.length * 58 + 12, 400, window.innerHeight - 16);
+    // Generous per-option estimate (touch rows are taller): it only decides above/below
+    // and caps the menu, so overshooting never leaves a needless scrollbar.
+    const height = Math.min(options.length * 64 + 16, 400, window.innerHeight - 16);
     const below = window.innerHeight - rect.bottom - 8;
     const above = rect.top - 8;
     const placeBelow = below >= height || below >= above;

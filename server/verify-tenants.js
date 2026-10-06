@@ -32,8 +32,11 @@ export async function verifyTenants(pool) {
       cookies[slug] = created.headers["set-cookie"].split(";")[0];
       assert.equal(created.json().venue.slug, slug);
       const state = (await call("GET", "/api/state", slug, cookies[slug])).json().state;
-      assert.equal(state.shift, null);
-      for (const values of Object.values(state).filter(Array.isArray)) assert.equal(values.length, 0);
+      assert.deepEqual(state.openShifts, []);
+      // Empty but for the one till every business starts with.
+      assert.deepEqual(state.pointsOfSale, [{ id: 1, name: "Kasa kryesore", areas: [] }]);
+      for (const [key, values] of Object.entries(state).filter(([k, v]) => Array.isArray(v) && k !== "pointsOfSale"))
+        assert.equal(values.length, 0, key);
       assert.equal((await call("GET", "/api/auth/waiters", slug)).json().allowed, false);
     }
     // Slug spoofing and even moving A's token into B's cookie name cannot authorize B.
@@ -66,11 +69,11 @@ export async function verifyTenants(pool) {
     const paidA = (await call("GET", "/api/state", a, cookies[a])).json().state;
     assert.equal(paidA.invoices.length, 1);
     assert.equal(paidA.products[0].stock, 9);
-    assert.equal(paidA.shift, null);
+    assert.deepEqual(paidA.openShifts, []);
     const untouchedB = (await call("GET", "/api/state", b, cookies[b])).json().state;
     assert.equal(untouchedB.invoices.length, 0);
     assert.equal(untouchedB.products[0].stock, 10);
-    assert.equal(untouchedB.shift.id, 1);
+    assert.equal(untouchedB.openShifts[0].id, 1);
 
     // IP policy is tenant-specific and applies to already-issued waiter sessions.
     assert.equal((await call("PUT", "/api/accounts/waiters/1/pin", a, cookies[a], { pin: "739105" })).statusCode, 200);

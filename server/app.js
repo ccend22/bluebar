@@ -7,6 +7,8 @@ import { readSnapshot, readRevision, bumpRevision, execute, executeOrderPatch, s
 import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
+import { report } from "./reports.js";
+import { posOf } from "../src/domain.js";
 import {
   agentKeyValid,
   agentStatus,
@@ -36,7 +38,14 @@ import {
   updateManagerAccount,
 } from "./auth.js";
 
-const WAITER_COMMANDS = new Set(["order.add", "order.remove", "order.assign", "order.send", "order.pay"]);
+// ticket.*: a station screen may be signed in as any staff member.
+// Discounts, comps and refunds are the manager's; moving and handing over are
+// everyday service (each command still checks the table is the waiter's own).
+const WAITER_COMMANDS = new Set([
+  "order.add", "order.remove", "order.assign", "order.send", "order.pay", "order.handover", "order.move",
+  "order.edit", "order.note", "order.fire", "order.remake",
+  "ticket.done", "ticket.transfer", "ticket.accept",
+]);
 const publicUser = ({ role, waiterId, name }) => ({ role, waiterId, name });
 const pin = { type: "string", pattern: "^[0-9]{6}$" };
 const pattern = { type: "array", minItems: 4, maxItems: 9, items: { type: "integer", minimum: 1, maximum: 9 } };
@@ -140,16 +149,25 @@ export function buildApp({
       }));
       return { ...data, state: { ...state, waiters }, provider };
     }
-    const shift = state.shift && { id: state.shift.id, opened: state.shift.opened };
+    // A waiter assigned to one till sees only that till's tables and shift.
+    const own = state.waiters.find((w) => w.id === user.waiterId)?.posId;
+    const openShifts = state.openShifts
+      .filter((x) => !own || x.posId === own)
+      .map(({ id, posId, opened }) => ({ id, posId, opened }));
     return {
       ...data,
       state: {
         ...state,
-        shift,
+        openShifts,
         shifts: [],
         movements: [],
-        invoices: state.invoices.filter((i) => i.shiftId === shift?.id),
-        tables: state.tables.filter((t) => t.active),
+        refunds: [],
+        invoices: state.invoices.filter((i) => openShifts.some((x) => x.id === i.shiftId)),
+        tables: state.tables.filter((t) => t.active && (!own || posOf(state, t) === own)),
+        // Station tickets of other tills' tables are none of this waiter's business.
+        tickets: own
+          ? state.tickets.filter((k) => (k.posId ?? posOf(state, state.tables.find((t) => t.id === k.table) || {})) === own)
+          : state.tickets,
       },
       provider,
     };
@@ -198,7 +216,8 @@ export function buildApp({
     const token = invoiceId && (await blueBillToken(request));
     if (!token) return result;
     const invoice = result.state.invoices.find((i) => i.id === invoiceId);
-    if (!invoice || invoice.fiscalStatus === "fiskalizuar") return result;
+    // A fully comped bill sold nothing: there's nothing to report.
+    if (!invoice || invoice.fiscalStatus === "fiskalizuar" || invoice.total === 0) return result;
     const withInvoice = (patch) => ({
       ...result,
       state: {
@@ -388,6 +407,62 @@ export function buildApp({
     if (request.body.kind === "shift" && request.user.role !== "manager")
       throw new AppError("Nuk keni leje për këtë veprim.", 403);
     return { queued: await enqueueReprint(request.db, request.body.kind, request.body.id) };
+  });
+  // A Repartet screen checks in for the stations it shows, so the configuration check
+  // knows a station without a printer still has a working device.
+  app.post("/api/stations/seen", {
+    preValidation: session(),
+    schema: { body: { type: "object", additionalProperties: false, required: ["stations"],
+      properties: { stations: { type: "array", maxItems: 50, items: { type: "integer", minimum: 1 } } } } },
+  }, async (request) => {
+    await request.db.query("UPDATE bluebar.stations SET device_seen_at = now() WHERE id = ANY($1)", [request.body.stations]);
+    return { ok: true };
+  });
+  // An order's change history: its table's events since the order before it closed
+  // (paid or cancelled). For an invoice, the order that ended in its payment.
+  const HISTORY = `SELECT e.kind, e.detail, e.actor, e.created_at FROM bluebar.order_events e
+    WHERE e.table_id = $1 AND e.kind <> 'ready' AND e.id <= $2 AND e.id > COALESCE((
+      SELECT max(x.id) FROM bluebar.order_events x
+      WHERE x.table_id = $1 AND x.kind IN ('pay', 'cancel') AND x.id < $2), 0)
+    ORDER BY e.id`;
+  const history = async (db, tableId, untilId) =>
+    (await db.query(HISTORY, [tableId, untilId])).rows.map((e) => ({
+      kind: e.kind, detail: e.detail, actor: e.actor, date: e.created_at.toISOString?.() ?? e.created_at,
+    }));
+  app.get("/api/tables/:id/history", {
+    preValidation: session(),
+    schema: { params: { type: "object", properties: { id: { type: "integer", minimum: 1 } } } },
+  }, async (request) => history(request.db, request.params.id, Number.MAX_SAFE_INTEGER));
+  app.get("/api/invoices/:id/history", {
+    preValidation: session("manager"),
+    schema: { params: { type: "object", properties: { id: { type: "integer", minimum: 1 } } } },
+  }, async (request) => {
+    const pay = (
+      await request.db.query("SELECT id, table_id FROM bluebar.order_events WHERE invoice_id = $1 AND kind = 'pay'", [request.params.id])
+    ).rows[0];
+    return pay ? history(request.db, pay.table_id, Number(pay.id)) : [];
+  });
+  app.get("/api/reports", {
+    preValidation: session("manager"),
+    schema: {
+      querystring: {
+        type: "object", additionalProperties: false, required: ["from", "to"],
+        properties: {
+          from: { type: "string", format: "date-time" },
+          to: { type: "string", format: "date-time" },
+          basis: { type: "string", enum: ["day", "shift"] },
+          pos: { type: "integer", minimum: 1 },
+          shift: { type: "integer", minimum: 1 },
+          area: { type: "string", maxLength: 40 },
+          waiter: { type: "integer", minimum: 1 },
+        },
+      },
+    },
+  }, async (request) => {
+    const q = request.query;
+    if (!(new Date(q.from) < new Date(q.to))) throw new AppError("Periudha është e pavlefshme.");
+    if (new Date(q.to) - new Date(q.from) > 400 * 86400_000) throw new AppError("Zgjidhni një periudhë deri në një vit.");
+    return report(request.db, q);
   });
   app.get("/api/shifts/:id/report", {
     preValidation: session("manager"),
@@ -632,6 +707,21 @@ export function buildApp({
                 "order.send",
                 "order.pay",
                 "order.cancel",
+                "order.handover",
+                "order.move",
+                "order.edit",
+                "order.note",
+                "order.fire",
+                "order.remake",
+                "order.discount",
+                "order.comp",
+                "invoice.refund",
+                "ticket.done",
+                "ticket.transfer",
+                "ticket.accept",
+                "station.save",
+                "station.toggle",
+                "station.delete",
                 "printer.save",
                 "printer.delete",
                 "table.save",
@@ -643,8 +733,13 @@ export function buildApp({
                 "category.create",
                 "department.create",
                 "stock.receive",
+                "stock.adjust",
+                "product.stockRules",
                 "waiter.create",
                 "waiter.toggle",
+                "waiter.pos",
+                "pos.save",
+                "pos.delete",
                 "shift.open",
                 "shift.close",
                 "shift.cash",

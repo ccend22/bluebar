@@ -4992,10 +4992,16 @@ textarea {
   font-weight: 600;
 }
 .printer-ascii input {
-  margin-top: 3px;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin-top: 1px;
 }
 .printer-ascii small {
+  display: block;
   margin-top: 2px;
+  font-weight: 400;
 }
 /* Registration honeypot: off-screen for people and screen readers, filled only by bots. */
 .honeypot {
@@ -5009,4 +5015,728 @@ textarea {
   color: var(--blue);
   font-weight: 600;
   text-underline-offset: 2px;
+}
+/* Turnet: one tab per till (Kasat), with its shift's open/closed dot. */
+.shift-tills button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.till-open {
+  color: var(--green);
+}
+.till-closed {
+  color: var(--amber);
+}
+.staff-pos {
+  margin: 8px 0 4px;
+}
+.staff-pos .compact-select {
+  gap: 8px;
+  font-size: 11px;
+}
+@media (hover: hover) {
+  .staff-pos .choice-field .choice-trigger {
+    min-height: 36px;
+    min-width: 0;
+    padding: 6px 10px 6px 12px;
+    font-size: 13px;
+    gap: 6px;
+  }
+}
+.report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+@media (max-width: 600px) {
+  /* Phone: filters share one row, label above, triggers the same width. */
+  .reports-page .toolbar,
+  .report-filters {
+    width: 100%;
+  }
+  .report-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .report-filters > button {
+    grid-column: 1 / -1;
+  }
+  .report-filters .compact-select {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .report-filters .compact-select .choice-trigger {
+    width: 100%;
+    min-width: 0;
+  }
+}
+/* Raportet: the week's money, split between the till (cash) and the bank (card). */
+.report-kpis {
+  margin-bottom: 20px;
+}
+.report-kpi-bank strong {
+  color: var(--green);
+}
+.report-tills {
+  margin-bottom: 20px;
+}
+.report-tills h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+.report-legend {
+  display: flex;
+  gap: 14px;
+  margin: -12px 0 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.report-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.report-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+.report-legend i.bank,
+.report-bar-bank {
+  background: var(--green);
+}
+.report-bar-fill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.report-bar-bank {
+  width: 100%;
+  opacity: 0.85;
+}
+@media (max-width: 900px) {
+  .report-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.station-till {
+  color: var(--muted);
+  font-size: 11px;
+}
+/* Order cards are buttons: keep their grid left-aligned, not centered like a button label. */
+.orders-list-item {
+  justify-content: stretch;
+}
+/* Ranked names read from the left, next to their number. */
+.report-rank-list li span {
+  flex: 1;
+}
+@media (max-width: 540px) {
+  /* Two actions ("Kthehu" + confirm): the confirm takes the full row too. */
+  .dialog-actions button:last-child:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+}
+.station-devices {
+  margin-top: 14px;
+}
+/* Repartet: "Gati" is the main action; a void slip stands out from normal work. */
+.station-actions {
+  grid-template-columns: 1fr auto;
+}
+.station-card.void {
+  border-color: #e3a9a1;
+  background: #fff6f4;
+}
+.station-void {
+  margin: 0;
+  color: #a3322a;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.station-meta .station-paid {
+  margin-left: 8px;
+}
+.station-card .station-paid {
+  color: var(--green);
+  background: var(--green-soft);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+/* Who changed what in an order, newest last. */
+.order-history-panel {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.order-history-panel h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.order-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.order-history li {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 8px;
+}
+.order-history time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.order-history small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.order-history li.warn strong {
+  color: #a3322a;
+}
+.invoice-history {
+  margin-top: 14px;
+  font-size: 13px;
+}
+.invoice-history summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+/* A ticket waiting for another station to accept it. */
+.station-card.moving {
+  border-style: dashed;
+  border-color: var(--blue);
+}
+.station-transfer {
+  margin: 0;
+  color: var(--blue-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+.station-device > span {
+  flex: 1;
+}
+/* Cilësimet: configuration problems, worst first. */
+.config-check {
+  margin-bottom: 20px;
+}
+.config-issues {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.config-issues li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: #fffaf1;
+  color: var(--amber);
+}
+.config-issues li.error {
+  background: #fff6f4;
+  color: #a3322a;
+}
+.config-issues li svg {
+  flex: none;
+  margin-top: 2px;
+}
+.config-issues b {
+  margin-right: 4px;
+}
+.printer-card.inactive {
+  opacity: 0.75;
+}
+/* Raportet: period and filters on top, then the numbers. */
+.report-filters-panel {
+  margin-bottom: 20px;
+  display: grid;
+  gap: 14px;
+}
+.report-filters-panel .helper {
+  margin: 0;
+}
+.report-periods {
+  flex-wrap: wrap;
+}
+.report-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.report-range label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.report-summary-list > div > span small {
+  display: block;
+  font-size: 11px;
+}
+.report-rank-list li small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.report-shifts {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.report-shifts li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.report-shifts b {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.report-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.report-grid-3 + .report-grid-3 {
+  margin-top: 20px;
+}
+.report-grid-2 + .report-grid-3 {
+  margin-top: 0;
+}
+.report-empty {
+  margin-bottom: 20px;
+}
+/* Inventari: per-product threshold, temporary unavailability, corrections with a reason. */
+.min-stock {
+  width: 84px;
+}
+.unavailable-mark {
+  color: #a3322a;
+  font-weight: 600;
+}
+.min-stock-label {
+  display: none;
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 8px;
+}
+@media (max-width: 900px) {
+  .min-stock-label {
+    display: inline;
+  }
+}
+/* Bills: what it comes to, what's paid, what's left — always visible. */
+.bill-lines {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bill-lines dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bill-lines .bill-left {
+  color: #1d1d1f;
+  font-weight: 700;
+}
+.order-panel {
+  margin-bottom: 14px;
+  padding: 12px;
+  border-radius: var(--radius-control);
+  background: var(--surface-subtle);
+}
+.comp-mark {
+  color: var(--green);
+  font-weight: 600;
+}
+.order-item-main small {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.order-item-main .comp-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.comp-form {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.comp-form input {
+  flex: 1;
+  min-width: 140px;
+}
+.refund-form {
+  margin-top: 8px;
+}
+.refund-method {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: 13px;
+}
+/* Kamarierët: person · status · actions, all centred on one line; every button the same. */
+.staff-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+}
+.staff-person > div {
+  display: grid;
+  gap: 4px;
+}
+.staff-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+.staff-status .staff-pos {
+  margin: 0;
+}
+.staff-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.staff-buttons button,
+.staff-pin-form button,
+.staff-pin-form input {
+  min-height: 40px;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+.staff-buttons button {
+  min-width: 124px;
+}
+.staff-pin-form,
+.staff-row > .pattern-editor,
+.staff-row > :last-child:not(.staff-buttons) {
+  grid-column: 1 / -1;
+}
+.staff-pin-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 1100px) {
+  .staff-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .staff-buttons {
+    grid-column: 1 / -1;
+  }
+  .staff-buttons button {
+    flex: 1;
+    min-width: 0;
+  }
+}
+.station-card header {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.station-card header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.station-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* A search with filters under it: the filters share one row, equal widths, labels above. */
+.panel .toolbar.toolbar-stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+.toolbar-stack > .search {
+  max-width: 420px;
+}
+.toolbar-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.toolbar-filters > .choice-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.toolbar-filters .choice-trigger {
+  width: 100%;
+  min-width: 0;
+}
+/* Inventari: amount + "Shto" side by side, both the same height as the threshold input. */
+.stock-table .stock-entry {
+  min-width: 260px;
+}
+.stock-table .stock-entry .inline-form input,
+.stock-table .stock-entry button,
+.stock-table .min-stock {
+  width: 100%;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.stock-table .min-stock {
+  width: 84px;
+}
+.stock-table .stock-entry button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  /* Phone: the card's controls span its width; the column label is redundant. */
+  .responsive-table.stock-table .stock-entry {
+    display: block;
+  }
+  .responsive-table.stock-table .stock-entry::before {
+    display: none;
+  }
+  .stock-table .stock-entry .inline-form input,
+  .stock-table .stock-entry button,
+  .stock-table .min-stock {
+    height: 44px;
+    min-height: 44px;
+  }
+}
+/* Settings: helper text never sticks to the cards above it. */
+.settings-grid .panel .helper {
+  margin-top: 12px;
+}
+.comp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.comp-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.comp-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* Raportet: every filter in one grid, labels above, the export button on the same baseline. */
+.report-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+.report-filters .compact-select {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.report-filters .compact-select .choice-trigger {
+  width: 100%;
+  min-width: 0;
+}
+.report-filters > button {
+  min-height: 52px;
+}
+.report-shifts li span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.report-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.report-top > button {
+  min-height: 44px;
+}
+.report-filters {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+/* Line details: extras, notes and — always distinct — allergies. */
+.line-name {
+  all: unset;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+}
+.line-name:focus-visible {
+  outline: 2px solid var(--blue);
+  border-radius: 4px;
+}
+.line-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.line-details em {
+  color: #1d1d1f;
+}
+.allergy-mark {
+  color: #a3322a;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.course-mark,
+.hold-mark {
+  border-radius: 9999px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.course-mark {
+  background: var(--blue-soft);
+  color: var(--blue-strong);
+}
+.hold-mark {
+  background: #fff4e0;
+  color: var(--amber);
+}
+.order-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--surface-subtle);
+  font-size: 13px;
+}
+.course-row {
+  margin-top: -4px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.check-row input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+}
+.line-panel > strong {
+  font-size: 15px;
+}
+.station-card ul li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.station-card .line-details {
+  flex-basis: 100%;
+}
+/* Cilësimet: one topic at a time. */
+.settings-tabs {
+  margin-bottom: 20px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.settings-tabs button {
+  flex: none;
+}
+.settings-wide {
+  grid-column: 1 / -1;
+  max-width: 760px;
+}
+.config-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--green);
+}
+.menu-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.menu-tools .search {
+  flex: 1;
+  min-width: 0;
+}
+.menu-tools .compact-select {
+  gap: 6px;
+  font-size: 12px;
+}
+.menu-tools .compact-select .choice-trigger {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.menu-sep {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 4px 8px;
+}
+/* Inventari: amount and "Shto", two equal halves. */
+.stock-table .stock-entry .inline-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0;
+  width: 100%;
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { DENOMINATIONS, drawer, money, total } from "./domain.js";
+import { bill, DENOMINATIONS, drawer, money, posOf, shiftFor, total } from "./domain.js";
 import { fetchShiftReport } from "./api.js";
 import { Badge, Empty, Field, Icon, SectionHeading } from "./components.jsx";
 
@@ -43,12 +43,15 @@ export function ShiftReport({ report, venueName }) {
       </p>
       <hr />
       <div className="receipt-line"><span>Shitje cash</span><b>{money(report.cash)}</b></div>
-      <div className="receipt-line"><span>Shitje me kartë</span><b>{money(report.card)}</b></div>
-      <div className="receipt-total"><b>SHITJE GJITHSEJ</b><strong>{money(report.cash + report.card)}</strong></div>
+      <div className="receipt-line"><span>Bankë (kartë)</span><b>{money(report.card)}</b></div>
+      <div className="receipt-total"><b>ARKËTUAR GJITHSEJ</b><strong>{money(report.cash + report.card)}</strong></div>
+      {report.discount > 0 && <div className="receipt-line"><span>Ulje</span><b>{money(report.discount)}</b></div>}
+      {report.comps > 0 && <div className="receipt-line"><span>Qerasje</span><b>{money(report.comps)}</b></div>}
       <hr />
       <div className="receipt-line"><span>Fondi fillestar</span><b>{money(shift.opening)}</b></div>
       <div className="receipt-line"><span>+ Shitje cash</span><b>{money(report.cash)}</b></div>
       {report.cashIn > 0 && <div className="receipt-line"><span>+ Hyrje në arkë</span><b>{money(report.cashIn)}</b></div>}
+      {report.refundsCash > 0 && <div className="receipt-line"><span>− Rimbursime cash</span><b>{money(report.refundsCash)}</b></div>}
       {report.cashOut > 0 && <div className="receipt-line"><span>− Dalje nga arka</span><b>{money(report.cashOut)}</b></div>}
       <div className="receipt-total"><b>CASH I PRITSHËM</b><strong>{money(shift.expected)}</strong></div>
       {shift.closed && (
@@ -150,11 +153,12 @@ function CashMovements({ state, update, d }) {
       <SectionHeading title="Arka" description="Sa cash duhet të ketë në arkë tani." />
       <div className="drawer-lines">
         <div><span>Fondi fillestar</span><b>{money(d.opening)}</b></div>
-        <div><span>+ Shitje cash</span><b>{money(d.cash)}</b></div>
+        <div><span>+ Arkëtime cash</span><b>{money(d.cash)}</b></div>
         {d.cashIn > 0 && <div><span>+ Hyrje</span><b>{money(d.cashIn)}</b></div>}
         {d.cashOut > 0 && <div><span>− Dalje</span><b>{money(d.cashOut)}</b></div>}
+        {d.refundsCash > 0 && <div><span>− Rimbursime cash</span><b>{money(d.refundsCash)}</b></div>}
         <div className="drawer-expected"><span>Cash i pritshëm</span><strong>{money(d.expected)}</strong></div>
-        <div className="drawer-card-sales"><span>Me kartë (jashtë arkës)</span><b>{money(d.card)}</b></div>
+        <div className="drawer-card-sales"><span>Bankë · kartë (jashtë arkës)</span><b>{money(d.card)}</b></div>
       </div>
       {kind ? (
         <form
@@ -207,7 +211,7 @@ function CashMovements({ state, update, d }) {
 
 function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
   const open = state.tables.filter((t) => t.lines.length);
-  const openValue = open.reduce((s, t) => s + total(t.lines), 0);
+  const openValue = open.reduce((s, t) => s + bill(t).remaining, 0);
   const waiters = state.waiters
     .map((w) => {
       const mine = shiftInvoices.filter((i) => i.waiter === w.id);
@@ -216,7 +220,7 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
         name: w.name,
         count: mine.length,
         total: mine.reduce((s, i) => s + i.total, 0),
-        cash: mine.filter((i) => i.method === "Cash").reduce((s, i) => s + i.total, 0),
+        cash: mine.reduce((s, i) => s + (i.cash || 0), 0),
         openTables: open.filter((t) => t.waiter === w.id).length,
       };
     })
@@ -241,9 +245,9 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
         </button>
       </section>
       <div className="shift-kpis">
-        <div><span>Shitje</span><strong>{money(d.total)}</strong></div>
+        <div><span>Shitje</span><strong>{money(d.sales)}</strong></div>
         <div><span>Fatura</span><strong>{d.count}</strong></div>
-        <div><span>Mesatarja</span><strong>{money(d.count ? Math.round(d.total / d.count) : 0)}</strong></div>
+        <div><span>Mesatarja</span><strong>{money(d.count ? Math.round(d.sales / d.count) : 0)}</strong></div>
         <button className={open.length ? "has-open" : ""} onClick={() => nav("Porositë")}>
           <span>Porosi të hapura</span>
           <strong>{open.length}</strong>
@@ -313,7 +317,7 @@ function CloseShift({ state, update, nav, onCancel, onClosed, d, shiftInvoices }
       "Turni u mbyll.",
     );
     setBusy(false);
-    if (data) onClosed(data.state.shifts[0]);
+    if (data) onClosed(state.shift);
   }
 
   return (
@@ -427,7 +431,7 @@ function CloseShift({ state, update, nav, onCancel, onClosed, d, shiftInvoices }
       {step === 2 && (
         <div className="close-body">
           <div className={`count-summary big ${difference === 0 ? "exact" : "off"}`}>
-            <div><span>Shitje gjithsej</span><b>{money(d.total)} · {d.count} fatura</b></div>
+            <div><span>Shitje gjithsej</span><b>{money(d.sales)} · {d.count} fatura</b></div>
             <div><span>Cash i pritshëm</span><b>{money(d.expected)}</b></div>
             <div><span>Cash i numëruar</span><b>{money(counted)}</b></div>
             <div><span>Diferenca</span><strong>{difference === 0 ? "Pa diferencë" : signed(difference)}</strong></div>
@@ -507,12 +511,23 @@ function History({ state, onReport }) {
   );
 }
 
-export function Shifts({ state, user, update, notify, nav, report, setReport, onPrintReport }) {
+export function Shifts({ state: all, user, update: send, notify, nav, report, setReport, onPrintReport }) {
   const [closing, setClosing] = useState(false);
+  const [posId, setPosId] = useState(null);
+  // Everything below works on one till at a time: its shift, its history, its tables.
+  const till = all.pointsOfSale.find((k) => k.id === posId) ?? all.pointsOfSale[0];
+  const state = {
+    ...all,
+    shift: shiftFor(all, till?.id),
+    shifts: all.shifts.filter((s) => s.posId === till?.id),
+    tables: all.tables.filter((t) => posOf(all, t) === till?.id),
+  };
+  const update = (type, payload, message) =>
+    send(type, type.startsWith("shift.") ? { ...payload, posId: till.id } : payload, message);
   useEffect(() => {
     if (!state.shift) setClosing(false);
   }, [state.shift]);
-  const d = drawer(state);
+  const d = drawer(state, state.shift);
   const shiftInvoices = state.shift ? state.invoices.filter((i) => i.shiftId === state.shift.id) : [];
   const openReport = async (id) => {
     try {
@@ -524,6 +539,21 @@ export function Shifts({ state, user, update, notify, nav, report, setReport, on
   return (
     <div className="management-layout shifts-layout">
       <div className="shifts-main">
+        {all.pointsOfSale.length > 1 && (
+          <div className="tabs shift-tills" aria-label="Kasa">
+            {all.pointsOfSale.map((k) => (
+              <button
+                key={k.id}
+                aria-pressed={k.id === till.id}
+                onClick={() => (setPosId(k.id), setClosing(false))}
+              >
+                <span className={`dot ${shiftFor(all, k.id) ? "till-open" : "till-closed"}`} aria-hidden="true" />
+                {k.name}
+                <span className="sr-only">{shiftFor(all, k.id) ? " · turn i hapur" : " · turn i mbyllur"}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {!state.shift ? (
           <OpenShift state={state} update={update} />
         ) : closing ? (

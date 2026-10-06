@@ -7,6 +7,7 @@ import { buildApp } from "./app.js";
 import { pruneTickets } from "./commands.js";
 import { execute, readSnapshot } from "./repository.js";
 import { createManager, ipPolicy, setWaiterPattern, setWaiterPin } from "./auth.js";
+import { configIssues } from "../src/domain.js";
 
 const OUTSIDE = "203.0.113.9";
 async function setup(options = {}) {
@@ -422,11 +423,10 @@ test("order.send gives each department its own ticket; closing the order closes 
     assert.deepEqual(second.tickets.map((k) => [k.round, k.department, k.lines[0].qty]), [[2, "Bar", 1]]);
 
     assert.equal((await state()).tickets.length, 4);
-    // There's no "Gati" step any more.
-    assert.equal((await cmd(waiter, "ticket.done", { id: "x" })).statusCode, 400);
+    assert.equal((await cmd(waiter, "ticket.done", { id: "x" })).statusCode, 400, "no such ticket");
 
-    // Paying: one full invoice of everything; every ticket is closed as paid, kept a
-    // while so queued prints still find it.
+    // Paying: one full invoice of everything; every ticket is marked paid but stays on
+    // its station until the station marks it done.
     const pay = await cmd(manager, "order.pay", { tableId: 1, method: "Kartë" });
     const invoiceId = pay.json().result.invoiceId;
     const invoice = pay.json().state.invoices.find((i) => i.id === invoiceId);
@@ -444,11 +444,14 @@ test("order.send gives each department its own ticket; closing the order closes 
     assert.equal(tickets.length, 5);
     assert.ok(tickets.find((k) => k.round === 1 && k.department === "Ëmbëltore" && !k.invoice).cancelledAt);
 
-    // An hour after closing, they're dropped; an open ticket never is.
-    const hourLater = Date.now() + 61 * 60_000;
+    // An hour after cancelling, a cancelled ticket is dropped; a paid one nobody marked
+    // done stays (12 hours at most); an open ticket never goes.
+    const invoices = (await state()).invoices;
     const open = { id: "o", table: 2, invoice: null, cancelledAt: null, doneAt: null, date: new Date(0).toISOString() };
-    assert.deepEqual(pruneTickets([...tickets, open], (await state()).invoices, hourLater), [open]);
-    assert.equal(pruneTickets(tickets, (await state()).invoices).length, 5, "not yet");
+    const paidUndone = tickets.filter((k) => k.invoice);
+    assert.deepEqual(pruneTickets([...tickets, open], invoices, Date.now() + 61 * 60_000), [...paidUndone, open]);
+    assert.deepEqual(pruneTickets([...tickets, open], invoices, Date.now() + 13 * 60 * 60_000), [open]);
+    assert.equal(pruneTickets(tickets, invoices).length, 5, "not yet");
   } finally {
     await t.close();
   }
@@ -468,7 +471,7 @@ test("waiters are pinned to the venue IP, limited to order commands and see trim
     const cookie = t.cookieOf(login);
     assert.equal((await t.call("GET", "/api/state", { cookie, ip: OUTSIDE })).statusCode, 403);
     const { state } = (await t.call("GET", "/api/state", { cookie })).json();
-    assert.equal("opening" in state.shift, false);
+    assert.equal("opening" in state.openShifts[0], false);
     assert.deepEqual([state.shifts, state.movements], [[], []]);
     assert.equal("hasPin" in state.waiters[0], false);
     const command = (type, payload) =>
@@ -667,7 +670,7 @@ test("only managers cancel open orders, with an audit record and safe retries", 
     const after = response.json();
     assert.deepEqual(after.state.tables.find(t => t.id === 1).lines, []);
     assert.equal(after.state.tables.find(t => t.id === 1).waiter, null);
-    for (const key of ["products", "invoices", "movements", "shift", "shifts"]) assert.deepEqual(after.state[key], before.state[key], key);
+    for (const key of ["products", "invoices", "movements", "openShifts", "shifts"]) assert.deepEqual(after.state[key], before.state[key], key);
     assert.equal(after.result.cancelled.by, "boss");
     assert.deepEqual(after.result.cancelled.lines, before.state.tables.find(t => t.id === 1).lines);
     const replay = (await t.call("POST", "/api/commands", { cookie, body: command })).json();
@@ -764,10 +767,10 @@ test("Turnet: cash in/out feeds the expected drawer, counts must add up, waiters
     assert.equal((await cmd(boss, "shift.cash", { kind: "out", amount: 1500, reason: "Furnitori i akullit" })).statusCode, 200);
 
     const state = (await t.call("GET", "/api/state", { cookie: boss })).json().state;
-    assert.equal(state.shift.openedBy, "boss");
-    assert.deepEqual(state.shift.cashMovements.map((m) => [m.kind, m.amount, m.reason]), [["in", 2000, "Kusur nga banka"], ["out", 1500, "Furnitori i akullit"]]);
+    assert.equal(state.openShifts[0].openedBy, "boss");
+    assert.deepEqual(state.openShifts[0].cashMovements.map((m) => [m.kind, m.amount, m.reason]), [["in", 2000, "Kusur nga banka"], ["out", 1500, "Furnitori i akullit"]]);
     const waiterView = (await t.call("GET", "/api/state", { cookie: ana })).json().state;
-    assert.equal(waiterView.shift.cashMovements, undefined, "waiters don't see the drawer");
+    assert.equal(waiterView.openShifts[0].cashMovements, undefined, "waiters don't see the drawer");
 
     // expected = 5000 + 300 cash + 2000 in - 1500 out = 5800
     assert.equal((await cmd(boss, "shift.close", { counted: 5800, denominations: { 5000: 1, 500: 1 } })).statusCode, 400, "notes must add up to the total");
@@ -785,6 +788,510 @@ test("Turnet: cash in/out feeds the expected drawer, counts must add up, waiters
     // History reloads with the same numbers the close produced.
     const history = (await t.call("GET", "/api/state", { cookie: boss })).json().state.shifts[0];
     assert.deepEqual(history.sales, shift.sales);
+  } finally {
+    await t.close();
+  }
+});
+
+test("Kasat: each till has its own shift and drawer, waiters stay at their till, stock is shared", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const arben = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (cookie, type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const ok = async (...args) => {
+      const r = await cmd(...args);
+      assert.equal(r.statusCode, 200, r.body);
+      return r.json().state;
+    };
+    // Tables 1-8 are Salla, 9-12 Tarraca (the seed).
+    await ok(boss, "pos.save", { id: 1, name: "Bari brenda", areas: ["Salla"] });
+    await ok(boss, "pos.save", { name: "Bari jashtë", areas: ["Tarraca"] });
+    assert.equal((await cmd(boss, "pos.save", { name: "bari JASHTË", areas: [] })).statusCode, 400, "names are unique");
+    await ok(boss, "waiter.pos", { waiterId: 1, posId: 2 });
+    await ok(boss, "product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await ok(boss, "stock.receive", { productId: 1, qty: 5 });
+    await ok(boss, "shift.open", { posId: 1, opening: 1000 });
+
+    // Outside's shift is closed, so its tables take no orders yet — inside's do.
+    assert.equal((await cmd(arben, "order.add", { tableId: 9, productId: 1, waiterId: 1 })).statusCode, 400);
+    await ok(boss, "shift.open", { posId: 2, opening: 500 });
+    assert.equal((await cmd(boss, "shift.open", { posId: 2, opening: 0 })).statusCode, 400, "one open shift per till");
+    // Arben works outside only: inside tables are refused on both order paths, and hidden.
+    assert.equal((await cmd(arben, "order.add", { tableId: 1, productId: 1, waiterId: 1 })).statusCode, 403);
+    assert.equal((await cmd(arben, "order.assign", { tableId: 1, waiterId: 1 })).statusCode, 400);
+    await ok(arben, "order.add", { tableId: 9, productId: 1, waiterId: 1 });
+    await ok(arben, "order.pay", { tableId: 9, method: "Cash", received: 100 });
+    const view = (await t.call("GET", "/api/state", { cookie: arben })).json().state;
+    assert.deepEqual([...new Set(view.tables.map((x) => x.area))], ["Tarraca"]);
+    assert.deepEqual(view.openShifts.map((s) => s.posId), [2]);
+
+    // Elira (any till) sells inside; an open order inside doesn't block closing outside.
+    await ok(boss, "order.add", { tableId: 1, productId: 1, waiterId: 2 });
+    const state = await ok(boss, "shift.close", { posId: 2, counted: 600 });
+    assert.deepEqual([state.shifts[0].posId, state.shifts[0].expected, state.shifts[0].sales.total], [2, 600, 100]);
+    assert.deepEqual(state.openShifts.map((s) => s.posId), [1]);
+    assert.equal(state.products[0].stock, 4, "one stock for every till");
+    assert.equal((await cmd(boss, "shift.close", { posId: 1, counted: 1000 })).statusCode, 400, "inside still has an open order");
+    // An area with an open order can't move to another till mid-order; a used till can't be deleted.
+    assert.equal((await cmd(boss, "pos.save", { id: 2, name: "Bari jashtë", areas: ["Tarraca", "Salla"] })).statusCode, 400);
+    assert.equal((await cmd(boss, "pos.delete", { id: 2 })).statusCode, 400);
+    const report = (await t.call("GET", `/api/shifts/${state.shifts[0].id}/report`, { cookie: boss })).json();
+    assert.equal(report.shift.posName, "Bari jashtë");
+
+    // Two bars, two "Bar" printers: each table's ticket reaches its own till's bar.
+    await ok(boss, "printer.save", { name: "Bari brenda", host: "192.168.1.50", departments: ["Bar"], posId: 1 });
+    const printers = await ok(boss, "printer.save", { name: "Bari jashtë", host: "192.168.1.51", departments: ["Bar"], posId: 2 });
+    assert.deepEqual(printers.printers.map((x) => x.departments), [["Bar"], ["Bar"]], "same department, different tills");
+    await ok(boss, "shift.open", { posId: 2, opening: 0 });
+    await ok(boss, "product.save", { id: 1, name: "Espresso", price: 100, category: "Kafe", department: "Bar" });
+    await ok(boss, "order.add", { tableId: 10, productId: 1, waiterId: 1 });
+    await ok(boss, "order.send", { tableId: 10 });
+    await ok(boss, "order.send", { tableId: 1 });
+    const jobs = (
+      await t.pool.query(
+        `SELECT k.table_id, p.name FROM bluebar.print_jobs j
+         JOIN bluebar.printers p ON p.id = j.printer_id JOIN bluebar.station_tickets k ON k.id = j.ref
+         WHERE j.kind = 'ticket' ORDER BY k.table_id`,
+      )
+    ).rows.map((r) => [r.table_id, r.name]);
+    assert.deepEqual(jobs, [[1, "Bari brenda"], [10, "Bari jashtë"]]);
+    // Klea-style waiter (outside only) doesn't see the inside bar's tickets.
+    const outside = (await t.call("GET", "/api/state", { cookie: arben })).json().state;
+    // (Table 9's espresso was never sent: paying sent it, so its ticket is there too.)
+    assert.deepEqual(outside.tickets.map((k) => k.table).sort((a, b) => a - b), [9, 10]);
+  } finally {
+    await t.close();
+  }
+});
+
+test("Korrektësia: paying never loses station work, voids reach the station, every change is in the history", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const arben = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (cookie, type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const ok = async (...args) => {
+      const r = await cmd(...args);
+      assert.equal(r.statusCode, 200, r.body);
+      return r.json();
+    };
+    await ok(boss, "shift.open", { opening: 0 });
+    await ok(boss, "product.save", { name: "Picë", price: 500, category: "Ushqim", department: "Restorant" });
+    await ok(boss, "stock.receive", { productId: 1, qty: 10 });
+    for (let i = 0; i < 3; i++) await ok(arben, "order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    await ok(arben, "order.send", { tableId: 1 });
+
+    // A waiter can't void a sent unit; the manager can, and the kitchen gets a void slip.
+    assert.equal((await cmd(arben, "order.remove", { tableId: 1, productId: 1 })).statusCode, 403);
+    let state = (await ok(boss, "order.remove", { tableId: 1, productId: 1, reason: "Klienti ndryshoi mendje" })).state;
+    const slip = state.tickets.find((k) => k.void);
+    assert.deepEqual([slip.department, slip.kind, slip.note, slip.lines.map(({ id, name, qty }) => ({ id, name, qty }))], ["Restorant", "void", "Klienti ndryshoi mendje", [{ id: 1, name: "Picë", qty: 1 }]]);
+    assert.equal(state.tables[0].lines[0].qty, 2);
+
+    // One more pizza, never sent — paying sends it rather than losing it.
+    await ok(arben, "order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    const paid = await ok(arben, "order.pay", { tableId: 1, method: "Kartë" });
+    assert.equal(paid.result.sentTickets.length, 1);
+    state = (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    const work = state.tickets.filter((k) => !k.void);
+    assert.deepEqual(work.map((k) => [k.round, k.lines[0].qty, Boolean(k.invoice), k.doneAt]), [[1, 3, true, null], [2, 1, true, null]],
+      "paid tickets stay on the station until done");
+    // The station marks them done (a waiter-run station device can too).
+    for (const k of state.tickets) await ok(arben, "ticket.done", { id: k.id });
+    assert.equal((await cmd(arben, "ticket.done", { id: work[0].id })).statusCode, 400, "already done");
+    state = (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    assert.ok(state.tickets.every((k) => k.doneAt));
+
+    // The history: who did what, in order — and the invoice's own copy of it.
+    const events = (await t.call("GET", `/api/invoices/${paid.result.invoiceId}/history`, { cookie: boss })).json();
+    assert.deepEqual(events.map((e) => e.kind), ["add", "add", "add", "send", "void", "add", "send", "pay"]);
+    assert.deepEqual([events[0].actor, events[4].actor], ["Arben K", "boss"]);
+    assert.match(events[4].detail, /Anuloi 1 × Picë/);
+    assert.equal((await t.call("GET", `/api/invoices/${paid.result.invoiceId}/history`, { cookie: arben })).statusCode, 403);
+    // The table's next order starts with a clean history.
+    await ok(arben, "order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    assert.deepEqual((await t.call("GET", "/api/tables/1/history", { cookie: arben })).json().map((e) => e.kind), ["add"]);
+  } finally {
+    await t.close();
+  }
+});
+
+test("Stacionet: two bars by zone, specialised kitchens, backup, inactive station, accepted transfers, no rerouting", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const arben = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (cookie, type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const ok = async (...args) => {
+      const r = await cmd(...args);
+      assert.equal(r.statusCode, 200, r.body);
+      return r.json();
+    };
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    await ok(boss, "shift.open", { opening: 0 });
+    await ok(boss, "department.create", { name: "Pica" });
+    for (const [name, department] of [["Birrë", "Bar"], ["Pasta", "Restorant"], ["Picë", "Pica"]]) {
+      await ok(boss, "product.save", { name, price: 300, category: "Ushqim", department });
+      await ok(boss, "stock.receive", { productId: (await state()).products.at(-1).id, qty: 50 });
+    }
+    // One till, no stations: nothing to configure, nothing flagged.
+    assert.deepEqual(configIssues(await state()), []);
+
+    // Tables 1-8 are Salla, 9-12 Tarraca.
+    await ok(boss, "station.save", { name: "Bari brenda", departments: ["Bar"], areas: ["Salla"] });
+    await ok(boss, "station.save", { name: "Bari jashtë", departments: ["Bar"], areas: ["Tarraca"] });
+    await ok(boss, "station.save", { name: "Kuzhina", departments: ["Restorant", "Pica"], areas: [] });
+    await ok(boss, "station.save", { name: "Furra", departments: ["Pica"], areas: ["Salla", "Tarraca"], backupId: 3 });
+    assert.equal((await cmd(boss, "station.save", { id: 3, name: "Kuzhina", departments: ["Restorant", "Pica"], areas: [], backupId: 4 })).statusCode, 400, "no backup loops");
+
+    const order = async (tableId, ...productIds) => {
+      for (const productId of productIds) await ok(arben, "order.add", { tableId, productId, waiterId: 1 });
+      return (await ok(arben, "order.send", { tableId })).result.tickets.map((k) => [k.department, k.station]);
+    };
+    assert.deepEqual(await order(1, 1, 2, 3), [["Bar", 1], ["Restorant", 3], ["Pica", 4]], "inside bar, oven, shared kitchen");
+    assert.deepEqual(await order(9, 1), [["Bar", 2]], "outside bar");
+
+    // The oven is down: new pizzas go to its backup; the one it already has stays put.
+    await ok(boss, "station.toggle", { id: 4 });
+    assert.deepEqual(await order(2, 3), [["Pica", 3]]);
+    // Reconfiguring zones doesn't move tickets already sent.
+    await ok(boss, "station.save", { id: 2, name: "Bari jashtë", departments: ["Bar"], areas: [] });
+    let s = await state();
+    assert.deepEqual(s.tickets.filter((k) => k.table === 9).map((k) => k.station), [2]);
+    assert.deepEqual(s.tickets.filter((k) => k.table === 1).map((k) => k.station), [1, 4, 3]);
+    assert.ok(configIssues(s).some((i) => /"Furra" është joaktiv dhe ka 1 fletë/.test(i.text)));
+
+    // Controlled transfer: the oven's pizza goes to the kitchen only once the kitchen accepts.
+    const pizza = s.tickets.find((k) => k.station === 4);
+    await ok(boss, "ticket.transfer", { id: pizza.id, stationId: 3 });
+    assert.equal((await cmd(arben, "ticket.done", { id: pizza.id })).statusCode, 400, "in transfer");
+    s = await state();
+    assert.deepEqual([s.tickets.find((k) => k.id === pizza.id).station, s.tickets.find((k) => k.id === pizza.id).transferTo], [4, 3]);
+    await ok(arben, "ticket.accept", { id: pizza.id });
+    s = await state();
+    assert.deepEqual([s.tickets.find((k) => k.id === pizza.id).station, s.tickets.find((k) => k.id === pizza.id).transferTo], [3, null]);
+    assert.equal((await cmd(arben, "ticket.accept", { id: pizza.id })).statusCode, 400);
+    const history = (await t.call("GET", "/api/tables/1/history", { cookie: boss })).json().filter((e) => e.kind === "transfer");
+    assert.deepEqual(history.map((e) => e.actor), ["boss", "Arben K"]);
+
+    // A station with tickets can't be deleted; a printer's removal leaves its station on screen.
+    assert.equal((await cmd(boss, "station.delete", { id: 1 })).statusCode, 400, "has tickets");
+    assert.equal((await cmd(boss, "station.delete", { id: 3 })).statusCode, 400, "is a backup");
+    // No device anywhere: every active station is flagged, with a reason.
+    assert.ok(configIssues(s).filter((i) => /nuk ka printer dhe asnjë ekran/.test(i.text)).length === 3);
+    await t.call("POST", "/api/stations/seen", { cookie: arben, body: { stations: [1, 2, 3] } });
+    assert.ok(!configIssues(await state()).some((i) => /nuk ka printer dhe asnjë ekran/.test(i.text)));
+  } finally {
+    await t.close();
+  }
+});
+
+test("Raportet: sales apart from the drawer, filters, cancellations, losses and service time", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const cmd = async (type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      const r = await t.call("POST", "/api/commands", { cookie: boss, body: { id: randomUUID(), version, type, payload } });
+      assert.equal(r.statusCode, 200, r.body);
+      return r.json();
+    };
+    await cmd("shift.open", { opening: 1000 });
+    await cmd("product.save", { name: "Birrë", price: 300, category: "Birra", department: "Bar" });
+    await cmd("stock.receive", { productId: 1, qty: 20 });
+    // Salla (table 1) pays cash, Tarraca (table 9) by card; cash in/out moves the drawer.
+    await cmd("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    await cmd("order.pay", { tableId: 1, method: "Cash", received: 300 });
+    for (let i = 0; i < 2; i++) await cmd("order.add", { tableId: 9, productId: 1, waiterId: 2 });
+    await cmd("order.pay", { tableId: 9, method: "Kartë" });
+    await cmd("shift.cash", { kind: "in", amount: 500, reason: "Kusur" });
+    await cmd("shift.cash", { kind: "out", amount: 200, reason: "Akull" });
+    // A void after sending, a cancelled order, a station finishing, a loss.
+    for (let i = 0; i < 2; i++) await cmd("order.add", { tableId: 2, productId: 1, waiterId: 1 });
+    const sent = await cmd("order.send", { tableId: 2 });
+    await cmd("order.remove", { tableId: 2, productId: 1, reason: "E porositur gabim" });
+    await cmd("ticket.done", { id: sent.result.tickets[0].id });
+    await cmd("order.cancel", { tableId: 2, reason: "Klienti iku" });
+    await cmd("stock.adjust", { productId: 1, qty: -2, reason: "Thyerje" });
+
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    const get = (extra = {}) =>
+      t.call("GET", `/api/reports?${new URLSearchParams({ from: day.toISOString(), to: new Date(day.getTime() + 86400_000).toISOString(), ...extra })}`, { cookie: boss });
+    const all = (await get()).json();
+    assert.deepEqual(all.invoices.map((i) => [i.total, i.method, i.area]), [[300, "Cash", "Salla"], [600, "Kartë", "Tarraca"]]);
+    const [s] = all.shifts;
+    // The drawer: float + cash sales + in − out; card never enters it.
+    assert.deepEqual([s.opening, s.cash, s.card, s.cashIn, s.cashOut, s.expected], [1000, 300, 600, 500, 200, 1600]);
+    assert.deepEqual(all.corrections.map((c) => [c.kind, c.amount]), [["void", 300], ["cancel", 300]]);
+    assert.deepEqual(all.losses.map((m) => [m.qty, m.reason]), [[-2, "Thyerje"]]);
+    assert.equal(all.service.orders, 2);
+    assert.equal(all.service.prep[0].tickets, 1);
+    // Filters: zone, waiter, shift basis.
+    assert.deepEqual((await get({ area: "Tarraca" })).json().invoices.map((i) => i.total), [600]);
+    assert.deepEqual((await get({ waiter: "1" })).json().invoices.map((i) => i.total), [300]);
+    assert.equal((await get({ basis: "shift" })).json().invoices.length, 2);
+    // Managers only; a nonsense period is refused.
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("GET", `/api/reports?from=${day.toISOString()}&to=${day.toISOString()}`, { cookie: boss })).statusCode, 400);
+    assert.equal((await t.call("GET", `/api/reports?from=${day.toISOString()}&to=${new Date().toISOString()}`, { cookie: ana })).statusCode, 403);
+  } finally {
+    await t.close();
+  }
+});
+
+test("Llogaritë: partial and mixed payments, splits, discounts, comps, moves, handover, refunds — never charged twice", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const arben = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const elira = t.cookieOf(await t.waiterLogin(2, "739105"));
+    const version = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().version;
+    const cmd = async (cookie, type, payload, v) =>
+      t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version: v ?? (await version()), type, payload } });
+    const ok = async (...args) => {
+      const r = await cmd(...args);
+      assert.equal(r.statusCode, 200, r.body);
+      return r.json();
+    };
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    const tableOf = async (id) => (await state()).tables.find((x) => x.id === id);
+    await ok(boss, "shift.open", { opening: 1000 });
+    await ok(boss, "product.save", { name: "Pjatë", price: 300, category: "Ushqim", department: "Restorant" });
+    await ok(boss, "product.save", { name: "Ujë", price: 100, category: "Pije", department: "Bar" });
+    await ok(boss, "stock.receive", { productId: 1, qty: 50 });
+    await ok(boss, "stock.receive", { productId: 2, qty: 50 });
+    const add = async (cookie, tableId, productId, n, waiterId = 1) => {
+      for (let i = 0; i < n; i++) await ok(cookie, "order.add", { tableId, productId, waiterId });
+    };
+
+    await add(arben, 1, 1, 3);
+
+    // Part of it in cash: the bill stays open with what's left.
+    const first = await ok(arben, "order.pay", { tableId: 1, payments: [{ method: "Cash", amount: 300 }], received: 500 });
+    assert.deepEqual([first.result.partial, first.result.remaining], [true, 600]);
+    // Items can come off the bill only while it still covers what's been paid (300).
+    assert.equal((await cmd(boss, "order.remove", { tableId: 1, productId: 1 })).statusCode, 200);
+    assert.equal((await cmd(boss, "order.remove", { tableId: 1, productId: 1 })).statusCode, 200);
+    assert.equal((await cmd(boss, "order.remove", { tableId: 1, productId: 1 })).statusCode, 400, "would drop below what's paid");
+    await add(arben, 1, 1, 2);
+    // Two devices on the same version: the second payment of the same balance is refused.
+    const v = await version();
+    await ok(arben, "order.pay", { tableId: 1, payments: [{ method: "Cash", amount: 200 }, { method: "Kartë", amount: 400 }], received: 200 }, v);
+    assert.equal((await cmd(elira, "order.pay", { tableId: 1, payments: [{ method: "Kartë", amount: 600 }] }, v)).statusCode, 409);
+    let s = await state();
+    const mixed = s.invoices[0];
+    assert.deepEqual(
+      [mixed.total, mixed.method, mixed.cash, mixed.card],
+      [900, "Përzier", 500, 400],
+    );
+    assert.deepEqual((await tableOf(1)).lines, []);
+    // More than what's left is refused, never "paid twice".
+    await add(arben, 2, 2, 2);
+    assert.equal((await cmd(arben, "order.pay", { tableId: 2, payments: [{ method: "Kartë", amount: 300 }] })).statusCode, 400);
+
+    // Split by items: one water now on its own invoice, the other stays on the table.
+    const split = await ok(arben, "order.pay", { tableId: 2, payments: [{ method: "Kartë", amount: 100 }], units: [{ productId: 2, qty: 1 }] });
+    assert.equal(split.result.remaining, 100);
+    s = await state();
+    assert.deepEqual(s.invoices[0].lines.map((l) => [l.name, l.qty]), [["Ujë", 1]]);
+    assert.deepEqual((await tableOf(2)).lines.map((l) => l.qty), [1]);
+
+    // Discounts and comps: the manager's, with a reason.
+    await add(arben, 3, 1, 2);
+    assert.equal((await cmd(arben, "order.discount", { tableId: 3, kind: "percent", value: 10, reason: "Klient i rregullt" })).statusCode, 403);
+    assert.equal((await cmd(boss, "order.discount", { tableId: 3, kind: "percent", value: 10, reason: "" })).statusCode, 400);
+    await ok(boss, "order.discount", { tableId: 3, kind: "percent", value: 10, reason: "Klient i rregullt" });
+    assert.equal((await cmd(arben, "order.comp", { tableId: 3, productId: 1, delta: 1, reason: "Ditëlindje" })).statusCode, 403);
+    await ok(boss, "order.comp", { tableId: 3, productId: 1, delta: 1, reason: "Ditëlindje" });
+    // 2 × 300 − 300 comped = 300, − 10% = 270.
+    const comped = await ok(arben, "order.pay", { tableId: 3, method: "Cash", received: 270 });
+    s = await state();
+    const inv = s.invoices.find((i) => i.id === comped.result.invoiceId);
+    assert.deepEqual([inv.subtotal, inv.comps, inv.discount, inv.total, inv.discountReason], [600, 300, 30, 270, "Klient i rregullt"]);
+
+    // A fully comped bill closes with no payment and a 0 invoice.
+    await add(arben, 4, 2, 1);
+    await ok(boss, "order.comp", { tableId: 4, productId: 2, delta: 1, reason: "E gabuar" });
+    const free = await ok(arben, "order.pay", { tableId: 4, method: "Cash" });
+    assert.equal((await state()).invoices.find((i) => i.id === free.result.invoiceId).total, 0);
+
+    // Moving: to an empty table the order (and its station tickets) follows; onto an
+    // occupied table only as an explicit merge; a waiter moves only their own.
+    await add(arben, 5, 2, 2);
+    await ok(arben, "order.send", { tableId: 5 });
+    await ok(arben, "order.move", { tableId: 5, toTableId: 6 });
+    s = await state();
+    assert.deepEqual([s.tables[4].lines.length, s.tables[5].lines[0].qty], [0, 2]);
+    const moved = s.tickets.filter((k) => [5, 6].includes(k.table) && !k.invoice && !k.cancelledAt);
+    assert.ok(moved.length && moved.every((k) => k.table === 6), "the station delivers to the new table");
+    await add(arben, 7, 1, 1);
+    assert.equal((await cmd(arben, "order.move", { tableId: 6, toTableId: 7 })).statusCode, 400, "merging needs a confirmation");
+    await ok(arben, "order.move", { tableId: 6, toTableId: 7, merge: true });
+    assert.deepEqual((await tableOf(7)).lines.map((l) => [l.name, l.qty]), [["Pjatë", 1], ["Ujë", 2]]);
+    assert.equal((await cmd(elira, "order.move", { tableId: 7, toTableId: 8 })).statusCode, 400, "not Elira's table");
+
+    // Handover: the owner gives the table to a colleague; nobody else can.
+    assert.equal((await cmd(elira, "order.handover", { tableId: 7, waiterId: 2 })).statusCode, 400);
+    await ok(arben, "order.handover", { tableId: 7, waiterId: 2 });
+    assert.equal((await tableOf(7)).waiter, 2);
+
+    // Refunds: manager, reason, never more than the invoice took; cash leaves the drawer.
+    const before = (await state()).openShifts[0];
+    assert.equal((await cmd(arben, "invoice.refund", { invoiceId: mixed.id, amount: 100, method: "Cash", reason: "Pjatë e ftohtë" })).statusCode, 403);
+    assert.equal((await cmd(boss, "invoice.refund", { invoiceId: mixed.id, amount: 1000, method: "Cash", reason: "Pjatë e ftohtë" })).statusCode, 400);
+    await ok(boss, "invoice.refund", { invoiceId: mixed.id, amount: 100, method: "Cash", reason: "Pjatë e ftohtë" });
+    s = await state();
+    assert.deepEqual(s.invoices.find((i) => i.id === mixed.id).refunds.map((r) => [r.amount, r.method, r.reason]), [[100, "Cash", "Pjatë e ftohtë"]]);
+    // The drawer: 1000 float + cash collected (500 + 270) − 100 refunded; card and card tips never in it.
+    const report = (await t.call("GET", `/api/shifts/${before.id}/report`, { cookie: boss })).json();
+    assert.deepEqual([report.cash, report.refundsCash, report.shift.expected], [770, 100, 1670]);
+  } finally {
+    await t.close();
+  }
+});
+
+test("moving a bill between tills: it's paid at the new till, but a part-paid bill stays where its money is", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const cmd = async (type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie: boss, body: { id: randomUUID(), version, type, payload } });
+    };
+    const ok = async (...args) => {
+      const r = await cmd(...args);
+      assert.equal(r.statusCode, 200, r.body);
+      return r.json();
+    };
+    // Tables 1-8 Salla (inside till), 9-12 Tarraca (outside till).
+    await ok("pos.save", { id: 1, name: "Brenda", areas: ["Salla"] });
+    await ok("pos.save", { name: "Jashtë", areas: ["Tarraca"] });
+    await ok("shift.open", { posId: 1, opening: 0 });
+    await ok("product.save", { name: "Kafe", price: 100, category: "Kafe" });
+    await ok("stock.receive", { productId: 1, qty: 10 });
+    for (const tableId of [1, 2]) for (let i = 0; i < 2; i++) await ok("order.add", { tableId, productId: 1, waiterId: 1 });
+    assert.match((await cmd("order.move", { tableId: 1, toTableId: 9 })).body, /nuk ka turn të hapur/);
+    await ok("shift.open", { posId: 2, opening: 0 });
+    await ok("order.pay", { tableId: 2, payments: [{ method: "Cash", amount: 100 }], received: 100 });
+    assert.match((await cmd("order.move", { tableId: 2, toTableId: 10 })).body, /pagesa të pjesshme/);
+    await ok("order.move", { tableId: 1, toTableId: 9 });
+    const paid = await ok("order.pay", { tableId: 9, method: "Kartë" });
+    const state = (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    const invoice = state.invoices.find((i) => i.id === paid.result.invoiceId);
+    assert.equal(state.openShifts.find((s) => s.id === invoice.shiftId).posId, 2, "collected at the outside till");
+  } finally {
+    await t.close();
+  }
+});
+
+test("Porositë: notes, allergies, extras, two lines of one product, courses, hold, corrections, voids, remakes — never twice", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const arben = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (cookie, type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const ok = async (...args) => {
+      const r = await cmd(...args);
+      assert.equal(r.statusCode, 200, r.body);
+      return r.json();
+    };
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    const lines = async () => (await state()).tables[0].lines;
+    await ok(boss, "shift.open", { opening: 0 });
+    await ok(boss, "product.save", { name: "Cappuccino", price: 200, category: "Kafe", department: "Bar",
+      extras: [{ name: "Qumësht soje", price: 50 }, { name: "Pa sheqer", price: 0 }] });
+    await ok(boss, "product.save", { name: "Bruskete", price: 300, category: "Ushqim", department: "Restorant" });
+    await ok(boss, "product.save", { name: "Biftek", price: 1200, category: "Ushqim", department: "Restorant" });
+    for (const id of [1, 2, 3]) await ok(boss, "stock.receive", { productId: id, qty: 20 });
+    const add = (payload) => ok(arben, "order.add", { tableId: 1, waiterId: 1, ...payload });
+
+    // Two cappuccinos made two ways: separate lines, priced with their extras.
+    await add({ productId: 1 });
+    await add({ productId: 1 });
+    await add({ productId: 1, extras: ["Qumësht soje"], note: "shumë i nxehtë" });
+    assert.equal((await cmd(arben, "order.add", { tableId: 1, waiterId: 1, productId: 1, extras: ["Krem"] })).statusCode, 400, "unknown extra");
+    let ls = await lines();
+    assert.deepEqual(ls.map((l) => [l.key, l.qty, l.price, l.note]), [["p1", 2, 200, ""], ["p1-2", 1, 250, "shumë i nxehtë"]]);
+    // A starter, a main, a nut allergy: the main waits for "Fillo kursin".
+    await add({ productId: 2, course: 1 });
+    await add({ productId: 3, course: 2, allergy: "arra" });
+    await ok(arben, "order.note", { tableId: 1, allergy: "celiak" });
+    const first = (await ok(arben, "order.send", { tableId: 1 })).result.tickets;
+    const sentNames = first.flatMap((k) => k.lines.map((l) => l.name)).sort();
+    assert.deepEqual(sentNames, ["Bruskete", "Cappuccino", "Cappuccino"]);
+    assert.ok(first.every((k) => k.allergy === "celiak"), "the order's allergy is on every ticket");
+    // Sending again sends nothing twice.
+    assert.match((await cmd(arben, "order.send", { tableId: 1 })).body, /në pritje ose në një kurs/);
+    const fired = (await ok(arben, "order.fire", { tableId: 1, course: 2 })).result.tickets;
+    assert.deepEqual(fired.flatMap((k) => k.lines.map((l) => [l.name, l.course, l.allergy])), [["Biftek", 2, "arra"]]);
+    assert.equal((await cmd(arben, "order.fire", { tableId: 1, course: 2 })).statusCode, 400);
+
+    // Hold: added, not sent until released.
+    await add({ productId: 2, hold: true });
+    assert.match((await cmd(arben, "order.send", { tableId: 1 })).body, /në pritje/);
+    const held = (await lines()).find((l) => l.hold);
+    await ok(arben, "order.edit", { tableId: 1, lineKey: held.key, hold: false });
+    assert.equal((await ok(arben, "order.send", { tableId: 1 })).result.tickets[0].lines[0].name, "Bruskete");
+
+    // Unsent: corrected directly. Sent: a reason, and the station gets a correction.
+    await add({ productId: 1 });
+    ls = await lines();
+    const plain = ls.find((l) => l.key === "p1");
+    assert.deepEqual([plain.qty, plain.sent], [3, 2]);
+    // One unsent unit taken off onto its own line, without sugar.
+    await ok(arben, "order.edit", { tableId: 1, lineKey: "p1", one: true, extras: ["Pa sheqer"] });
+    ls = await lines();
+    assert.deepEqual(ls.filter((l) => l.id === 1).map((l) => [l.qty, l.sent, l.extras.map((x) => x.name)]), [[2, 2, []], [1, 1, ["Qumësht soje"]], [1, 0, ["Pa sheqer"]]]);
+    assert.equal((await cmd(arben, "order.edit", { tableId: 1, lineKey: "p1", note: "me kanellë" })).statusCode, 400, "sent: needs a reason");
+    const before = (await state()).tickets.length;
+    await ok(arben, "order.edit", { tableId: 1, lineKey: "p1", note: "me kanellë", reason: "Klienti e kërkoi pas porosisë" });
+    let s = await state();
+    const correction = s.tickets.at(-1);
+    assert.deepEqual([s.tickets.length, correction.kind, correction.lines[0].note, correction.lines[0].qty], [before + 1, "correction", "me kanellë", 2]);
+
+    // A sent steak that was already cooked: void with a reason, stock records the loss.
+    const stockBefore = s.products.find((p) => p.id === 3).stock;
+    const steak = (await lines()).find((l) => l.id === 3);
+    await ok(boss, "order.remove", { tableId: 1, lineKey: steak.key, reason: "Klienti iku pa e ngrënë", prepared: true });
+    s = await state();
+    assert.equal(s.products.find((p) => p.id === 3).stock, stockBefore - 1);
+    assert.deepEqual([s.movements.at(-1).kind, s.movements.at(-1).qty], ["loss", -1]);
+    // A bruschetta dropped on the way: remade, the first one is a loss, the bill unchanged.
+    const due = (await lines()).reduce((sum, l) => sum + l.qty * l.price, 0);
+    const bruschetta = (await lines()).find((l) => l.id === 2 && l.sent);
+    await ok(arben, "order.remake", { tableId: 1, lineKey: bruschetta.key, reason: "Ra në tokë" });
+    s = await state();
+    assert.equal(s.tickets.at(-1).kind, "remake");
+    assert.equal((await lines()).reduce((sum, l) => sum + l.qty * l.price, 0), due);
+    assert.equal((await cmd(arben, "order.remake", { tableId: 1, lineKey: bruschetta.key })).statusCode, 400, "needs a reason");
+
+    // Who, when and why: all in the order's history.
+    const history = (await t.call("GET", "/api/tables/1/history", { cookie: boss })).json();
+    const of = (kind) => history.filter((e) => e.kind === kind);
+    assert.match(of("edit").at(-1).detail, /Klienti e kërkoi pas porosisë/);
+    assert.match(of("void")[0].detail, /përgatitur: humbje: Klienti iku pa e ngrënë/);
+    assert.deepEqual([of("remake")[0].actor, of("fire")[0].detail], ["Arben K", "Filloi kursin: Kryesore"]);
+
+    // The fast path (plain add) keeps to the right line: a plain main course joins the
+    // plain main-course line, not the starter's.
+    await t.call("POST", "/api/commands", { cookie: arben, body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: boss })).json().version, type: "order.add", payload: { tableId: 2, productId: 2, waiterId: 1, course: 2 } } });
+    await t.call("POST", "/api/commands", { cookie: arben, body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: boss })).json().version, type: "order.add", payload: { tableId: 2, productId: 2, waiterId: 1, course: 2 } } });
+    await t.call("POST", "/api/commands", { cookie: arben, body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: boss })).json().version, type: "order.add", payload: { tableId: 2, productId: 2, waiterId: 1, course: 1 } } });
+    assert.deepEqual((await state()).tables[1].lines.map((l) => [l.key, l.course, l.qty]), [["p2", 2, 2], ["p2-2", 1, 1]]);
   } finally {
     await t.close();
   }

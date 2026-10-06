@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createPrintPairing, fetchPrintStatus, testPrinter } from "./api.js";
 import { Badge, DepartmentTag, Field, Icon, SectionHeading } from "./components.jsx";
+import { ChoiceField } from "./ChoiceField.jsx";
 
 const PAPER = [
   { width: 56, label: "88 mm" },
@@ -40,6 +41,7 @@ export function NetworkPrinters({ state, update, notify }) {
       width: Number(form.get("width")),
       departments: form.getAll("departments"),
       receipts: form.get("receipts") === "on",
+      ...(form.get("posId") && { posId: Number(form.get("posId")) }),
     };
     if (await update("printer.save", payload, editing.id ? "Printeri u ruajt." : "Printeri u shtua.")) setEditing(null);
   }
@@ -75,13 +77,12 @@ export function NetworkPrinters({ state, update, notify }) {
             </div>
             {usb ? (
               queues.length ? (
-                <Field label="Printeri në kompjuterin e printimit">
-                  <select name="queue" defaultValue={queue} required>
-                    {[...new Set([queue, ...queues])].filter(Boolean).map((q) => (
-                      <option key={q} value={q}>{q.replaceAll("_", " ")}</option>
-                    ))}
-                  </select>
-                </Field>
+                <ChoiceField
+                  label="Printeri në kompjuterin e printimit"
+                  name="queue"
+                  defaultValue={queue}
+                  options={[...new Set([queue, ...queues])].filter(Boolean).map((q) => ({ value: q, label: q.replaceAll("_", " ") }))}
+                />
               ) : (
                 <>
                   <Field label="Emri i printerit në kompjuter" name="queue" defaultValue={queue || ""} placeholder="p.sh. GEZHI_micro_printer" pattern="[A-Za-z0-9_.\-]{1,60}" required />
@@ -112,10 +113,26 @@ export function NetworkPrinters({ state, update, notify }) {
                 </label>
               ))}
               <label>
-                <input type="checkbox" name="receipts" defaultChecked={editing.receipts} />
+                <input
+                  type="checkbox"
+                  name="receipts"
+                  checked={Boolean(editing.receipts)}
+                  onChange={(e) => setEditing({ ...editing, receipts: e.target.checked })}
+                />
                 <strong>Faturat e arkës</strong>
               </label>
             </fieldset>
+            {state.pointsOfSale.length > 1 && (
+              <ChoiceField
+                label="Printon për kasën"
+                name="posId"
+                defaultValue={String(editing.posId ?? "")}
+                options={[
+                  { value: "", label: "Të gjitha kasat" },
+                  ...state.pointsOfSale.map((k) => ({ value: String(k.id), label: k.name })),
+                ]}
+              />
+            )}
             <label className="printer-ascii">
               <input type="checkbox" name="cutter" defaultChecked={editing.cutter !== false} />
               <span>
@@ -153,6 +170,9 @@ export function NetworkPrinters({ state, update, notify }) {
                       <DepartmentTag key={d} name={d} />
                     ))}
                     {p.receipts && <Badge tone="green">Faturat</Badge>}
+                    {p.posId && state.pointsOfSale.length > 1 && (
+                      <Badge>{state.pointsOfSale.find((k) => k.id === p.posId)?.name}</Badge>
+                    )}
                   </div>
                 </div>
                 <div className="printer-actions">

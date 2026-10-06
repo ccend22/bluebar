@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { money, total } from "./domain.js";
+import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
+import { Landing } from "./Landing.jsx";
 import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js";
 import { NetworkPrinters } from "./NetworkPrinters.jsx";
+import { PointsOfSale } from "./PointsOfSale.jsx";
+import { ConfigCheck, StationSetup } from "./StationSetup.jsx";
+import { OrderHistory } from "./OrderHistory.jsx";
+import { PaymentForm, RefundForm } from "./PaymentDialog.jsx";
 import { WaiterPatternEditor } from "./PatternPad.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
 import { arrange, collisions, sizeFor, spanOf } from "./floorGeometry.js";
@@ -65,7 +70,7 @@ const pages = [
   {
     name: "Produktet",
     icon: "menu",
-    description: "Një menu e organizuar, nga kategoria te çmimi.",
+    description: "Një menu e organizuar, nga kategoria e menusë te çmimi.",
   },
   {
     name: "Kamarierët",
@@ -88,6 +93,7 @@ const pages = [
     description: "Fiskalizimi, rrjeti i lokalit, hyrja e stafit dhe printerët.",
   },
 ];
+const SETTINGS_TABS = ["Printerët", "Stafi dhe hyrja", "Kasat dhe stacionet", "Fiskalizimi", "Llogaria ime"];
 const matches = (text, query) =>
   text.toLocaleLowerCase("sq").includes(query.trim().toLocaleLowerCase("sq"));
 const date = (value) => {
@@ -150,31 +156,62 @@ function Receipt({ invoice, venueName, waiterName, products }) {
             <div className="receipt-department" key={dept}>
               <p className="receipt-department-title">{dept.toUpperCase()}</p>
               {lines.map((l) => (
-                <div className="receipt-line" key={l.id}>
+                <div className="receipt-line" key={l.key || l.id}>
                   <span>
-                    {l.qty} × {l.name}
-                    <small>{money(l.price)} / copë</small>
+                    {l.qty} × {[l.name, ...(l.extras || []).map((x) => x.name)].join(" + ")}
+                    <small>
+                      {money(l.price)} / copë{l.comp ? ` · ${l.comp} qerasur` : ""}
+                    </small>
                   </span>
-                  <b>{money(l.qty * l.price)}</b>
+                  <b>{money((l.qty - (l.comp || 0)) * l.price)}</b>
                 </div>
               ))}
             </div>
           ))
         : invoice.lines.map((l) => (
-            <div className="receipt-line" key={l.id}>
+            <div className="receipt-line" key={l.key || l.id}>
               <span>
-                {l.qty} × {l.name}
-                <small>{money(l.price)} / copë</small>
+                {l.qty} × {[l.name, ...(l.extras || []).map((x) => x.name)].join(" + ")}
+                <small>
+                  {money(l.price)} / copë{l.comp ? ` · ${l.comp} qerasur` : ""}
+                </small>
               </span>
-              <b>{money(l.qty * l.price)}</b>
+              <b>{money((l.qty - (l.comp || 0)) * l.price)}</b>
             </div>
           ))}
       <hr />
+      {invoice.discount > 0 && (
+        <div className="receipt-line">
+          <span>Ulje{invoice.discountReason ? ` · ${invoice.discountReason}` : ""}</span>
+          <b>−{money(invoice.discount)}</b>
+        </div>
+      )}
       <div className="receipt-total">
         <b>TOTALI</b>
         <strong>{money(invoice.total)}</strong>
       </div>
-      {!preBill && <p>Pagesa: {invoice.method}</p>}
+      {preBill && invoice.paid > 0 && (
+        <>
+          <div className="receipt-line"><span>Paguar</span><b>{money(invoice.paid)}</b></div>
+          <div className="receipt-total"><b>MBETUR</b><strong>{money(invoice.remaining)}</strong></div>
+        </>
+      )}
+      {!preBill && (
+        <>
+          {invoice.cash > 0 && <div className="receipt-line"><span>Paguar cash</span><b>{money(invoice.cash)}</b></div>}
+          {invoice.card > 0 && <div className="receipt-line"><span>Paguar me kartë</span><b>{money(invoice.card)}</b></div>}
+          {invoice.cash === undefined && <p>Pagesa: {invoice.method}</p>}
+          {(invoice.refunds || []).map((r) => (
+            <div className="receipt-line" key={r.id}>
+              <span>
+                Rimbursuar {r.method === "Cash" ? "cash" : "në kartë"}
+                <small>{r.reason}</small>
+              </span>
+              <b>−{money(r.amount)}</b>
+            </div>
+          ))}
+        </>
+      )}
       {fiscalized && (
         <>
           <hr />
@@ -192,15 +229,22 @@ function Receipt({ invoice, venueName, waiterName, products }) {
 // What one "Dërgo" round sent to one station: no prices, big quantities — it's a
 // work order for the bar/kitchen, not a bill. The full invoice comes at payment.
 // Exact amount, then the next 500 / 1,000 / 5,000 up — the notes a customer hands over.
-const amount = (n) => new Intl.NumberFormat("sq-AL", { maximumFractionDigits: 0 }).format(n);
-const quickCash = (t) =>
-  [...new Set([t, ...[500, 1000, 5000].map((n) => Math.ceil(t / n) * n)])].slice(0, 4);
 function StationTicket({ ticket, waiterName }) {
   return (
     <>
       <div className="receipt-brand">
         {ticket.department.toUpperCase()}
-        <span>{ticket.cancelledAt ? "ANULUAR · MOS E PËRGATITNI" : "POROSI PËR REPARTIN"}</span>
+        <span>
+          {ticket.void
+            ? "ANULIM · HIQENI NGA POROSIA"
+            : ticket.cancelledAt
+              ? "ANULUAR · MOS E PËRGATITNI"
+              : ticket.kind === "correction"
+                ? "KORRIGJIM"
+                : ticket.kind === "remake"
+                  ? "RIPËRGATIT"
+                  : "POROSI PËR REPARTIN"}
+        </span>
       </div>
       <div className="receipt-meta">
         <span>Tavolina {String(ticket.table).padStart(2, "0")}</span>
@@ -211,10 +255,16 @@ function StationTicket({ ticket, waiterName }) {
         {waiterName ? ` · ${waiterName}` : ""}
       </p>
       <hr />
+      {ticket.allergy && <p><b>ALERGJI: {ticket.allergy}</b></p>}
+      {ticket.note && <p>{ticket.kind && ticket.kind !== "order" ? "Arsyeja" : "Shënim"}: {ticket.note}</p>}
       {ticket.lines.map((l) => (
-        <div className="receipt-line station-line" key={l.id}>
+        <div className="receipt-line station-line" key={l.key || l.id}>
           <span>
             <b>{l.qty} ×</b> {l.name}
+            {l.course > 0 && <small>{COURSES[l.course]}</small>}
+            {l.extras?.map((x) => <small key={x}>+ {x}</small>)}
+            {l.note && <small>› {l.note}</small>}
+            {l.allergy && <small><b>ALERGJI: {l.allergy}</b></small>}
           </span>
         </div>
       ))}
@@ -242,10 +292,10 @@ function App({ user, onLogout, onUserChange }) {
   const role = user.role === "manager" ? "Menaxher" : "Kamarier";
   const [receipt, setReceipt] = useState(null),
     [payment, setPayment] = useState(null),
-    [received, setReceived] = useState(""),
     [editor, setEditor] = useState(null),
     [paymentFilter, setPaymentFilter] = useState("Të gjitha"),
     [stockFilter, setStockFilter] = useState("Të gjitha"),
+    [settingsTab, setSettingsTab] = useState("Printerët"),
     [manageTables, setManageTables] = useState(false),
     [report, setReport] = useState(null),
     [cancelling, setCancelling] = useState(false),
@@ -293,13 +343,18 @@ function App({ user, onLogout, onUserChange }) {
     }
   }, [selected]);
   const notify = (text, tone = "success") => setNotice({ text, tone });
+  // An order's messages name its table: with several tables open, "out of stock" alone
+  // doesn't say where.
+  const tableLabel = (payload) =>
+    payload?.tableId ? `Tavolina ${String(payload.tableId).padStart(2, "0")}: ` : "";
   const update = async (type, payload, message) => {
+    const where = type.startsWith("order.") ? tableLabel(payload) : "";
     try {
       const data = await database.execute(type, payload);
-      message ? notify(message) : setNotice(null);
+      message ? notify(where + message) : setNotice(null);
       return data;
     } catch (e) {
-      notify(e.message, "error");
+      notify(where + e.message, "error");
       return false;
     }
   };
@@ -406,6 +461,10 @@ function App({ user, onLogout, onUserChange }) {
     setSelected(t.id);
     startPayment(method);
   };
+  // The tills this user works (a waiter assigned to one till: just that one), and those not open.
+  const myPos = user.role === "waiter" ? state.waiters.find((w) => w.id === user.waiterId)?.posId : null;
+  const tills = state.pointsOfSale.filter((k) => !myPos || k.id === myPos);
+  const closedTills = tills.filter((k) => !state.openShifts.some((s) => s.posId === k.id));
   // Deactivated tables ("Menaxho tavolinat") drop off the floor but stay listed there for reactivation.
   const activeTables = state.tables.filter((t) => t.active),
     areas = [
@@ -439,15 +498,17 @@ function App({ user, onLogout, onUserChange }) {
   const menuProducts = filteredProducts.filter(
     (p) =>
       deptFilter === "Të gjitha" ||
-      (deptFilter === "Pa kategori" ? !p.department : p.department === deptFilter),
+      (deptFilter === "Pa repart" ? !p.department : p.department === deptFilter),
   );
   const unrouted = state.products.filter((p) => !p.department).length;
+  // Each product's own threshold (10 until the manager sets one).
+  const isLow = (p) => p.stock <= (p.minStock ?? 10);
   const filteredStock = state.products.filter(
     (p) =>
       matches(`${p.name} ${p.category}`, query) &&
-      (stockFilter === "Të gjitha" || p.stock <= 10),
+      (stockFilter === "Të gjitha" || isLow(p)),
   );
-  const lowStock = state.products.filter((p) => p.stock <= 10).length;
+  const lowStock = state.products.filter(isLow).length;
   const pendingUnits = (t) => t.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0);
   const print = (invoice) => {
     setTicketPrint(null);
@@ -467,25 +528,29 @@ function App({ user, onLogout, onUserChange }) {
     const data = await update("order.send", { tableId: t.id });
     if (data)
       setNotice({
-        text: `U dërgua te: ${data.result.tickets.map((k) => k.department).join(", ")}.`,
+        text: `${tableLabel({ tableId: t.id })}u dërgua te ${data.result.tickets
+          .map((k) => state.stations?.find((x) => x.id === k.station)?.name || k.department)
+          .join(", ")}.`,
         tone: "success",
         tickets: data.result.tickets,
       });
   };
   // Departments / invoices a LAN printer covers go through the print agent; the rest
   // still print from this browser.
-  const networked = state.printers.flatMap((p) => p.departments);
-  const cashierPrinter = state.printers.find((p) => p.receipts);
-  const [stationDepartments, toggleStation] = useStationPrinting(
-    state.tickets,
-    database.ready,
-    printTickets,
-    networked,
-  );
+  // A ticket sent to a station prints on that station's printer, if it has one; without
+  // stations, per till: the outside bar's "Bar" tickets go to the outside bar's printer.
+  const useStations = (state.stations || []).length > 0;
+  const networked = (k) =>
+    k.station
+      ? Boolean(state.printers.some((p) => p.id === state.stations.find((x) => x.id === k.station)?.printerId))
+      : Boolean(printerFor(state.printers, ticketPos(state, k), k.department));
+  const cashierFor = (invoice) => printerFor(state.printers, invoicePos(state, invoice));
+  const tillOf = (k) => ticketPos(state, k);
+  const stationDevice = useStationPrinting(state.tickets, database.ready, printTickets, networked, tillOf, useStations);
   const reprintTickets = async (tickets) => {
-    const local = tickets.filter((k) => !networked.includes(k.department));
+    const local = tickets.filter((k) => !networked(k));
     try {
-      for (const k of tickets.filter((k) => networked.includes(k.department)))
+      for (const k of tickets.filter(networked))
         await reprintDocument("ticket", k.id);
       if (local.length) printTickets(local);
       else notify("Fleta u dërgua te printeri i repartit.");
@@ -494,6 +559,7 @@ function App({ user, onLogout, onUserChange }) {
     }
   };
   const reprintInvoice = async (invoice) => {
+    const cashierPrinter = cashierFor(invoice);
     if (!cashierPrinter) return print(invoice);
     try {
       await reprintDocument("invoice", invoice.id);
@@ -523,50 +589,42 @@ function App({ user, onLogout, onUserChange }) {
       waiter: t.waiter,
       date: new Date().toISOString(),
       lines: t.lines,
-      total: total(t.lines),
+      // The bill as it stands: comps and discount taken off, part payments shown.
+      discount: bill(t).discount,
+      discountReason: t.discount?.reason,
+      total: bill(t).due,
+      paid: bill(t).paid,
+      remaining: bill(t).remaining,
     });
   };
-  const startPayment = (method) => {
-    setReceived("");
-    setPayment(method);
-  };
-  const pressReceivedKey = (key) => {
-    setReceived((current) => {
-      if (key === "clear") return "";
-      if (key === "back") return current.slice(0, -1);
-      const next = `${current}${key}`.replace(/^0+(?=\d)/, "");
-      return Number(next) <= 100000000 ? next : current;
-    });
-  };
+  const startPayment = (method) => setPayment(method);
   const cancelPayment = () => {
     dialog.current?.close();
     setPayment(null);
     dialogTrigger.current?.focus({ preventScroll: true });
   };
-  async function pay(e) {
-    e.preventDefault();
-    if (payment !== "Cash" && payment !== "Kartë") return;
-    if (payment === "Cash" && Number(received) < total(table.lines)) return;
-    // Two submit buttons share this form; which one fired the submit decides
-    // whether the sale also gets fiscalized right away or is left for later
-    // (from Faturat's "Fiskalizo Faturën").
-    const autoFiscalize = Boolean(state.fiscal?.enabled) && e.nativeEvent.submitter?.value !== "skip-fiscalize";
-    const command = {
-      tableId: selected,
-      method: payment,
-      fiscalize: autoFiscalize,
-      ...(payment === "Cash" ? { received: Number(received) } : {}),
-    };
+  async function pay(payload, autoFiscalize) {
+    const command = { tableId: selected, ...payload, fiscalize: autoFiscalize };
     cancelPayment();
     const data = await update("order.pay", command);
+    if (data?.result.partial) {
+      notify(`${tableLabel(command)}pagesa e pjesshme u regjistrua · mbeten ${money(data.result.remaining)}.`);
+      return;
+    }
     if (data) {
       const invoice = data.state.invoices.find(
         (i) => i.id === data.result.invoiceId,
       );
       setReceipt(invoice);
-      setSelected(null);
+      // A split by items leaves the rest of the bill on the table.
+      if (!data.result.remaining) setSelected(null);
+      const cashierPrinter = printerFor(data.state.printers, invoicePos(data.state, invoice));
       notify(
-        `Pagesa u regjistrua. Fatura D-${invoice.id} · ${money(invoice.total)}` +
+        `${tableLabel(command)}pagesa u regjistrua. Fatura D-${invoice.id} · ${money(invoice.total)}` +
+          (data.result.remaining ? ` · në tavolinë mbeten ${money(data.result.remaining)}` : "") +
+          (data.result.sentTickets?.length
+            ? ` · artikujt e padërguar shkuan te ${data.result.sentTickets.map((k) => k.department).join(", ")}`
+            : "") +
           (cashierPrinter ? ` · po printohet te ${cashierPrinter.name}` : ""),
       );
       // The full invoice prints on its own. With a cashier network printer the server
@@ -598,7 +656,7 @@ function App({ user, onLogout, onUserChange }) {
       return notify("Vendosni një emër dhe një çmim të vlefshëm.", "error");
     // Without a department the product's tickets can't reach any station.
     if (state.departments.length && !form.get("department"))
-      return notify("Zgjidhni kategorinë: ku përgatitet produkti (bar, kuzhinë…).", "error");
+      return notify("Zgjidhni repartin e përgatitjes: ku përgatitet produkti (bar, kuzhinë…).", "error");
     if (
       state.products.some(
         (p) =>
@@ -615,6 +673,15 @@ function App({ user, onLogout, onUserChange }) {
           price,
           category: form.get("category"),
           department: form.get("department") || undefined,
+          // "Qumësht soje +50" → {name, price: 50}; no "+N" means no extra charge.
+          extras: String(form.get("extras") || "")
+            .split("\n")
+            .map((row) => row.trim())
+            .filter(Boolean)
+            .map((row) => {
+              const m = row.match(/^(.*?)\s*\+\s*(\d+)\s*(lek)?$/i);
+              return m ? { name: m[1].trim(), price: Number(m[2]) } : { name: row, price: 0 };
+            }),
         },
         editor.id
           ? "Produkti u përditësua. Porositë ekzistuese ruajnë çmimin e tyre."
@@ -625,6 +692,7 @@ function App({ user, onLogout, onUserChange }) {
   }
   // The shift report goes to the cashier's network printer when there is one.
   const printShiftReport = async (r) => {
+    const cashierPrinter = printerFor(state.printers, r.shift.posId);
     if (!cashierPrinter) return printFitted();
     try {
       await reprintDocument("shift", r.shift.id);
@@ -766,17 +834,15 @@ function App({ user, onLogout, onUserChange }) {
               </div>
             </div>
           )}
-          <div className="sidebar-note">
-            <Icon name="info" size={18} />
-            <p>
-              {database.provider}
-              <small>
-                {database.error
-                  ? "Lidhja kërkon kontroll."
-                  : "Të dhënat ruhen në databazë."}
-              </small>
-            </p>
-          </div>
+          {database.error && (
+            <div className="sidebar-note">
+              <Icon name="info" size={18} />
+              <p>
+                Pa lidhje me serverin
+                <small>Ndryshimet nuk ruhen derisa të kthehet lidhja.</small>
+              </p>
+            </div>
+          )}
           <div className="sidebar-bottom">
             <span className="avatar">{user.name[0]}</span>
             <div>
@@ -806,9 +872,11 @@ function App({ user, onLogout, onUserChange }) {
                   Pa internet
                 </span>
               )}
-              <span className={`shift-status ${state.shift ? "" : "closed"}`}>
+              <span className={`shift-status ${closedTills.length < tills.length ? "" : "closed"}`}>
                 <span className="dot" />
-                {state.shift ? "Turn i hapur" : "Turn i mbyllur"}
+                {tills.length > 1
+                  ? `${tills.length - closedTills.length}/${tills.length} kasa hapur`
+                  : closedTills.length < tills.length ? "Turn i hapur" : "Turn i mbyllur"}
               </span>
               <span className="role">
                 <span>{user.name}</span>
@@ -816,16 +884,19 @@ function App({ user, onLogout, onUserChange }) {
               </span>
             </div>
           </header>
-          <div className="demo">
-            <Icon name="info" size={15} />
-            <span>
-              {user.venue?.name || "BlueBar"} ·{" "}
-              {state.fiscal?.enabled
-                ? `Fiskalizim aktiv${state.fiscal.mode === "test" ? " (test)" : ""}.`
-                : "Pa fiskalizim."}
-            </span>
-            <Badge>{database.error ? "PA LIDHJE" : "DATABASE"}</Badge>
-          </div>
+          {/* Operational screens stay clean: this bar appears only when something needs
+              attention — no connection, or fiscalization in test mode (not real invoices). */}
+          {(database.error || (role === "Menaxher" && state.fiscal?.enabled && state.fiscal.mode === "test")) && (
+            <div className="demo">
+              <Icon name="info" size={15} />
+              <span>
+                {database.error
+                  ? "Pa lidhje me serverin: porositë dhe pagesat nuk ruhen derisa të kthehet lidhja."
+                  : "Fiskalizimi është në mënyrën test: faturat nuk dërgohen realisht te tatimet."}
+              </span>
+              <Badge>{database.error ? "PA LIDHJE" : "TEST"}</Badge>
+            </div>
+          )}
           <main id="main">
             <fieldset className="workspace-controls" disabled={database.busy} aria-busy={database.busy} aria-label="Hapësira e punës">
             <div className="title-row">
@@ -927,8 +998,8 @@ function App({ user, onLogout, onUserChange }) {
                       Printo faturën
                     </button>
                   )}
-                {notice.tickets?.some((k) => !networked.includes(k.department)) && (
-                    <button onClick={() => printTickets(notice.tickets.filter((k) => !networked.includes(k.department)))}>
+                {notice.tickets?.some((k) => !networked(k)) && (
+                    <button onClick={() => printTickets(notice.tickets.filter((k) => !networked(k)))}>
                       <Icon name="print" size={16} />
                       Printo fletët
                     </button>
@@ -1298,11 +1369,13 @@ function App({ user, onLogout, onUserChange }) {
                 </div>
               ) : (
                 <>
-                {!state.shift && (
+                {closedTills.length > 0 && (
                   <div className="notice warning">
                     <Icon name="clock" />
                     <span>
-                      Turni është i mbyllur. Hapni një turn për të marrë porosi.
+                      {closedTills.length === tills.length
+                        ? "Turni është i mbyllur. Hapni një turn për të marrë porosi."
+                        : `Turni është i mbyllur te ${closedTills.map((k) => k.name).join(", ")}: tavolinat e saj nuk marrin porosi.`}
                     </span>
                     {role === "Menaxher" && (
                       <button onClick={() => nav("Turnet")}>
@@ -1325,7 +1398,7 @@ function App({ user, onLogout, onUserChange }) {
                     <span>Totali i porosive të hapura</span>
                     <strong>
                       {money(
-                        activeTables.reduce((s, t) => s + total(t.lines), 0),
+                        activeTables.reduce((s, t) => s + bill(t).remaining, 0),
                       )}
                     </strong>
                   </div>
@@ -1501,8 +1574,9 @@ function App({ user, onLogout, onUserChange }) {
             {page === "Repartet" && (
               <Stations
                 state={state}
-                stationDepartments={stationDepartments}
-                onToggleStation={toggleStation}
+                device={stationDevice}
+                update={update}
+                tillOf={tillOf}
                 onPrint={reprintTickets}
                 time={time}
               />
@@ -1530,7 +1604,7 @@ function App({ user, onLogout, onUserChange }) {
                     />
                     <ChoiceField
                       label="Mënyra e pagesës"
-                      options={["Të gjitha", "Cash", "Kartë"].map((item) => ({ value: item, label: item }))}
+                      options={["Të gjitha", "Cash", "Kartë", "Përzier"].map((item) => ({ value: item, label: item }))}
                       value={paymentFilter}
                       onChange={setPaymentFilter}
                     />
@@ -1695,6 +1769,14 @@ function App({ user, onLogout, onUserChange }) {
                         <Icon name="print" size={18} />
                         Printo
                       </button>
+                      {role === "Menaxher" && (
+                        <RefundForm
+                          key={receipt.id}
+                          invoice={receipt}
+                          update={update}
+                          onDone={(data) => setReceipt(data.state.invoices.find((i) => i.id === receipt.id))}
+                        />
+                      )}
                       <button
                         className="text-button full-width"
                         onClick={() => (setReceipt(null), setFiscalizeChoice(false))}
@@ -1715,6 +1797,12 @@ function App({ user, onLogout, onUserChange }) {
                     <p className="helper">
                       Fatura printohet e plotë, në gjatësinë e vet. Kjo pajisje e mban mend letrën.
                     </p>
+                    {role === "Menaxher" && (
+                      <details className="invoice-history">
+                        <summary>Historiku i porosisë</summary>
+                        <OrderHistory invoiceId={receipt.id} />
+                      </details>
+                    )}
                   </aside>
                 )}
               </div>
@@ -1734,7 +1822,7 @@ function App({ user, onLogout, onUserChange }) {
                   <div className="toolbar">
                     <Search
                       label="Kërko në inventar"
-                      placeholder="Kërko produkt ose nënkategori…"
+                      placeholder="Kërko produkt ose kategori menuje…"
                       value={query}
                       onChange={setQuery}
                     />
@@ -1756,36 +1844,28 @@ function App({ user, onLogout, onUserChange }) {
                         <thead>
                           <tr>
                             <th>Produkti</th>
-                            <th>Nënkategoria</th>
                             <th>Gjendja</th>
                             <th>E disponueshme</th>
+                            <th>Pragu minimal</th>
                             <th>Hyrje stoku</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredStock.map((p) => (
-                            <tr key={p.id}>
+                            <React.Fragment key={p.id}>
+                            <tr>
                               <td data-label="Produkti">
                                 <strong>{p.name}</strong>
+                                <small>
+                                  {p.category}
+                                  {p.available === false && " · "}
+                                  {p.available === false && <b className="unavailable-mark">Jo në dispozicion</b>}
+                                </small>
                               </td>
-                              <td data-label="Nënkategoria">{p.category}</td>
                               <td data-label="Gjendja">
-                                <Badge
-                                  tone={
-                                    p.stock === 0
-                                      ? "red"
-                                      : p.stock <= 10
-                                        ? "amber"
-                                        : "green"
-                                  }
-                                >
+                                <Badge tone={p.stock === 0 ? "red" : isLow(p) ? "amber" : "green"}>
                                   {p.stock} copë
-                                  {p.stock <= 10
-                                    ? " · " +
-                                      (p.stock === 0
-                                        ? "Pa stok"
-                                        : "Stok i ulët")
-                                    : ""}
+                                  {isLow(p) ? ` · ${p.stock === 0 ? "Pa stok" : "Stok i ulët"}` : ""}
                                 </Badge>
                               </td>
                               <td data-label="E disponueshme">
@@ -1793,6 +1873,24 @@ function App({ user, onLogout, onUserChange }) {
                                 <small>
                                   {p.stock - available(p)} të rezervuara
                                 </small>
+                              </td>
+                              <td data-label="Pragu minimal">
+                                <span className="min-stock-label" aria-hidden="true">Pragu minimal</span>
+                                <input
+                                  className="min-stock"
+                                  aria-label={`Pragu minimal për ${p.name}`}
+                                  type="number"
+                                  min="0"
+                                  max="100000"
+                                  defaultValue={p.minStock ?? 10}
+                                  key={p.minStock}
+                                  onBlur={(e) => {
+                                    const value = Number(e.target.value);
+                                    if (Number.isSafeInteger(value) && value >= 0 && value !== (p.minStock ?? 10))
+                                      update("product.stockRules", { productId: p.id, minStock: value }, `Pragu i ${p.name}: ${value} copë.`);
+                                  }}
+                                  onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                                />
                               </td>
                               <td
                                 className="stock-entry"
@@ -1836,6 +1934,7 @@ function App({ user, onLogout, onUserChange }) {
                                 </form>
                               </td>
                             </tr>
+                            </React.Fragment>
                           ))}
                         </tbody>
                       </table>
@@ -1862,7 +1961,7 @@ function App({ user, onLogout, onUserChange }) {
                 <section className="panel">
                   <SectionHeading
                     title="Lëvizjet e fundit"
-                    description="Hyrjet manuale dhe daljet nga shitjet"
+                    description="Hyrjet, shitjet, korrigjimet dhe humbjet, me arsye dhe person"
                   />
                   <div className="movement-list">
                     {state.movements.length ? (
@@ -1881,7 +1980,11 @@ function App({ user, onLogout, onUserChange }) {
                             </span>
                             <div>
                               <strong>{m.product}</strong>
-                              <small>{m.reason}</small>
+                              <small>
+                                {m.kind === "loss" ? "Humbje · " : ""}
+                                {m.reason}
+                                {m.actor ? ` · ${m.actor}` : ""}
+                              </small>
                             </div>
                             <span className="movement-date">
                               {m.date
@@ -1910,34 +2013,37 @@ function App({ user, onLogout, onUserChange }) {
                 <section className="panel">
                   <SectionHeading
                     title="Menuja e lokalit"
-                    description={`${state.products.length} produkte · ${state.departments.length} kategori`}
+                    description={`${state.products.length} produkte · ${state.departments.length} reparte`}
                   />
-                  <div className="toolbar">
+                  <div className="toolbar toolbar-stack">
                     <Search
                       label="Kërko në menu"
                       placeholder="Kërko një produkt…"
                       value={query}
                       onChange={setQuery}
                     />
-                    <ChoiceField
-                      label="Kategoria"
-                      options={["Të gjitha", ...state.departments, "Pa kategori"].map((item) => ({ value: item, label: item }))}
-                      value={deptFilter}
-                      onChange={setDeptFilter}
-                    />
-                    <ChoiceField
-                      label="Nënkategoria"
-                      options={["Të gjitha", ...state.categories].map((item) => ({ value: item, label: item }))}
-                      value={category}
-                      onChange={setCategory}
-                    />
+                    {/* Two filters side by side: same width, labels on the same line. */}
+                    <div className="toolbar-filters">
+                      <ChoiceField
+                        label="Reparti i përgatitjes"
+                        options={["Të gjitha", ...state.departments, "Pa repart"].map((item) => ({ value: item, label: item }))}
+                        value={deptFilter}
+                        onChange={setDeptFilter}
+                      />
+                      <ChoiceField
+                        label="Kategoria e menusë"
+                        options={["Të gjitha", ...state.categories].map((item) => ({ value: item, label: item }))}
+                        value={category}
+                        onChange={setCategory}
+                      />
+                    </div>
                   </div>
-                  {unrouted > 0 && deptFilter !== "Pa kategori" && (
+                  {unrouted > 0 && deptFilter !== "Pa repart" && (
                     <div className="notice warning">
                       <span>
-                        {unrouted} {unrouted === 1 ? "produkt nuk ka" : "produkte nuk kanë"} kategori. Kur porositen, fleta e tyre nuk del në asnjë printer.
+                        {unrouted} {unrouted === 1 ? "produkt nuk ka" : "produkte nuk kanë"} repart përgatitjeje. Kur porositen, fleta e tyre nuk del në asnjë printer.
                       </span>
-                      <button onClick={() => setDeptFilter("Pa kategori")}>Shfaqi</button>
+                      <button onClick={() => setDeptFilter("Pa repart")}>Shfaqi</button>
                     </div>
                   )}
                   {menuProducts.length ? (
@@ -1946,8 +2052,8 @@ function App({ user, onLogout, onUserChange }) {
                         <thead>
                           <tr>
                             <th>Produkti</th>
-                            <th>Kategoria</th>
-                            <th>Nënkategoria</th>
+                            <th>Reparti</th>
+                            <th>Kategoria e menusë</th>
                             <th className="numeric">Çmimi</th>
                             <th>
                               <span className="sr-only">Veprimet</span>
@@ -1961,15 +2067,16 @@ function App({ user, onLogout, onUserChange }) {
                                 <strong>{p.name}</strong>
                                 <small>{p.stock} copë në stok</small>
                               </td>
-                              <td data-label="Kategoria">
+                              <td data-label="Reparti i përgatitjes">
                                 {p.department ? (
                                   <DepartmentTag name={p.department} />
                                 ) : (
-                                  <small className="warning-text">Pa kategori</small>
+                                  <small className="warning-text">Pa repart</small>
                                 )}
                               </td>
-                              <td data-label="Nënkategoria">
-                                <Badge>{p.category}</Badge>
+                              <td data-label="Kategoria e menusë">
+                                {/* Same pill as the department next to it: same size, same line. */}
+                                <span className="dept-tag neutral">{p.category}</span>
                               </td>
                               <td data-label="Çmimi" className="numeric">
                                 <strong>{money(p.price)}</strong>
@@ -2004,7 +2111,7 @@ function App({ user, onLogout, onUserChange }) {
                         </button>
                       }
                     >
-                      {state.products.length ? "Provoni një emër tjetër ose ndryshoni filtrat." : "Krijoni kategoritë dhe nënkategoritë anash, pastaj shtoni produktet dhe çmimet."}
+                      {state.products.length ? "Provoni një emër tjetër ose ndryshoni filtrat." : "Krijoni repartet dhe kategoritë e menusë anash, pastaj shtoni produktet dhe çmimet."}
                     </Empty>
                   )}
                 </section>
@@ -2037,16 +2144,16 @@ function App({ user, onLogout, onUserChange }) {
                           autoFocus
                         />
                         <ChoiceField
-                          label="Kategoria"
+                          label="Reparti i përgatitjes"
                           name="department"
                           defaultValue={editor.department || ""}
                           options={[
-                            { value: "", label: state.departments.length ? "— Zgjidhni kategorinë —" : "— Asnjë —" },
+                            { value: "", label: state.departments.length ? "— Zgjidhni repartin —" : "— Asnjë —" },
                             ...state.departments.map((item) => ({ value: item, label: item })),
                           ]}
                         />
                         <ChoiceField
-                          label="Nënkategoria"
+                          label="Kategoria e menusë"
                           name="category"
                           defaultValue={editor.category || state.categories[0]}
                           options={state.categories.map((item) => ({ value: item, label: item }))}
@@ -2062,6 +2169,15 @@ function App({ user, onLogout, onUserChange }) {
                           placeholder="0"
                           required
                         />
+                        <label className="field">
+                          <span>Variante dhe shtesa (një për rresht)</span>
+                          <textarea
+                            name="extras"
+                            rows={3}
+                            defaultValue={(editor.extras || []).map((x) => `${x.name}${x.price ? ` +${x.price}` : ""}`).join("\n")}
+                            placeholder={"Qumësht soje +50\nPa sheqer\nE madhe +100"}
+                          />
+                        </label>
                         <p className="helper">
                           {editor.id
                             ? "Çmimi i ri zbatohet për produktet e shtuara në porosi të reja."
@@ -2075,8 +2191,8 @@ function App({ user, onLogout, onUserChange }) {
                   )}
                   <section className="panel">
                     <SectionHeading
-                      title="Kategoritë"
-                      description="Ku përgatitet porosia: bar, kuzhinë, ëmbëltore. Çdo kategori mund të ketë printerin e vet."
+                      title="Repartet e përgatitjes"
+                      description="Ku përgatitet porosia: bar, kuzhinë, ëmbëltore. Çdo repart mund të ketë printerin e vet."
                     />
                     <div className="category-list">
                       {state.departments.map((d) => (
@@ -2097,25 +2213,25 @@ function App({ user, onLogout, onUserChange }) {
                           .get("department")
                           .trim();
                         if (!name)
-                          return notify("Vendosni emrin e kategorisë.", "error");
+                          return notify("Vendosni emrin e repartit.", "error");
                         if (
                           state.departments.some(
                             (d) => d.toLowerCase() === name.toLowerCase(),
                           )
                         )
-                          return notify("Kjo kategori ekziston tashmë.", "error");
+                          return notify("Ky repart ekziston tashmë.", "error");
                         if (
                           await update(
                             "department.create",
                             { name },
-                            "Kategoria u shtua.",
+                            "Reparti u shtua.",
                           )
                         )
                           formElement.reset();
                       }}
                     >
                       <Field
-                        label="Kategori e re"
+                        label="Repart i ri"
                         name="department"
                         placeholder="p.sh. Grill"
                         maxLength={40}
@@ -2123,13 +2239,13 @@ function App({ user, onLogout, onUserChange }) {
                       />
                       <button>
                         <Icon name="plus" size={16} />
-                        Shto kategori
+                        Shto repart
                       </button>
                     </form>
                   </section>
                   <section className="panel">
                     <SectionHeading
-                      title="Nënkategoritë"
+                      title="Kategoritë e menusë"
                       description="Grupet e menusë që sheh kamarieri: kafe, pije, birra…"
                     />
                     <div className="category-list">
@@ -2161,7 +2277,7 @@ function App({ user, onLogout, onUserChange }) {
                           .trim();
                         if (!name)
                           return notify(
-                            "Vendosni emrin e nënkategorisë.",
+                            "Vendosni emrin e kategorisë së menusë.",
                             "error",
                           );
                         if (
@@ -2170,21 +2286,21 @@ function App({ user, onLogout, onUserChange }) {
                           )
                         )
                           return notify(
-                            "Kjo nënkategori ekziston tashmë.",
+                            "Kjo kategori menuje ekziston tashmë.",
                             "error",
                           );
                         if (
                           await update(
                             "category.create",
                             { name },
-                            "Nënkategoria u shtua.",
+                            "Kategoria e menusë u shtua.",
                           )
                         )
                           formElement.reset();
                       }}
                     >
                       <Field
-                        label="Nënkategori e re"
+                        label="Kategori e re e menusë"
                         name="category"
                         placeholder="p.sh. Kokteje"
                         maxLength={40}
@@ -2192,7 +2308,7 @@ function App({ user, onLogout, onUserChange }) {
                       />
                       <button>
                         <Icon name="plus" size={16} />
-                        Shto nënkategori
+                        Shto kategori menuje
                       </button>
                     </form>
                   </section>
@@ -2228,110 +2344,93 @@ function App({ user, onLogout, onUserChange }) {
                         return (
                           <div className="staff-row" key={w.id}>
                             <div className="staff-person">
-                              <span
-                                className={`avatar ${w.active ? "" : "inactive"}`}
-                              >
-                                {w.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .slice(0, 2)
-                                  .join("")}
+                              <span className={`avatar ${w.active ? "" : "inactive"}`}>
+                                {w.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
                               </span>
                               <div>
                                 <strong>{w.name}</strong>
                                 <small>
-                                  {w.hasPin && w.hasPattern ? "Kamarier · PIN dhe pattern"
-                                    : w.hasPin ? "Kamarier · Hyn me PIN"
-                                    : w.hasPattern ? "Kamarier · Hyn me pattern"
-                                    : "Kamarier · Pa hyrje"}
+                                  {w.hasPin && w.hasPattern ? "PIN dhe pattern"
+                                    : w.hasPin ? "Hyn me PIN"
+                                    : w.hasPattern ? "Hyn me pattern"
+                                    : "Pa hyrje"}
+                                  {" · "}
+                                  {assigned.length
+                                    ? `${assigned.length} tavolina · ${money(assigned.reduce((s, t) => s + bill(t).remaining, 0))}`
+                                    : "Pa porosi të hapura"}
                                 </small>
+                                <div className="staff-status">
+                              <Badge tone={w.active ? "green" : ""}>{w.active ? "Aktiv" : "Joaktiv"}</Badge>
+                              {state.pointsOfSale.length > 1 && (
+                                <div className="staff-pos">
+                                  <ChoiceField
+                                    compact
+                                    label="Kasa"
+                                    value={String(w.posId ?? "")}
+                                    options={[
+                                      { value: "", label: "Të gjitha" },
+                                      ...state.pointsOfSale.map((k) => ({ value: String(k.id), label: k.name })),
+                                    ]}
+                                    onChange={(v) =>
+                                      update("waiter.pos", { waiterId: w.id, posId: v ? Number(v) : null }, "Kasa e kamarierit u ruajt.")
+                                    }
+                                  />
+                                </div>
+                              )}
+                            </div>
                               </div>
                             </div>
-                            <div className="staff-work">
-                              <Badge tone={w.active ? "green" : ""}>
-                                {w.active ? "Aktiv" : "Joaktiv"}
-                              </Badge>
-                              <small>
-                                {assigned.length
-                                  ? `${assigned.length} tavolina · ${money(assigned.reduce((s, t) => s + total(t.lines), 0))}`
-                                  : "Pa porosi të hapura"}
-                              </small>
-                            </div>
-                            <div className="staff-action">
+                            {/* Same size, same row: every action of the profile. */}
+                            <div className="staff-buttons">
+                              <button type="button" onClick={() => { setPatternFor(null); setPinFor(pinFor === w.id ? null : w.id); }}>
+                                {w.hasPin ? "Ndrysho PIN" : "Vendos PIN"}
+                              </button>
+                              <button type="button" onClick={() => { setPinFor(null); setPatternFor(patternFor === w.id ? null : w.id); }}>
+                                {w.hasPattern ? "Ndrysho pattern" : "Vendos pattern"}
+                              </button>
                               <button
+                                type="button"
                                 disabled={assigned.length > 0 || last}
-                                aria-describedby={`waiter-help-${w.id}`}
+                                title={assigned.length ? "Ka porosi të hapura" : last ? "Duhet të paktën një profil aktiv" : undefined}
                                 onClick={() => {
-                                  if (waiter === w.id)
-                                    setWaiter(
-                                      state.waiters.find(
-                                        (x) => x.active && x.id !== w.id,
-                                      )?.id || w.id,
-                                    );
-                                  update(
-                                    "waiter.toggle",
-                                    { waiterId: w.id },
-                                    w.active
-                                      ? "Profili u çaktivizua."
-                                      : "Profili u aktivizua.",
-                                  );
+                                  if (waiter === w.id) setWaiter(state.waiters.find((x) => x.active && x.id !== w.id)?.id || w.id);
+                                  update("waiter.toggle", { waiterId: w.id }, w.active ? "Profili u çaktivizua." : "Profili u aktivizua.");
                                 }}
                               >
                                 {w.active ? "Çaktivizo" : "Aktivizo"}
                               </button>
-                              <small id={`waiter-help-${w.id}`}>
-                                {assigned.length
-                                  ? "Ka porosi të hapura"
-                                  : last
-                                    ? "Të paktën një profil aktiv"
-                                    : ""}
-                              </small>
                             </div>
-                            <div className="staff-pin">
-                              {pinFor === w.id ? (
-                                <form
-                                  className="inline-form"
-                                  onSubmit={async (e) => {
-                                    e.preventDefault();
-                                    try {
-                                      await setWaiterPin(
-                                        w.id,
-                                        new FormData(e.currentTarget).get("pin"),
-                                      );
-                                      await database.refresh();
-                                      setPinFor(null);
-                                      notify("PIN-i u ruajt.");
-                                    } catch (err) {
-                                      notify(err.message, "error");
-                                    }
-                                  }}
-                                >
-                                  <input
-                                    name="pin"
-                                    aria-label={`PIN i ri për ${w.name}`}
-                                    type="password"
-                                    inputMode="numeric"
-                                    pattern="[0-9]{6}"
-                                    maxLength={6}
-                                    placeholder="6 shifra"
-                                    autoComplete="off"
-                                    required
-                                    autoFocus
-                                  />
-                                  <button className="primary">Ruaj</button>
-                                  <button type="button" onClick={() => setPinFor(null)}>
-                                    Anulo
-                                  </button>
-                                </form>
-                              ) : (
-                                <button onClick={() => { setPatternFor(null); setPinFor(w.id); }}>
-                                  {w.hasPin ? "Ndrysho PIN" : "Vendos PIN"}
-                                </button>
-                              )}
-                              <button type="button" onClick={() => { setPinFor(null); setPatternFor(patternFor === w.id ? null : w.id); }}>
-                                {w.hasPattern ? "Ndrysho pattern" : "Vendos pattern"}
-                              </button>
-                            </div>
+                            {pinFor === w.id && (
+                              <form
+                                className="inline-form staff-pin-form"
+                                onSubmit={async (e) => {
+                                  e.preventDefault();
+                                  try {
+                                    await setWaiterPin(w.id, new FormData(e.currentTarget).get("pin"));
+                                    await database.refresh();
+                                    setPinFor(null);
+                                    notify("PIN-i u ruajt.");
+                                  } catch (err) {
+                                    notify(err.message, "error");
+                                  }
+                                }}
+                              >
+                                <input
+                                  name="pin"
+                                  aria-label={`PIN i ri për ${w.name}`}
+                                  type="password"
+                                  inputMode="numeric"
+                                  pattern="[0-9]{6}"
+                                  maxLength={6}
+                                  placeholder="PIN i ri · 6 shifra"
+                                  autoComplete="off"
+                                  required
+                                  autoFocus
+                                />
+                                <button className="primary">Ruaj</button>
+                                <button type="button" onClick={() => setPinFor(null)}>Anulo</button>
+                              </form>
+                            )}
                             {patternFor === w.id && <WaiterPatternEditor key={w.id} waiter={w} onCancel={() => setPatternFor(null)} onSaved={async () => { await database.refresh(); setPatternFor(null); notify("Pattern-i u ruajt."); }} />}
                           </div>
                         );
@@ -2424,18 +2523,55 @@ function App({ user, onLogout, onUserChange }) {
             )}
             {page === "Raportet" && <Reports state={state} />}
             {page === "Cilësimet" && (
-              <div className="settings-grid">
-                <div className="settings-column">
-                  <Fiscalization onChange={() => database.refresh()} />
-                  <BusinessNetwork venue={user.venue} />
-                  <LoginModeSettings venue={user.venue} waiters={state.waiters} />
-                  <ManagerLoginSettings venue={user.venue} name={user.name} />
-                  <AccountSettings name={user.name} onChange={onUserChange} />
-                </div>
-                <div className="settings-column">
-                  <NetworkPrinters state={state} update={update} notify={notify} />
-                </div>
+              <>
+              <ConfigCheck state={state} />
+              {/* One topic at a time instead of ten panels on one page. */}
+              <div className="tabs settings-tabs" role="tablist" aria-label="Cilësimet">
+                {SETTINGS_TABS.map((t) => (
+                  <button key={t} role="tab" aria-selected={settingsTab === t} aria-pressed={settingsTab === t} onClick={() => setSettingsTab(t)}>
+                    {t}
+                  </button>
+                ))}
               </div>
+              <div className="settings-grid">
+                {settingsTab === "Printerët" && (
+                  <div className="settings-column settings-wide">
+                    <NetworkPrinters state={state} update={update} notify={notify} />
+                  </div>
+                )}
+                {settingsTab === "Stafi dhe hyrja" && (
+                  <>
+                    <div className="settings-column">
+                      <LoginModeSettings venue={user.venue} waiters={state.waiters} />
+                      <ManagerLoginSettings venue={user.venue} name={user.name} />
+                    </div>
+                    <div className="settings-column">
+                      <BusinessNetwork venue={user.venue} />
+                    </div>
+                  </>
+                )}
+                {settingsTab === "Kasat dhe stacionet" && (
+                  <>
+                    <div className="settings-column">
+                      <PointsOfSale state={state} update={update} />
+                    </div>
+                    <div className="settings-column">
+                      <StationSetup state={state} update={update} />
+                    </div>
+                  </>
+                )}
+                {settingsTab === "Fiskalizimi" && (
+                  <div className="settings-column settings-wide">
+                    <Fiscalization onChange={() => database.refresh()} />
+                  </div>
+                )}
+                {settingsTab === "Llogaria ime" && (
+                  <div className="settings-column settings-wide">
+                    <AccountSettings name={user.name} onChange={onUserChange} />
+                  </div>
+                )}
+              </div>
+              </>
             )}
           </fieldset>
           </main>
@@ -2456,132 +2592,14 @@ function App({ user, onLogout, onUserChange }) {
         aria-labelledby="payment-title"
       >
         {payment && table && (
-          <form onSubmit={pay}>
-            <div className="dialog-heading">
-              <span className="dialog-icon">
-                <Icon name={payment === "Cash" ? "cash" : "card"} size={25} />
-              </span>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={cancelPayment}
-                aria-label="Anulo pagesën"
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-            <h2 id="payment-title">Paguaj</h2>
-            <p>
-              Tavolina {String(table.id).padStart(2, "0")} · Zgjidhni mënyrën e pagesës
-            </p>
-            <div className="payment-amount">
-              <span>Për t’u paguar</span>
-              {payment === "Cash" ? (
-                <button
-                  type="button"
-                  className="payment-amount-fill"
-                  onClick={() => setReceived(String(total(table.lines)))}
-                  aria-label={`Vendos shumën e saktë, ${money(total(table.lines))}`}
-                >
-                  {money(total(table.lines))}
-                </button>
-              ) : (
-                <strong>{money(total(table.lines))}</strong>
-              )}
-            </div>
-            <div className="payment-methods" role="group" aria-label="Mënyra e pagesës">
-              <button type="button" aria-pressed={payment === "Cash"} onClick={() => setPayment("Cash")}><Icon name="cash" size={18} /> Cash</button>
-              <button type="button" aria-pressed={payment === "Kartë"} onClick={() => setPayment("Kartë")}><Icon name="card" size={18} /> Kartë</button>
-            </div>
-            {payment === "Cash" ? (
-              <>
-                <Field
-                  label="Shuma e marrë (Lek)"
-                  name="received"
-                  type="number"
-                  inputMode="numeric"
-                  min={total(table.lines)}
-                  max="100000000"
-                  step="1"
-                  required
-                  value={received}
-                  onChange={(e) => setReceived(e.target.value)}
-                  placeholder={String(total(table.lines))}
-                />
-                <div className="cash-quick" role="group" aria-label="Shuma të shpejta">
-                  {quickCash(total(table.lines)).map((v) => (
-                    <button
-                      type="button"
-                      key={v}
-                      aria-pressed={Number(received) === v}
-                      onClick={() => setReceived(String(v))}
-                    >
-                      {v === total(table.lines) ? "Saktë" : amount(v)}
-                    </button>
-                  ))}
-                </div>
-                <div className="cash-keypad" role="group" aria-label="Shuma e marrë">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"].map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      disabled={key === "clear" || key === "back" ? !received : false}
-                      aria-label={key === "clear" ? "Pastro shumën" : key === "back" ? "Fshi shifrën e fundit" : `Shifra ${key}`}
-                      onClick={() => pressReceivedKey(key)}
-                    >
-                      {key === "clear" ? "Pastro" : key === "back" ? <Icon name="backspace" size={20} /> : key}
-                    </button>
-                  ))}
-                </div>
-                <div className="change-due">
-                  <span>Kusuri</span>
-                  <strong>
-                    {money(Math.max(0, Number(received) - total(table.lines)))}
-                  </strong>
-                </div>
-              </>
-            ) : payment === "Kartë" ? (
-              <div className="info-note">
-                <Icon name="info" size={18} />
-                <p>
-                  Konfirmoni vetëm pasi pagesa të jetë kryer në terminalin e
-                  kartës.
-                </p>
-              </div>
-            ) : null}
-            <p className="helper">Pagesa mbyll porosinë dhe liron tavolinën. Pas konfirmimit mund të printoni faturën.</p>
-            <div className="dialog-actions">
-              <button type="button" onClick={cancelPayment}>
-                Kthehu
-              </button>
-              <button
-                value="skip-fiscalize"
-                className={state.fiscal?.enabled ? undefined : "primary"}
-                disabled={
-                  payment === "Zgjidh" ||
-                  (payment === "Cash" &&
-                    (received === "" || Number(received) < total(table.lines)))
-                }
-              >
-                <Icon name="check" size={17} />
-                Konfirmo
-              </button>
-              {state.fiscal?.enabled && (
-                <button
-                  className="primary"
-                  value="fiscalize"
-                  disabled={
-                    payment === "Zgjidh" ||
-                    (payment === "Cash" &&
-                      (received === "" || Number(received) < total(table.lines)))
-                  }
-                >
-                  <Icon name="check" size={17} />
-                  Konfirmo dhe fiskalizo
-                </button>
-              )}
-            </div>
-          </form>
+          <PaymentForm
+            key={`${table.id}-${payment}`}
+            table={table}
+            initialMethod={payment}
+            fiscalEnabled={Boolean(state.fiscal?.enabled)}
+            onCancel={cancelPayment}
+            onSubmit={pay}
+          />
         )}
       </dialog>
       {ticketPrint &&
@@ -2652,4 +2670,7 @@ function Root() {
     );
   return user ? <App user={user} onLogout={leave} onUserChange={(u) => setUser((prev) => ({ ...prev, ...u }))} /> : <Login onSignedIn={enter} />;
 }
-if (launch()) createRoot(document.getElementById("root")).render(<Root />);
+// "/" with no business chosen is the public landing page; ?hyr / ?regjistro open the
+// business-code and registration screens; ?business=… is a venue.
+const onLanding = !["business", "source", "hyr", "regjistro"].some((k) => new URLSearchParams(window.location.search).has(k));
+if (launch()) createRoot(document.getElementById("root")).render(onLanding ? <Landing /> : <Root />);

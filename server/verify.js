@@ -11,7 +11,7 @@ export async function verifyEmptyDatabase(pool) {
   assert.equal(data.state.products.length, 0);
   assert.equal(data.state.waiters.length, 0);
   assert.equal(data.state.tables.length, 12);
-  assert.equal(data.state.shift, null);
+  assert.deepEqual(data.state.openShifts, []);
   const send = async (type, payload) => {
     const cmd = { id: randomUUID(), version: data.version, type, payload };
     data = await execute(pool, cmd);

@@ -72,11 +72,19 @@ export async function agentStatus(db) {
        WHERE printed_at IS NULL AND created_at > now() - interval '${MAX_AGE}'`,
     )
   ).rows[0].n;
+  // Printers whose latest job keeps failing (paper out, unplugged, wrong IP).
+  const failing = (
+    await db.query(
+      `SELECT DISTINCT ON (printer_id) printer_id, error FROM bluebar.print_jobs
+       WHERE created_at > now() - interval '${MAX_AGE}' ORDER BY printer_id, created_at DESC`,
+    )
+  ).rows.filter((r) => r.error).map((r) => r.printer_id);
   return {
     configured: Boolean(row),
     lastSeen: row?.last_seen ? new Date(row.last_seen).toISOString() : null,
     usbPrinters: row?.usb_printers ?? [],
     pending,
+    failing,
   };
 }
 
@@ -97,13 +105,40 @@ export async function enqueueTest(db, printerId) {
 export async function enqueueReprint(db, kind, ref) {
   let printer;
   if (kind === "invoice" || kind === "shift") {
-    printer = (await db.query("SELECT id FROM bluebar.printers WHERE receipts LIMIT 1")).rows[0];
+    // The till's own receipt printer, else one not tied to any till.
+    const id = Number(ref);
+    const shiftId = !Number.isSafeInteger(id)
+      ? null
+      : kind === "shift" ? id : (await db.query("SELECT shift_id FROM bluebar.invoices WHERE id = $1", [id])).rows[0]?.shift_id;
+    printer = (
+      await db.query(
+        `SELECT p.id FROM bluebar.printers p LEFT JOIN bluebar.shifts s ON s.id = $1
+         WHERE p.receipts AND (p.pos_id = s.pos_id OR p.pos_id IS NULL) ORDER BY p.pos_id IS NULL LIMIT 1`,
+        [shiftId ?? null],
+      )
+    ).rows[0];
   } else {
-    const ticket = (await db.query("SELECT department FROM bluebar.station_tickets WHERE id = $1", [ref])).rows[0];
-    if (ticket)
-      printer = (
-        await db.query("SELECT id FROM bluebar.printers WHERE $1 = ANY(departments) LIMIT 1", [ticket.department])
-      ).rows[0];
+    // A ticket with a station prints on that station's printer; otherwise its till (stored
+    // when sent, else its table's) picks among its department's printers.
+    printer = (
+      await db.query(
+        `SELECT COALESCE(
+           (SELECT s.printer_id FROM bluebar.stations s WHERE s.id = k.station_id),
+           CASE WHEN k.station_id IS NULL THEN (
+             SELECT p.id FROM bluebar.printers p
+             WHERE k.department = ANY(p.departments) AND (p.pos_id = COALESCE(k.pos_id, tp.id) OR p.pos_id IS NULL)
+             ORDER BY p.pos_id IS NULL LIMIT 1) END
+         ) AS id
+         FROM bluebar.station_tickets k
+         JOIN bluebar.dining_tables t ON t.id = k.table_id
+         CROSS JOIN LATERAL (
+           SELECT id FROM bluebar.points_of_sale ORDER BY (t.area = ANY(areas)) DESC NULLS LAST, id LIMIT 1
+         ) tp
+         WHERE k.id = $1`,
+        [ref],
+      )
+    ).rows[0];
+    if (!printer?.id) printer = null;
   }
   if (!printer) return false;
   await enqueue(db, printer.id, kind === "ticket" ? "ticket" : kind, ref);
@@ -113,17 +148,50 @@ export async function enqueueReprint(db, kind, ref) {
 const waiterName = async (db, id) =>
   id ? (await db.query("SELECT name FROM bluebar.waiters WHERE id = $1", [id])).rows[0]?.name : null;
 
-async function ticketDocument(db, id, cancelled) {
-  const k = (await db.query("SELECT * FROM bluebar.station_tickets WHERE id = $1", [id])).rows[0];
+const COURSE_NAMES = ["", "ANTIPASTË", "KRYESORE", "ËMBËLSIRË"];
+async function ticketDocument(db, id, kind) {
+  const k = (
+    await db.query(
+      `SELECT k.*, s.name AS station_name FROM bluebar.station_tickets k
+       LEFT JOIN bluebar.stations s ON s.id = k.station_id WHERE k.id = $1`,
+      [id],
+    )
+  ).rows[0];
   if (!k) return null;
   const who = await waiterName(db, k.waiter_id);
+  // A void slip: units sent earlier and no longer wanted. A moved slip: the old station's
+  // copy after another station accepted the work. A correction: how to make it changed.
+  // A remake: make it again.
+  const kindOf = k.kind || (k.void ? "void" : "order");
+  const cancelled = kind === "cancel" || kind === "moved" || kindOf === "void";
+  const headline =
+    kind === "moved" ? `TRANSFERUAR TE ${(k.station_name || "").toUpperCase()} · MOS E PËRGATITNI`
+    : kindOf === "void" ? "ANULIM · HIQENI NGA POROSIA"
+    : kind === "cancel" ? "ANULUAR · MOS E PËRGATITNI"
+    : kindOf === "correction" ? "KORRIGJIM · NDRYSHOI MËNYRA E PËRGATITJES"
+    : kindOf === "remake" ? "RIPËRGATIT"
+    : "POROSI PËR REPARTIN";
+  const courses = [...new Set(k.lines.map((l) => l.course || 0))];
   return [
-    { type: "title", text: k.department.toUpperCase() },
-    { type: "center", text: cancelled ? "ANULUAR · MOS E PËRGATITNI" : "POROSI PËR REPARTIN" },
+    { type: "title", text: (k.station_name && kind !== "moved" ? k.station_name : k.department).toUpperCase() },
+    { type: "center", text: headline },
     { type: "pair", left: `Tavolina ${pad(k.table_id)}`, right: `Raundi ${k.round}` },
     { type: "text", text: `${stamp(k.created_at)}${who ? ` · ${who}` : ""}` },
+    ...(k.allergy ? [{ type: "big", text: `ALERGJI: ${k.allergy}` }] : []),
+    ...(k.note && kindOf === "order" ? [{ type: "text", text: `Shënim: ${k.note}` }] : []),
+    ...(k.note && kindOf !== "order" ? [{ type: "text", text: `Arsyeja: ${k.note}` }] : []),
     { type: "rule" },
-    ...k.lines.map((l) => ({ type: "big", text: `${l.qty} x ${l.name}`, strike: cancelled })),
+    ...courses.flatMap((c) => [
+      ...(c && courses.length > 1 ? [{ type: "center", text: COURSE_NAMES[c] }] : c ? [{ type: "text", text: COURSE_NAMES[c] }] : []),
+      ...k.lines
+        .filter((l) => (l.course || 0) === c)
+        .flatMap((l) => [
+          { type: "big", text: `${l.qty} x ${l.name}`, strike: cancelled },
+          ...(l.extras || []).map((x) => ({ type: "text", text: `  + ${x}` })),
+          ...(l.note ? [{ type: "text", text: `  > ${l.note}` }] : []),
+          ...(l.allergy ? [{ type: "text", text: `  ! ALERGJI: ${l.allergy}` }] : []),
+        ]),
+    ]),
     { type: "rule" },
   ];
 }
@@ -141,10 +209,16 @@ async function invoiceDocument(db, id, venueName) {
     { type: "pair", left: `Fatura D-${i.id}`, right: `Tavolina ${pad(i.table_id)}` },
     { type: "text", text: `${stamp(i.created_at)}${who ? ` · ${who}` : ""}` },
     { type: "rule" },
-    ...lines.map((l) => ({ type: "pair", left: `${l.qty} x ${l.name}`, right: lek(l.qty * l.price) })),
+    ...lines.flatMap((l) => [
+      { type: "pair", left: `${l.qty} x ${[l.name, ...(l.extras || []).map((x) => x.name)].join(" + ")}`, right: lek(l.qty * l.price) },
+      ...(l.comp ? [{ type: "pair", left: `  qerasje ${l.comp} x`, right: `-${lek(l.comp * l.price)}` }] : []),
+    ]),
     { type: "rule" },
+    ...(Number(i.discount) ? [{ type: "pair", left: `Ulje${i.discount_reason ? ` (${i.discount_reason})` : ""}`, right: `-${lek(Number(i.discount))}` }] : []),
     { type: "total", left: "TOTALI", right: lek(Number(i.total)) },
-    { type: "text", text: `Pagesa: ${i.method}` },
+    ...(Number(i.cash_amount) ? [{ type: "pair", left: "Paguar cash", right: lek(Number(i.cash_amount)) }] : []),
+    ...(Number(i.card_amount) ? [{ type: "pair", left: "Paguar me kartë", right: lek(Number(i.card_amount)) }] : []),
+    ...(Number(i.tip_cash) + Number(i.tip_card) ? [{ type: "pair", left: "Bakshish", right: lek(Number(i.tip_cash) + Number(i.tip_card)) }] : []),
     ...(fiscal
       ? [
           { type: "rule" },
@@ -163,17 +237,23 @@ async function shiftDocument(db, id, venueName) {
   return [
     { type: "title", text: venueName || "BlueBar" },
     { type: "center", text: shift.closed ? `RAPORT TURNI #${shift.id}` : `GJENDJA E TURNIT #${shift.id}` },
+    ...(shift.posName ? [{ type: "text", text: `Kasa: ${shift.posName}` }] : []),
     { type: "text", text: `Hapur: ${stamp(shift.opened)}${shift.openedBy ? ` · ${shift.openedBy}` : ""}` },
     ...(shift.closed ? [{ type: "text", text: `Mbyllur: ${stamp(shift.closed)}${shift.closedBy ? ` · ${shift.closedBy}` : ""}` }] : []),
     { type: "rule" },
     { type: "pair", left: "Fatura", right: String(r.invoiceCount) },
     { type: "pair", left: "Shitje cash", right: lek(r.cash) },
-    { type: "pair", left: "Shitje me kartë", right: lek(r.card) },
-    { type: "total", left: "SHITJE GJITHSEJ", right: lek(r.cash + r.card) },
+    { type: "pair", left: "Bankë (kartë)", right: lek(r.card) },
+    { type: "total", left: "ARKËTUAR GJITHSEJ", right: lek(r.cash + r.card) },
+    ...(r.discount ? [{ type: "pair", left: "Ulje", right: lek(r.discount) }] : []),
+    ...(r.comps ? [{ type: "pair", left: "Qerasje", right: lek(r.comps) }] : []),
+    ...(r.tipsCash + r.tipsCard ? [{ type: "pair", left: "Bakshish (jo shitje)", right: lek(r.tipsCash + r.tipsCard) }] : []),
     { type: "rule" },
     { type: "pair", left: "Fondi fillestar", right: lek(shift.opening) },
     { type: "pair", left: "+ Shitje cash", right: lek(r.cash) },
+    ...(r.tipsCash ? [{ type: "pair", left: "+ Bakshish cash", right: lek(r.tipsCash) }] : []),
     ...(r.cashIn ? [{ type: "pair", left: "+ Hyrje në arkë", right: lek(r.cashIn) }] : []),
+    ...(r.refundsCash ? [{ type: "pair", left: "- Rimbursime cash", right: lek(r.refundsCash) }] : []),
     ...(r.cashOut ? [{ type: "pair", left: "- Dalje nga arka", right: lek(r.cashOut) }] : []),
     { type: "total", left: "CASH I PRITSHËM", right: lek(shift.expected) },
     ...(shift.closed
@@ -242,7 +322,7 @@ export async function pendingJobs(db, venueName, usbPrinters = null) {
           ? await testDocument(db, j.ref)
           : j.kind === "shift"
             ? await shiftDocument(db, j.ref, venueName)
-          : await ticketDocument(db, j.ref, j.kind === "cancel");
+          : await ticketDocument(db, j.ref, j.kind);
     if (!document) {
       // The ticket was finished and cleared before the agent got to it: nothing to print.
       await finishJob(db, j.id, true);

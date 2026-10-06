@@ -11,7 +11,7 @@ import {
   sizeFor,
   spanOf,
 } from "./floorGeometry.js";
-import { money, total } from "./domain.js";
+import { bill, money } from "./domain.js";
 import { Icon } from "./components.jsx";
 
 // The floor tile itself should read as the same furniture shape a manager picked in
@@ -79,7 +79,7 @@ function FloorTable({ t, editing, isSelected, onSelect, onChange, onGhost, other
       })}
       role="button"
       tabIndex={0}
-      aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? `e zënë, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(total(t.lines))}` : "e lirë"}`}
+      aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? `e zënë, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(bill(t).remaining)}${bill(t).paid ? ", paguar pjesërisht" : ""}` : "e lirë"}`}
       aria-pressed={isSelected}
       onClick={(e) => {
         if (editing) e.stopPropagation();
@@ -93,7 +93,7 @@ function FloorTable({ t, editing, isSelected, onSelect, onChange, onGhost, other
         {occupied && (
           <span className="fp-info">
             <span>{itemCount} {itemCount === 1 ? "artikull" : "artikuj"}</span>
-            <b>{money(total(t.lines))}</b>
+            <b>{money(bill(t).remaining)}</b>
           </span>
         )}
       </div>

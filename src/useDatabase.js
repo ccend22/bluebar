@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchState, sendCommand, venueSlug } from "./api.js";
-import { addItem } from "./domain.js";
+import { addItem, findLine, tableShift } from "./domain.js";
 
 const empty = {
   products: [], categories: [], departments: [], waiters: [], tables: [], invoices: [], tickets: [], printers: [],
-  movements: [], shifts: [], shift: null,
+  movements: [], shifts: [], openShifts: [], pointsOfSale: [],
 };
 const key = `bluebar-pending-command-v2:${venueSlug}`;
 const orderQueueKey = `bluebar-order-queue-v2:${venueSlug}`;
@@ -19,17 +19,19 @@ function readStorage(storageKey, fallback) {
 }
 
 function changeOrder(state, type, payload) {
-  if (type === "order.add")
-    return addItem(state, payload.tableId, payload.productId, payload.waiterId);
+  if (type === "order.add") {
+    const { tableId, productId, waiterId, ...details } = payload;
+    return addItem(state, tableId, productId, waiterId, details);
+  }
   const table = state.tables.find((item) => item.id === payload.tableId);
-  if (!state.shift) throw Error("Turni është i mbyllur.");
   if (!table?.active) throw Error("Tavolina nuk ekziston ose është joaktive.");
-  if (!table.lines.some((line) => line.id === payload.productId))
-    throw Error("Produkti nuk është në porosi.");
+  if (!tableShift(state, table)) throw Error("Turni është i mbyllur.");
+  const target = findLine(table, payload);
+  if (!target) throw Error("Produkti nuk është në porosi.");
   const lines = table.lines
     .map((line) =>
-      line.id === payload.productId
-        ? { ...line, qty: line.qty - 1, sent: Math.min(line.sent || 0, line.qty - 1) }
+      line === target
+        ? { ...line, qty: line.qty - 1, sent: Math.min(line.sent || 0, line.qty - 1), comp: Math.min(line.comp || 0, line.qty - 1) }
         : line,
     )
     .filter((line) => line.qty > 0);
