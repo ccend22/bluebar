@@ -12,17 +12,29 @@ export async function loadState(client) {
   // Identifiers come only from the fixed list above, never request data.
   const query = "SELECT jsonb_build_object(" + names.map((name) =>
     `'${name}', (SELECT COALESCE(jsonb_agg(r), '[]'::jsonb) FROM bluebar.${name} r)`,
-  ).join(",") + ") AS data";
+  ).join(",") +
+    // Guests' orders still waiting for a waiter (decided ones are history, not state).
+    ", 'guest_orders', (SELECT COALESCE(jsonb_agg(r ORDER BY r.id), '[]'::jsonb) FROM" +
+    " (SELECT id, table_id, items, note, created_at FROM bluebar.guest_orders WHERE status = 'pending') r)" +
+    // ...and the ones that went straight to the stations, until a waiter has seen them.
+    ", 'guest_alerts', (SELECT COALESCE(jsonb_agg(r ORDER BY r.id), '[]'::jsonb) FROM" +
+    " (SELECT id, table_id, items, note, decided_at FROM bluebar.guest_orders" +
+    "  WHERE status = 'accepted' AND seen_at IS NULL AND decided_at > now() - interval '6 hours') r)" +
+    ") AS data";
   const data = (await client.query(query)).rows[0].data;
   const rows = (name) => data[name];
   const control = (rows("control"))[0];
   const categories = (rows("categories")).map((r) => r.name).sort();
+  // English names for the online menu, only where the manager wrote one.
+  const categoryEn = Object.fromEntries(rows("categories").filter((r) => r.name_en).map((r) => [r.name, r.name_en]));
   const departments = (rows("departments")).map((r) => r.name).sort();
   const products = rows("products")
     .sort((a, b) => a.id - b.id)
     .map((p) => ({
       id: p.id, name: p.name, category: p.category, price: p.price, stock: p.stock,
       department: p.department, minStock: p.min_stock, available: p.available, extras: p.extras,
+      nameEn: p.name_en, description: p.description, descriptionEn: p.description_en,
+      menuVisible: p.menu_visible, photoAt: iso(p.photo_at),
     }));
   const waiters = (rows("waiters"))
     .sort((a, b) => a.id - b.id)
@@ -166,6 +178,9 @@ export async function loadState(client) {
     revision: Number(control.revision),
     state: {
       categories,
+      categoryEn,
+      guestOrders: rows("guest_orders").map((g) => ({ id: g.id, table: g.table_id, items: g.items, note: g.note, date: iso(g.created_at) })),
+      guestAlerts: rows("guest_alerts").map((g) => ({ id: g.id, table: g.table_id, items: g.items, note: g.note, date: iso(g.decided_at) })),
       departments,
       products,
       waiters,
@@ -232,12 +247,24 @@ export async function loadState(client) {
 }
 const changed = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
 export async function persist(client, previous, next) {
+  // A guest order leaves the state once a waiter decides it: record how (guest.accept/reject).
+  for (const g of next.guestDecided || []) {
+    const decided = await client.query(
+      `UPDATE bluebar.guest_orders SET status=$2, reason=$3, decided_by=$4, decided_at=now() WHERE id=$1 AND status='pending' RETURNING id`,
+      [g.id, g.status, g.reason || "", g.decidedBy || null],
+    );
+    if (!decided.rows.length) throw new AppError("Kjo porosi u vendos tashmë nga dikush tjetër.", 409);
+  }
+  for (const id of next.guestSeen || [])
+    await client.query("UPDATE bluebar.guest_orders SET seen_at = now() WHERE id = $1 AND seen_at IS NULL", [id]);
   for (const category of next.categories.filter(
     (c) => !previous.categories.includes(c),
   ))
     await client.query("INSERT INTO bluebar.categories(name) VALUES($1)", [
       category,
     ]);
+  for (const category of next.categories.filter((c) => (next.categoryEn?.[c] || "") !== (previous.categoryEn?.[c] || "")))
+    await client.query("UPDATE bluebar.categories SET name_en=$2 WHERE name=$1", [category, next.categoryEn?.[category] || ""]);
   for (const department of next.departments.filter(
     (d) => !previous.departments.includes(d),
   ))
@@ -251,9 +278,13 @@ export async function persist(client, previous, next) {
     ),
   ))
     await client.query(
-      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT(id) DO UPDATE SET name=$2,category=$3,price=$4,stock=$5,department=$6,min_stock=$7,available=$8,extras=$9`,
-      [p.id, p.name, p.category, p.price, p.stock, p.department || null, p.minStock ?? 10, p.available !== false, JSON.stringify(p.extras || [])],
+      // photo_at is never written here: only the photo upload sets it.
+      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras,name_en,description,description_en,menu_visible)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT(id) DO UPDATE SET name=$2,category=$3,price=$4,stock=$5,department=$6,min_stock=$7,available=$8,extras=$9,
+         name_en=$10,description=$11,description_en=$12,menu_visible=$13`,
+      [p.id, p.name, p.category, p.price, p.stock, p.department || null, p.minStock ?? 10, p.available !== false, JSON.stringify(p.extras || []),
+        p.nameEn || "", p.description || "", p.descriptionEn || "", p.menuVisible !== false],
     );
   // Tills first: waiters, shifts and printers reference them; a removed till's
   // waiters and printers were already moved off it (pos.delete).
@@ -756,7 +787,7 @@ export async function execute(pool, command, actor = null) {
       [command.id, hash, command.type, JSON.stringify(next.result)],
     );
     await client.query("COMMIT");
-    const { events, ...state } = next.state;
+    const { events, guestDecided, guestSeen, ...state } = next.state;
     return { state, version, revision, result: next.result };
   } catch (e) {
     await client.query("ROLLBACK");

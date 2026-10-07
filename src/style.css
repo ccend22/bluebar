@@ -5878,3 +5878,98 @@ textarea {
   .onboard-signin { padding-top: 0; }
 }
 a.onboard-back { display: inline-flex; align-items: center; text-decoration: none; }
+/* The odd shape out (Bar) sits centred on its own row, not stranded in the left column. */
+.shape-option:last-child:nth-child(odd) { grid-column: 1 / -1; justify-self: center; width: calc(50% - 4px); }
+/* Table cards arrive and leave visibly: new ones rise in (staggered per batch), removed ones shrink away. */
+.table-admin-card.new { animation: table-card-in 420ms var(--ease-out) both; animation-delay: var(--delay, 0ms); }
+.table-admin-card.leaving { animation: table-card-out 220ms ease-in forwards; pointer-events: none; }
+@keyframes table-card-in { from { opacity: 0; transform: translateY(12px) scale(0.94); } }
+@keyframes table-card-out { to { opacity: 0; transform: scale(0.9); } }
+@media (prefers-reduced-motion: reduce) {
+  .table-admin-card.new { animation: table-card-fade 200ms ease both; }
+  .table-admin-card.leaving { animation: table-card-fade 200ms ease reverse forwards; }
+  @keyframes table-card-fade { from { opacity: 0; } }
+}
+/* ---- Online menu: manager side (Produktet photo, Cilësimet → Menuja online) ---- */
+.button-like {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--surface);
+  color: inherit; font-weight: 600; line-height: 1.3; cursor: pointer; text-decoration: none;
+}
+.button-like.disabled { opacity: 0.55; pointer-events: none; }
+.product-photo-row { display: flex; align-items: center; gap: 14px; }
+.product-photo-frame {
+  display: grid; place-items: center; flex: none; width: 76px; height: 76px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface-subtle); color: var(--muted);
+}
+.product-photo-frame img { width: 100%; height: 100%; object-fit: cover; }
+.product-photo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.menu-fields { display: grid; gap: 14px; margin: 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--line); min-width: 0; }
+.menu-fields legend { float: left; width: 100%; margin-bottom: 4px; padding: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.check-row { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.check-row input { width: 18px; height: 18px; accent-color: var(--blue); }
+.online-menu-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.online-menu-head h2, .online-menu-panel h2 { margin: 0 0 4px; }
+.online-menu-link {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 16px 0 8px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface-subtle);
+}
+.online-menu-link code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.online-menu-link.off code { color: var(--muted); text-decoration: line-through; }
+.category-en-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
+.qr-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 16px; }
+.qr-card { margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; text-align: center; background: #fff; }
+.qr-card .qr { display: block; width: 100%; max-width: 140px; aspect-ratio: 1; margin: 0 auto 8px; }
+.qr-card figcaption { display: grid; gap: 2px; }
+.qr-card figcaption span { font-size: 11px; color: var(--muted); }
+.qr-print-sheet { display: none; }
+@media print {
+  body.qr-print .print-only { display: none !important; }
+  body.qr-print .qr-print-sheet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; margin: 0; padding: 12mm; }
+  body.qr-print .qr-card { break-inside: avoid; border: 1px solid #999; }
+  body.qr-print .qr-card .qr { max-width: 45mm; }
+}
+/* Tavolinat: guests' orders waiting for staff — first thing on the floor page. */
+.guest-orders { margin-bottom: 16px; padding: 16px; border: 1px solid #b9d4f1; border-radius: var(--radius); background: var(--blue-soft); }
+.guest-orders h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 16px; color: var(--blue-strong); }
+.guest-orders-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 0 rgba(8, 103, 201, 0.5); animation: guest-pulse 1.8s ease-out infinite; }
+@keyframes guest-pulse { 70% { box-shadow: 0 0 0 10px rgba(8, 103, 201, 0); } 100% { box-shadow: 0 0 0 0 rgba(8, 103, 201, 0); } }
+.guest-orders-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.guest-order { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); animation: table-card-in 420ms var(--ease-out) both; }
+.guest-order header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.guest-order header strong { font-size: 17px; }
+.guest-order header span { color: var(--muted); font-size: 12px; }
+.guest-order ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.guest-order li small { color: var(--muted); }
+.guest-order-note { margin: 0; color: var(--amber); font-size: 12px; }
+.guest-order-total { display: flex; justify-content: space-between; gap: 8px; margin: 0; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.guest-order-total strong { color: inherit; color: #202428; font-size: 14px; }
+.guest-order .actions { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
+.guest-order-reject { display: grid; gap: 8px; }
+.guest-order-reject input, .guest-order select { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); font: inherit; background: var(--surface); }
+.nav-count.guest { background: var(--blue); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .guest-orders-dot, .guest-order { animation: none; } }
+/* Menuja online → Identiteti: logo, welcome line and brand colour. */
+.menu-identity { display: grid; gap: 12px; }
+.menu-identity h2 { margin: 0; }
+.identity-row { display: flex; align-items: center; gap: 16px; }
+.identity-logo {
+  display: grid; place-items: center; flex: none; width: 76px; height: 76px; overflow: hidden;
+  border-radius: 20px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 18px -8px rgba(0, 0, 0, 0.25);
+}
+.identity-logo img { width: 100%; height: 100%; object-fit: contain; }
+.identity-logo b { color: var(--accent); font-size: 28px; letter-spacing: -0.02em; }
+.accent-picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
+.accent-picker legend { width: 100%; margin-bottom: 8px; font-size: 12px; font-weight: 600; color: #5b6269; }
+.accent-swatch {
+  position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px 0 10px;
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); font-weight: 600; cursor: pointer;
+}
+.accent-swatch input { position: absolute; opacity: 0; pointer-events: none; }
+.accent-swatch span { width: 22px; height: 22px; border-radius: 50%; background: var(--swatch); }
+.accent-swatch:has(input:checked) { border-color: var(--swatch); box-shadow: 0 0 0 2px var(--swatch); }
+.accent-swatch:has(input:focus-visible) { outline: 3px solid rgba(8, 103, 201, 0.45); outline-offset: 2px; }
+.guest-orders h2 .text-button { margin-left: auto; font-size: 13px; }
+.guest-order.sent { border-color: #b9dcc8; }
+.guest-order-sent { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--green); font-size: 13px; font-weight: 600; }
+.guest-order-wait { margin: 0; color: var(--amber); font-size: 12px; }

@@ -67,7 +67,7 @@ test("manager signs in with a PIN; sessions are HttpOnly and revocable", async (
     );
     const ok = await t.managerLogin();
     assert.equal(ok.statusCode, 200);
-    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss", venue: { slug: "bluebar", name: "BlueBar", loginMode: "name_pin", managerLogin: "pin_only" } });
+    assert.deepEqual(ok.json(), { role: "manager", waiterId: null, name: "boss", venue: { slug: "bluebar", name: "BlueBar", loginMode: "name_pin", managerLogin: "pin_only", menuEnabled: false, menuOrdering: false } });
     const setCookie = ok.headers["set-cookie"];
     assert.match(setCookie, /HttpOnly/);
     assert.match(setCookie, /SameSite=Strict/);
@@ -1380,6 +1380,143 @@ test("a client-written X-Forwarded-For can't fake the venue network", async () =
     const real = await t.inject({ method: "GET", url: "/api/auth/waiters", remoteAddress: "10.0.0.1",
       headers: { host: "localhost", "x-bluebar-client": "1", "x-forwarded-for": "203.0.113.50" } });
     assert.equal(real.json().allowed, true, "the address the proxy saw is used");
+  } finally {
+    await t.close();
+  }
+});
+
+test("online menu: off until enabled, public read-only, only visible products and guest fields", async () => {
+  const t = await setup();
+  try {
+    await t.send("product.save", { name: "Espresso", category: "Kafe", price: 100, nameEn: "Espresso", description: "Kafe e fortë", descriptionEn: "Strong coffee" });
+    await t.send("product.save", { name: "Sekret", category: "Kafe", price: 900, menuVisible: false });
+    await t.send("category.translate", { name: "Kafe", nameEn: "Coffee" });
+    // A guest's phone sends no app header and no cookie.
+    const guest = (url) => t.inject({ method: "GET", url, headers: { host: "localhost" } });
+    assert.equal((await guest("/api/menu/bluebar")).statusCode, 404, "off by default");
+    const cookie = t.cookieOf(await t.managerLogin());
+    assert.equal((await t.call("PUT", "/api/venue/menu", { body: { enabled: true } })).statusCode, 401);
+    assert.equal((await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } })).statusCode, 200);
+    const menu = await guest("/api/menu/bluebar");
+    assert.equal(menu.statusCode, 200);
+    assert.match(menu.headers["cache-control"], /public/);
+    const body = menu.json();
+    assert.deepEqual(body.categories, [{ name: "Kafe", nameEn: "Coffee" }]);
+    assert.deepEqual(body.products.map((p) => p.name), ["Espresso"], "a hidden product never reaches guests");
+    assert.deepEqual(Object.keys(body.products[0]).sort(),
+      ["available", "category", "description", "descriptionEn", "extras", "id", "name", "nameEn", "photo", "price"]);
+    // Photos: only a real WebP/JPEG, only by a manager, versioned on the menu.
+    const id = body.products[0].id;
+    const jpeg = "data:image/jpeg;base64," + Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString("base64");
+    const fake = "data:image/jpeg;base64," + Buffer.from("<svg onload=alert(1)>").toString("base64");
+    assert.equal((await t.call("PUT", `/api/products/${id}/photo`, { body: { dataUrl: jpeg } })).statusCode, 401);
+    assert.equal((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: fake } })).statusCode, 400);
+    assert.equal((await t.call("PUT", `/api/products/999/photo`, { cookie, body: { dataUrl: jpeg } })).statusCode, 404);
+    assert.equal((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: jpeg } })).statusCode, 200);
+    // A real photo (~250 KB) fits; anything past the photo limit does not.
+    const photoOf = (bytes) => "data:image/jpeg;base64," + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(bytes)]).toString("base64");
+    assert.equal((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: photoOf(250000) } })).statusCode, 200);
+    assert.ok([400, 413].includes((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: photoOf(420000) } })).statusCode));
+    assert.equal((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: jpeg } })).statusCode, 200);
+    const version = (await guest("/api/menu/bluebar")).json().products[0].photo;
+    assert.ok(version);
+    const photo = await guest(`/api/menu/bluebar/photo/${id}?v=${version}`);
+    assert.equal(photo.statusCode, 200);
+    assert.equal(photo.headers["content-type"], "image/jpeg");
+    assert.deepEqual([...photo.rawPayload], [0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    // Editing the product keeps its photo; deleting the photo clears the version.
+    await t.send("product.save", { id, name: "Espresso", category: "Kafe", price: 120 });
+    assert.equal((await guest("/api/menu/bluebar")).json().products[0].photo, version);
+    assert.equal((await t.call("DELETE", `/api/products/${id}/photo`, { cookie })).statusCode, 200);
+    assert.equal((await guest("/api/menu/bluebar")).json().products[0].photo, null);
+    assert.equal((await guest(`/api/menu/bluebar/photo/${id}`)).statusCode, 404);
+    assert.equal((await guest("/api/menu/nuk-ekziston")).statusCode, 404);
+    // The menu's identity: a curated brand colour, a welcome line, a logo (PNG allowed).
+    assert.deepEqual((await guest("/api/menu/bluebar")).json().brand, { tagline: "", accent: "blue", logo: null });
+    assert.equal((await t.call("PUT", "/api/venue/menu-brand", { cookie, body: { tagline: "Kafe që nga 2012", accent: "hotpink" } })).statusCode, 400);
+    assert.equal((await t.call("PUT", "/api/venue/menu-brand", { cookie, body: { tagline: " Kafe që nga 2012 ", accent: "teal" } })).statusCode, 200);
+    const png = "data:image/png;base64," + Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]).toString("base64");
+    assert.equal((await t.call("PUT", "/api/venue/menu-logo", { body: { dataUrl: png } })).statusCode, 401);
+    assert.equal((await t.call("PUT", "/api/venue/menu-logo", { cookie, body: { dataUrl: fake } })).statusCode, 400);
+    assert.equal((await t.call("PUT", "/api/venue/menu-logo", { cookie, body: { dataUrl: png } })).statusCode, 200);
+    const brand = (await guest("/api/menu/bluebar")).json().brand;
+    assert.equal(brand.tagline, "Kafe që nga 2012");
+    assert.equal(brand.accent, "teal");
+    const logo = await guest(`/api/menu/bluebar/logo?v=${brand.logo}`);
+    assert.equal(logo.headers["content-type"], "image/png");
+    assert.equal((await t.call("DELETE", "/api/venue/menu-logo", { cookie })).statusCode, 200);
+    assert.equal((await guest("/api/menu/bluebar")).json().brand.logo, null);
+  } finally {
+    await t.close();
+  }
+});
+
+test("guests order from the menu: only with the table's QR key, at the server's prices, straight to the stations, with a notice for the waiter", async () => {
+  const t = await setup();
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe", extras: [{ name: "Dopio", price: 50 }] });
+    await t.send("product.save", { name: "Sekret", price: 900, category: "Kafe", menuVisible: false });
+    await t.send("product.save", { name: "Tiramisu", price: 300, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 50 });
+    await t.send("stock.receive", { productId: 2, qty: 10 });
+    await t.send("stock.receive", { productId: 3, qty: 1 });
+    const cookie = t.cookieOf(await t.managerLogin());
+    await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } });
+    const keys = (await t.call("GET", "/api/venue/menu/tables", { cookie })).json().tables;
+    const key = keys.find((k) => k.id === 1).key;
+    assert.notEqual(key, keys.find((k) => k.id === 2).key, "each table has its own key");
+    const order = (body) => t.call("POST", "/api/menu/bluebar/orders", { body });
+    const state = async () => (await t.call("GET", "/api/state", { cookie })).json().state;
+    // The server itself changes the data when a guest orders: send each command on the current version.
+    const cmd = async (type, payload) => {
+      const version = (await t.call("GET", "/api/state", { cookie })).json().version;
+      const r = await t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+      if (r.statusCode !== 200) throw new Error(r.json().error);
+      return r.json();
+    };
+    const espresso = { productId: 1, qty: 2, extras: ["Dopio"] };
+    // Ordering is off until the manager turns it on.
+    assert.equal((await order({ table: 1, key, items: [espresso] })).statusCode, 409);
+    assert.equal((await t.call("PUT", "/api/venue/menu", { cookie, body: { ordering: true } })).json().menuOrdering, true);
+    assert.equal((await t.inject({ method: "GET", url: `/api/menu/bluebar/table/1?k=${key}`, headers: { host: "localhost" } })).json().open, true);
+    // No key, another table's key, a hidden product, a cross-site post: refused.
+    assert.equal((await order({ table: 1, key: "x".repeat(16), items: [espresso] })).statusCode, 403);
+    assert.equal((await order({ table: 2, key, items: [espresso] })).statusCode, 403);
+    assert.equal((await order({ table: 1, key, items: [{ productId: 2, qty: 1 }] })).statusCode, 409);
+    assert.equal((await t.inject({ method: "POST", url: "/api/menu/bluebar/orders", payload: { table: 1, key, items: [espresso] }, headers: { host: "localhost" } })).statusCode, 403);
+    // Placed: straight onto the table and to the stations, at the product's own price
+    // (a price the guest sends is dropped), and a notice waits for the waiter.
+    const placed = await order({ table: 1, key, items: [{ ...espresso, price: 1 }], note: "Shpejt ju lutem" });
+    assert.equal(placed.statusCode, 201);
+    const { id, token, status: placedStatus } = placed.json();
+    assert.equal(placedStatus, "accepted");
+    const status = () => t.inject({ method: "GET", url: `/api/menu/bluebar/orders/${id}?token=${token}`, headers: { host: "localhost" } });
+    assert.equal((await status()).json().status, "accepted");
+    assert.equal((await t.inject({ method: "GET", url: `/api/menu/bluebar/orders/${id}?token=wrong`, headers: { host: "localhost" } })).statusCode, 404);
+    let s = await state();
+    const line = s.tables.find((x) => x.id === 1).lines[0];
+    assert.equal(line.qty, 2);
+    assert.equal(line.price, 150, "the price is the product's own, extras included");
+    assert.equal(line.sent, 2, "sent to the stations");
+    assert.ok(s.tables.find((x) => x.id === 1).waiter, "the order has a waiter");
+    assert.deepEqual(s.guestAlerts.map((g) => g.id), [id]);
+    assert.equal(s.guestOrders.length, 0);
+    await cmd("guest.seen", { id });
+    assert.equal((await state()).guestAlerts.length, 0);
+    await assert.rejects(cmd("guest.seen", { id }));
+    // When it can't go through (here: the last tiramisu is already on a table), it waits
+    // for staff instead of being lost; they accept or reject it by hand.
+    await cmd("order.add", { tableId: 2, productId: 3, waiterId: 1 });
+    const stuck = (await order({ table: 1, key, items: [{ productId: 3, qty: 1 }] })).json();
+    assert.equal(stuck.status, "pending");
+    assert.deepEqual((await state()).guestOrders.map((g) => g.id), [stuck.id]);
+    await cmd("guest.reject", { id: stuck.id, reason: "Tiramisu mbaroi" });
+    const rejected = (await t.inject({ method: "GET", url: `/api/menu/bluebar/orders/${stuck.id}?token=${stuck.token}`, headers: { host: "localhost" } })).json();
+    assert.deepEqual(rejected, { status: "rejected", reason: "Tiramisu mbaroi" });
+    // A table gets at most six orders in half an hour.
+    for (let n = 0; n < 4; n++) assert.equal((await order({ table: 1, key, items: [{ productId: 1, qty: 1 }] })).statusCode, 201);
+    assert.equal((await order({ table: 1, key, items: [{ productId: 1, qty: 1 }] })).statusCode, 429);
   } finally {
     await t.close();
   }

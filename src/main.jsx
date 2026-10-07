@@ -1,8 +1,10 @@
+import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
+import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
@@ -92,7 +94,7 @@ const pages = [
     description: "Fiskalizimi, rrjeti i lokalit, hyrja e stafit dhe printerët.",
   },
 ];
-const SETTINGS_TABS = ["Printerët", "Stafi dhe hyrja", "Kasat dhe stacionet", "Fiskalizimi", "Llogaria ime"];
+const SETTINGS_TABS = ["Printerët", "Stafi dhe hyrja", "Kasat dhe stacionet", "Menuja online", "Fiskalizimi", "Llogaria ime"];
 const matches = (text, query) =>
   text.toLocaleLowerCase("sq").includes(query.trim().toLocaleLowerCase("sq"));
 const date = (value) => {
@@ -307,7 +309,8 @@ function App({ user, onLogout, onUserChange }) {
     [tableEdits, setTableEdits] = useState({}),
     [tableLayout, setTableLayout] = useState({}),
     [tablesAdded, setTablesAdded] = useState([]),
-    [newTable, setNewTable] = useState({ area: "", shape: "Drejtkëndësh", seats: 4 }),
+    [newTable, setNewTable] = useState({ area: "", shape: "Drejtkëndësh", seats: 4, count: 1 }),
+    [leaving, setLeaving] = useState(() => new Set()),
     [orderMode, setOrderMode] = useState("summary"),
     [fiscalizeChoice, setFiscalizeChoice] = useState(false),
     [ticketPrint, setTicketPrint] = useState(null),
@@ -414,7 +417,23 @@ function App({ user, onLogout, onUserChange }) {
   const addDraftTable = () => {
     const area = newTable.area.trim();
     if (!area) return notify("Vendosni zonën e tavolinës.", "error");
-    setTablesAdded((added) => [...added, { key: crypto.randomUUID(), ...newTable, area }]);
+    const { shape, seats, count } = newTable;
+    // The whole batch at once; each card's entrance is staggered so the eye can count them.
+    setTablesAdded((added) => [...added, ...Array.from({ length: count }, (_, i) => ({ key: crypto.randomUUID(), area, shape, seats, delay: i }))]);
+    // New cards land after every saved table: bring them into view so the entrance is seen.
+    setTimeout(() => [...document.querySelectorAll(".table-admin-card.new")].pop()?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  };
+  // A card plays its exit before it leaves the grid (or, for a delete the server refuses, comes back).
+  const vanish = (id, remove) => {
+    setLeaving((l) => new Set(l).add(id));
+    setTimeout(async () => {
+      await remove();
+      setLeaving((l) => {
+        const n = new Set(l);
+        n.delete(id);
+        return n;
+      });
+    }, 220);
   };
   async function saveTableDraft() {
     if (Object.values(tableEdits).some((e) => !e.area.trim()))
@@ -681,6 +700,11 @@ function App({ user, onLogout, onUserChange }) {
               const m = row.match(/^(.*?)\s*\+\s*(\d+)\s*(lek)?$/i);
               return m ? { name: m[1].trim(), price: Number(m[2]) } : { name: row, price: 0 };
             }),
+          // Online menu (guests): visibility and the Albanian/English texts.
+          menuVisible: form.get("menuVisible") === "on",
+          nameEn: String(form.get("nameEn") || "").trim(),
+          description: String(form.get("description") || "").trim(),
+          descriptionEn: String(form.get("descriptionEn") || "").trim(),
         },
         editor.id
           ? "Produkti u përditësua. Porositë ekzistuese ruajnë çmimin e tyre."
@@ -754,6 +778,7 @@ function App({ user, onLogout, onUserChange }) {
           </section>
         </div>
       )}
+      <GuestOrderAlert count={(state?.guestOrders?.length || 0) + (state?.guestAlerts?.length || 0)} latest={state && [...(state.guestAlerts || []), ...(state.guestOrders || [])].map((g) => ({ ...g, items: g.items.map((i) => ({ ...i, name: state.products.find((p) => p.id === i.productId)?.name || "?" })) })).sort((a, b) => b.id - a.id)[0]} />
       <a className="skip-link" href="#main">
         Kalo te përmbajtja
       </a>
@@ -786,6 +811,9 @@ function App({ user, onLogout, onUserChange }) {
                   <span>{p.name}</span>
                   {p.name === "Inventari" && lowStock > 0 && (
                     <span className="nav-count">{lowStock}</span>
+                  )}
+                  {p.name === "Tavolinat" && state.guestOrders?.length + state.guestAlerts?.length > 0 && (
+                    <span className="nav-count guest" aria-label="Porosi të reja nga menuja">{state.guestOrders.length + state.guestAlerts.length}</span>
                   )}
                 </button>
               ))}
@@ -1091,7 +1119,7 @@ function App({ user, onLogout, onUserChange }) {
                           .map((saved) => ({ ...saved, ...tableEdits[saved.id] }))
                           .map((t) => (
                             <article
-                              className={`table-admin-card ${t.active ? "" : "inactive"} ${editor?.id === t.id ? "editing" : ""} ${tableEdits[t.id] ? "drafted" : ""}`}
+                              className={`table-admin-card ${t.active ? "" : "inactive"} ${editor?.id === t.id ? "editing" : ""} ${tableEdits[t.id] ? "drafted" : ""} ${leaving.has(t.id) ? "leaving" : ""}`}
                               key={t.id}
                             >
                               <div className="table-admin-head">
@@ -1168,10 +1196,12 @@ function App({ user, onLogout, onUserChange }) {
                                       </button>
                                       <button
                                         className="danger-button"
-                                        onClick={async () => {
-                                          if (await update("table.delete", { id: t.id }, "Tavolina u fshi."))
-                                            setDeleteConfirmId(null);
-                                        }}
+                                        onClick={() =>
+                                          vanish(t.id, async () => {
+                                            if (await update("table.delete", { id: t.id }, "Tavolina u fshi."))
+                                              setDeleteConfirmId(null);
+                                          })
+                                        }
                                       >
                                         Fshi përfundimisht
                                       </button>
@@ -1206,7 +1236,7 @@ function App({ user, onLogout, onUserChange }) {
                             </article>
                           ))}
                         {tablesAdded.map((t, n) => (
-                          <article className="table-admin-card drafted new" key={t.key}>
+                          <article className={`table-admin-card drafted new ${leaving.has(t.key) ? "leaving" : ""}`} key={t.key} style={{ "--delay": `${t.delay * 45}ms` }}>
                             <div className="table-admin-head">
                               <div>
                                 <small>Tavolinë e re</small>
@@ -1227,7 +1257,7 @@ function App({ user, onLogout, onUserChange }) {
                               <button
                                 className="subtle-button"
                                 aria-label={`Hiq tavolinën e re ${n + 1}`}
-                                onClick={() => setTablesAdded((added) => added.filter((x) => x.key !== t.key))}
+                                onClick={() => vanish(t.key, () => setTablesAdded((added) => added.filter((x) => x.key !== t.key)))}
                               >
                                 <Icon name="close" size={17} />
                                 Hiq
@@ -1329,6 +1359,20 @@ function App({ user, onLogout, onUserChange }) {
                                 </button>
                               </div>
                             </div>
+                            {!editing && (
+                              <div className="field">
+                                <span>Sa tavolina</span>
+                                <div className="quantity seats-stepper">
+                                  <button type="button" aria-label="Një tavolinë më pak" disabled={values.count <= 1} onClick={() => change({ count: values.count - 1 })}>
+                                    −
+                                  </button>
+                                  <span>{values.count}</span>
+                                  <button type="button" aria-label="Një tavolinë më shumë" disabled={values.count >= 20} onClick={() => change({ count: values.count + 1 })}>
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                             {editing ? (
                               <div className="actions">
                                 {(tableEdits[editing.id] || tableLayout[editing.id]) && (
@@ -1347,7 +1391,7 @@ function App({ user, onLogout, onUserChange }) {
                             ) : (
                               <button className="primary">
                                 <Icon name="plus" size={17} />
-                                Shto tavolinën{tablesAdded.length ? ` (${tablesAdded.length} gati)` : ""}
+                                {values.count > 1 ? `Shto ${values.count} tavolina` : "Shto tavolinën"}{tablesAdded.length ? ` (${tablesAdded.length} gati)` : ""}
                               </button>
                             )}
                           </form>
@@ -1368,6 +1412,7 @@ function App({ user, onLogout, onUserChange }) {
                 </div>
               ) : (
                 <>
+                <GuestOrders state={state} user={user} update={update} />
                 {closedTills.length > 0 && (
                   <div className="notice warning">
                     <Icon name="clock" />
@@ -2177,6 +2222,27 @@ function App({ user, onLogout, onUserChange }) {
                             placeholder={"Qumësht soje +50\nPa sheqer\nE madhe +100"}
                           />
                         </label>
+                        <fieldset className="menu-fields">
+                          <legend>Menuja online</legend>
+                          <label className="check-row">
+                            <input type="checkbox" name="menuVisible" defaultChecked={editor.menuVisible !== false} />
+                            Shfaqe në menunë online
+                          </label>
+                          <Field label="Emri në anglisht" name="nameEn" defaultValue={editor.nameEn || ""} placeholder="bosh: mbetet emri shqip" maxLength={80} />
+                          <label className="field">
+                            <span>Përshkrimi (shqip)</span>
+                            <textarea name="description" rows={2} maxLength={300} defaultValue={editor.description || ""} placeholder="p.sh. Espresso me pak qumësht të shkumëzuar" />
+                          </label>
+                          <label className="field">
+                            <span>Përshkrimi (anglisht)</span>
+                            <textarea name="descriptionEn" rows={2} maxLength={300} defaultValue={editor.descriptionEn || ""} placeholder="e.g. Espresso with a little foamed milk" />
+                          </label>
+                          {editor.id ? (
+                            <ProductPhoto product={state.products.find((p) => p.id === editor.id) || editor} onChanged={() => database.refresh()} />
+                          ) : (
+                            <p className="helper">Fotoja shtohet pasi ta ruani produktin.</p>
+                          )}
+                        </fieldset>
                         <p className="helper">
                           {editor.id
                             ? "Çmimi i ri zbatohet për produktet e shtuara në porosi të reja."
@@ -2558,6 +2624,11 @@ function App({ user, onLogout, onUserChange }) {
                       <StationSetup state={state} update={update} />
                     </div>
                   </>
+                )}
+                {settingsTab === "Menuja online" && (
+                  <div className="settings-column settings-wide">
+                    <OnlineMenuSettings venue={user.venue} state={state} update={update} onVenueChange={(venue) => onUserChange({ venue })} />
+                  </div>
                 )}
                 {settingsTab === "Fiskalizimi" && (
                   <div className="settings-column settings-wide">

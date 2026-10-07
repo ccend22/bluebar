@@ -38,3 +38,9 @@ CREATE TABLE IF NOT EXISTS bluebar_catalog.print_pairings (
 -- (their username, then the PIN).
 ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS manager_login text NOT NULL DEFAULT 'pin_only'
   CHECK (manager_login IN ('pin_only', 'name_pin'));
+-- The public online menu is off until the manager turns it on (Cilësimet → Menuja online).
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS menu_enabled boolean NOT NULL DEFAULT false;
+-- Guests ordering from the menu (needs the menu on), and the secret that signs each
+-- table's QR code so an order can only come from someone holding that table's code.
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS menu_ordering boolean NOT NULL DEFAULT false;
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS menu_secret text;

@@ -35,6 +35,16 @@ const name = (v, max = 80) => {
     fail("Emri është i pavlefshëm.");
   return v.trim();
 };
+// Optional guest-facing text (online menu): may be empty; undefined keeps the old value.
+const menuText = (v, max, keep = "") => {
+  if (v === undefined) return keep || "";
+  if (typeof v !== "string" || v.trim().length > max) fail(`Teksti i menusë është i gjatë (deri ${max} shkronja).`);
+  return v.trim();
+};
+const bool = (v) => {
+  if (typeof v !== "boolean") fail("Vlerë e pavlefshme.");
+  return v;
+};
 const nextId = (items) => Math.max(0, ...items.map((x) => x.id)) + 1;
 // The print agent opens a raw TCP connection to this address from inside the venue,
 // so only LAN addresses are accepted — never a public host.
@@ -225,6 +235,15 @@ export function applyCommand(state, type, payload, actor = null) {
       fail("Zgjidhni një kamarier aktiv.");
     return p.waiterId;
   };
+  const guestOrder = () => {
+    integer(p.id);
+    return (state.guestOrders || []).find((g) => g.id === p.id) ?? fail("Kjo porosi nuk pret më: është vendosur tashmë.");
+  };
+  const decideGuest = (s, g, status, reason = "") => ({
+    ...s,
+    guestOrders: s.guestOrders.filter((x) => x.id !== g.id),
+    guestDecided: [...(s.guestDecided || []), { id: g.id, status, reason, decidedBy: actor?.name || null }],
+  });
   switch (type) {
     case "order.add": {
       table();
@@ -236,6 +255,48 @@ export function applyCommand(state, type, payload, actor = null) {
         (l) => l.id === productId && JSON.stringify(lineDetails(l)) === JSON.stringify(readDetails(state.products.find((x) => x.id === productId), details)),
       );
       next = log(next, tableId, "add", `+1 × ${describe(added)}`);
+      break;
+    }
+    case "guest.accept": {
+      // A guest's order from the online menu, confirmed by staff: its items join the
+      // table at today's prices and go to the stations, as if the waiter had entered them.
+      const g = guestOrder();
+      const t = table(g.table);
+      if (!tableShift(state, t)) fail("Turni është i mbyllur.");
+      let waiter;
+      if (actor?.role === "waiter") {
+        if (t.waiter && t.waiter !== actor.waiterId) fail("Kjo tavolinë është e një kolegu: ai e pranon porosinë.");
+        waiter = actor.waiterId;
+      } else waiter = t.waiter ?? activeWaiter();
+      next = state;
+      try {
+        for (const item of g.items)
+          for (let n = 0; n < item.qty; n++) next = addItem(next, t.id, item.productId, waiter, { extras: item.extras, note: item.note });
+      } catch (e) {
+        fail(`${e.message} Refuzojeni porosinë ose shtojeni vetë pa këtë artikull.`);
+      }
+      const names = g.items.map((i) => `${i.qty} × ${state.products.find((x) => x.id === i.productId)?.name ?? "?"}`).join(", ");
+      // Sent by the menu itself, nobody accepted it by hand: the history says so.
+      const how = actor?.role === "system" ? "Porosi nga menuja online" : "Pranoi porosinë nga menuja online";
+      next = log(next, t.id, "guest", `${how} (G-${g.id}): ${names}`);
+      next = applyCommand(next, "order.send", { tableId: t.id }, actor).state;
+      next = decideGuest(next, g, "accepted");
+      break;
+    }
+    case "guest.seen": {
+      // A waiter saw the order a guest sent straight to the stations.
+      integer(p.id);
+      if (!(state.guestAlerts || []).some((g) => g.id === p.id)) fail("Ky njoftim është parë tashmë.");
+      next = { ...state, guestAlerts: state.guestAlerts.filter((g) => g.id !== p.id), guestSeen: [...(state.guestSeen || []), p.id] };
+      break;
+    }
+    case "guest.reject": {
+      const g = guestOrder();
+      const t = table(g.table);
+      if (actor?.role === "waiter" && t.waiter && t.waiter !== actor.waiterId) fail("Kjo tavolinë është e një kolegu.");
+      const reason = p.reason === undefined ? "" : menuText(p.reason, 200, "");
+      next = log(state, t.id, "guest", `Refuzoi porosinë nga menuja online (G-${g.id})${reason ? `: ${reason}` : ""}`);
+      next = decideGuest(next, g, "rejected", reason);
       break;
     }
     case "order.remove": {
@@ -993,6 +1054,12 @@ export function applyCommand(state, type, payload, actor = null) {
         minStock: existing?.minStock ?? 10,
         available: existing?.available ?? true,
         extras: p.extras === undefined ? existing?.extras || [] : readExtras(p.extras),
+        // What the online menu shows. Left out of the request: kept as they were.
+        nameEn: menuText(p.nameEn, 80, existing?.nameEn),
+        description: menuText(p.description, 300, existing?.description),
+        descriptionEn: menuText(p.descriptionEn, 300, existing?.descriptionEn),
+        menuVisible: p.menuVisible === undefined ? existing?.menuVisible ?? true : bool(p.menuVisible),
+        photoAt: existing?.photoAt ?? null,
       };
       next = {
         ...state,
@@ -1011,6 +1078,15 @@ export function applyCommand(state, type, payload, actor = null) {
       )
         fail("Kjo kategori menuje ekziston.");
       next = { ...state, categories: [...state.categories, category] };
+      break;
+    }
+    case "category.translate": {
+      // The category's English name on the online menu ("" clears it).
+      const category = name(p.name, 40);
+      if (!state.categories.includes(category)) fail("Kategoria e menusë nuk ekziston.");
+      const nameEn = menuText(p.nameEn, 40, "");
+      const { [category]: _, ...rest } = state.categoryEn || {};
+      next = { ...state, categoryEn: nameEn ? { ...rest, [category]: nameEn } : rest };
       break;
     }
     case "department.create": {

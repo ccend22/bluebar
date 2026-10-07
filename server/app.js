@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks, spendBudget } from "./tenants.js";
 import { installer } from "./installers.js";
 import { encode } from "../public/bluebar-print.mjs";
@@ -8,7 +9,7 @@ import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
-import { posOf } from "../src/domain.js";
+import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
   agentKeyValid,
   agentStatus,
@@ -45,6 +46,7 @@ const WAITER_COMMANDS = new Set([
   "order.add", "order.remove", "order.assign", "order.send", "order.pay", "order.handover", "order.move",
   "order.edit", "order.note", "order.fire", "order.remake",
   "ticket.done", "ticket.transfer", "ticket.accept",
+  "guest.accept", "guest.reject", "guest.seen",
 ]);
 const publicUser = ({ role, waiterId, name }) => ({ role, waiterId, name });
 const pin = { type: "string", pattern: "^[0-9]{6}$" };
@@ -94,13 +96,16 @@ export function buildApp({
     const path = request.url.split("?")[0];
     // Fetched by curl/PowerShell or a download link: carries only its one-time code.
     if (request.method === "GET" && path.startsWith("/api/print/install/")) return;
+    // The public online menu: opened by guests' phones and <img> tags, read-only, no
+    // session, and each route resolves its own business from the URL.
+    if (request.method === "GET" && path.startsWith("/api/menu/")) return;
     const origin = request.headers.origin;
     if (origin && !allowed.has(origin))
       return reply.code(403).send({ error: "Origin i palejuar." });
     // No CORS: cross-site browser requests cannot add this non-simple header.
     if (request.headers["x-bluebar-client"] !== "1")
       return reply.code(403).send({ error: "Kërkesë e palejuar." });
-    if (path === "/api/venues/register" || path === "/api/print/pair") return;
+    if (path === "/api/venues/register" || path === "/api/print/pair" || path.startsWith("/api/menu/")) return;
     requireDb();
     request.venue = await resolveVenue(pool, request.headers["x-bluebar-venue"] || "bluebar");
     request.db = tenantPool(pool, request.venue.schema_name);
@@ -164,6 +169,14 @@ export function buildApp({
         refunds: [],
         invoices: state.invoices.filter((i) => openShifts.some((x) => x.id === i.shiftId)),
         tables: state.tables.filter((t) => t.active && (!own || posOf(state, t) === own)),
+        guestOrders: (state.guestOrders || []).filter((g) => {
+          const t = state.tables.find((x) => x.id === g.table);
+          return t && (!own || posOf(state, t) === own);
+        }),
+        guestAlerts: (state.guestAlerts || []).filter((g) => {
+          const t = state.tables.find((x) => x.id === g.table);
+          return t && (!own || posOf(state, t) === own);
+        }),
         // Station tickets of other tills' tables are none of this waiter's business.
         tickets: own
           ? state.tickets.filter((k) => (k.posId ?? posOf(state, state.tables.find((t) => t.id === k.table) || {})) === own)
@@ -269,6 +282,281 @@ export function buildApp({
     return start(request, reply, accountId);
   });
   app.get("/api/venue", async request => publicVenue(request.venue));
+
+  // ---- Online menu. Guests see only products the manager left visible, and only
+  // their guest-facing fields: never stock, departments or anything about orders.
+  const menuBudget = throttle(600, 10 * 60_000);
+  const menuVenue = async (request) => {
+    requireDb();
+    if (!menuBudget(request.ip)) throw new AppError("Shumë kërkesa. Provoni pas pak.", 429);
+    const venue = await resolveVenue(pool, request.params.slug);
+    if (!venue.menu_enabled) throw new AppError("Menuja nuk është e disponueshme.", 404);
+    return { venue, db: tenantPool(pool, venue.schema_name) };
+  };
+  const photoVersion = (at) => (at ? new Date(at).getTime().toString(36) : null);
+  app.get("/api/menu/:slug", async (request, reply) => {
+    const { venue, db } = await menuVenue(request);
+    const [categories, products, brand] = await Promise.all([
+      db.query("SELECT name, name_en FROM bluebar.categories ORDER BY name"),
+      db.query(`SELECT id, name, name_en, description, description_en, price, category, available, extras, photo_at
+                FROM bluebar.products WHERE menu_visible ORDER BY name`),
+      db.query("SELECT tagline, accent, logo_at FROM bluebar.menu_branding WHERE id = 1"),
+    ]);
+    const b = brand.rows[0] || {};
+    // The edge (Vercel) answers most guests for up to a minute; a phone always asks again,
+    // so turning the menu off or changing a price never sticks on a guest's phone.
+    reply.header("Cache-Control", "public, max-age=0, s-maxage=60");
+    return {
+      name: venue.name,
+      ordering: Boolean(venue.menu_ordering),
+      brand: { tagline: b.tagline || "", accent: b.accent || "blue", logo: photoVersion(b.logo_at) },
+      categories: categories.rows
+        .filter((c) => products.rows.some((p) => p.category === c.name))
+        .map((c) => ({ name: c.name, nameEn: c.name_en })),
+      products: products.rows.map((p) => ({
+        id: p.id, name: p.name, nameEn: p.name_en, description: p.description, descriptionEn: p.description_en,
+        price: p.price, category: p.category, available: p.available,
+        extras: (p.extras || []).map(({ name, price }) => ({ name, price })),
+        photo: photoVersion(p.photo_at),
+      })),
+    };
+  });
+  app.get("/api/menu/:slug/photo/:id", async (request, reply) => {
+    const { db } = await menuVenue(request);
+    const id = Number(request.params.id);
+    const photo = Number.isSafeInteger(id) && id > 0 && (await db.query(
+      `SELECT f.type, f.data FROM bluebar.product_photos f JOIN bluebar.products p ON p.id = f.product_id
+       WHERE f.product_id = $1 AND p.menu_visible`, [id])).rows[0];
+    if (!photo) throw new AppError("Fotoja nuk u gjet.", 404);
+    // The URL carries the photo's version (?v=), so it can be cached for good.
+    reply.header("Cache-Control", "public, max-age=31536000, immutable").type(photo.type);
+    return Buffer.from(photo.data);
+  });
+  app.put("/api/venue/menu", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, minProperties: 1,
+      properties: { enabled: { type: "boolean" }, ordering: { type: "boolean" } } } },
+  }, async (request) => {
+    const { enabled = null, ordering = null } = request.body;
+    const row = (await pool.query(
+      `UPDATE bluebar_catalog.venues SET menu_enabled = COALESCE($1, menu_enabled), menu_ordering = COALESCE($2, menu_ordering)
+       WHERE slug = $3 RETURNING menu_enabled, menu_ordering`,
+      [enabled, ordering, request.venue.slug],
+    )).rows[0];
+    return { menuEnabled: row.menu_enabled, menuOrdering: row.menu_ordering };
+  });
+
+  // ---- Guests ordering from the menu. Only someone holding a table's QR code can order
+  // for it: the code carries a key signed with the business's own secret. Nothing a
+  // guest sends is trusted beyond product ids, quantities and chosen extras; every
+  // order waits for staff (guest.accept) before it touches the table.
+  const menuSecret = async (venue) =>
+    venue.menu_secret ||
+    (await pool.query(
+      "UPDATE bluebar_catalog.venues SET menu_secret = COALESCE(menu_secret, $1) WHERE slug = $2 RETURNING menu_secret",
+      [randomBytes(32).toString("base64url"), venue.slug],
+    )).rows[0].menu_secret;
+  const tableKey = (secret, tableId) => createHmac("sha256", secret).update(`table:${tableId}`).digest("base64url").slice(0, 16);
+  const keyOk = async (venue, tableId, key) => {
+    const expected = Buffer.from(tableKey(await menuSecret(venue), tableId));
+    const given = Buffer.from(typeof key === "string" ? key : "");
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  };
+  const hashToken = (token) => createHash("sha256").update(token).digest("hex");
+  // Can this table order right now? (The menu asks before showing the order buttons.)
+  const orderingAt = (venue, state, tableId) => {
+    const table = state.tables.find((t) => t.id === tableId && t.active);
+    if (!venue.menu_ordering || !table) return { open: false, reason: "off", message: "Porositë nga menuja nuk janë aktive." };
+    if (!tableShift(state, table)) return { open: false, reason: "closed", message: "Lokali nuk merr porosi tani." };
+    return { open: true, table };
+  };
+  app.get("/api/menu/:slug/table/:table", async (request) => {
+    const { venue, db } = await menuVenue(request);
+    const tableId = Number(request.params.table);
+    if (!Number.isSafeInteger(tableId) || !(await keyOk(venue, tableId, request.query.k)))
+      return { table: tableId || null, open: false, reason: "key", message: "Skanoni kodin QR të tavolinës për të porositur." };
+    const { open, reason, message } = orderingAt(venue, (await readSnapshot(db)).state, tableId);
+    return { table: tableId, open, reason, message };
+  });
+  app.get("/api/venue/menu/tables", { preValidation: session("manager") }, async (request) => {
+    const secret = await menuSecret(request.venue);
+    const tables = (await request.db.query("SELECT id FROM bluebar.dining_tables WHERE active ORDER BY id")).rows;
+    return { tables: tables.map((t) => ({ id: t.id, key: tableKey(secret, t.id) })) };
+  });
+  app.post("/api/menu/:slug/orders", {
+    schema: {
+      body: {
+        type: "object", additionalProperties: false, required: ["table", "key", "items"],
+        properties: {
+          table: { type: "integer", minimum: 1 },
+          key: { type: "string", maxLength: 40 },
+          note: { type: "string", maxLength: 200 },
+          items: {
+            type: "array", minItems: 1, maxItems: 30,
+            items: {
+              type: "object", additionalProperties: false, required: ["productId", "qty"],
+              properties: {
+                productId: { type: "integer", minimum: 1 },
+                qty: { type: "integer", minimum: 1, maximum: 20 },
+                extras: { type: "array", maxItems: 10, items: { type: "string", maxLength: 60 } },
+                note: { type: "string", maxLength: 120 },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { venue, db } = await menuVenue(request);
+    const { table: tableId, key, items, note = "" } = request.body;
+    if (!(await keyOk(venue, tableId, key))) throw new AppError("Skanoni kodin QR të tavolinës për të porositur.", 403);
+    if ((await spendBudget(pool, `guest-order:${request.ip}`)) > 20)
+      throw new AppError("Shumë porosi nga kjo pajisje. Thërrisni kamarierin.", 429);
+    const { state } = await readSnapshot(db);
+    const { open, message } = orderingAt(venue, state, tableId);
+    if (!open) throw new AppError(message, 409);
+    // No waiter checks it before the kitchen does, so a table gets a bounded number of orders.
+    const recent = (await db.query(
+      "SELECT count(*)::int AS n FROM bluebar.guest_orders WHERE table_id = $1 AND created_at > now() - interval '30 minutes'", [tableId],
+    )).rows[0].n;
+    if (recent >= 6) throw new AppError("Shumë porosi nga kjo tavolinë. Thërrisni kamarierin.", 429);
+    if (items.reduce((s, i) => s + i.qty, 0) > 40) throw new AppError("Porosia është shumë e madhe. Thërrisni kamarierin.", 400);
+    const clean = items.map((item) => {
+      const product = state.products.find((p) => p.id === item.productId && p.menuVisible !== false);
+      if (!product) throw new AppError("Një produkt nuk është më në menu. Rifreskoni menunë.", 409);
+      if (product.available === false) throw new AppError(`${product.name} ka mbaruar.`, 409);
+      let extras;
+      try {
+        extras = resolveExtras(product, item.extras || []).map((x) => x.name);
+      } catch (e) {
+        throw new AppError(e.message, 400);
+      }
+      return { productId: product.id, qty: item.qty, extras, note: (item.note || "").trim() };
+    });
+    const token = randomBytes(18).toString("base64url");
+    const id = (await db.query(
+      "INSERT INTO bluebar.guest_orders(table_id, items, note, token_hash) VALUES($1,$2,$3,$4) RETURNING id",
+      [tableId, JSON.stringify(clean), note.trim(), hashToken(token)],
+    )).rows[0].id;
+    // Straight to the table and its stations, as if the table's waiter had entered it. The
+    // order is the table waiter's, else a waiter of that till's, else any active one.
+    // If it can't go through (stock ran out, no active waiter, a concurrent change three
+    // times running), it stays waiting and staff accept it by hand: never lost.
+    const table = state.tables.find((t) => t.id === tableId);
+    const active = state.waiters.filter((w) => w.active);
+    const waiterId = table.waiter ?? (active.find((w) => w.posId === posOf(state, table)) ?? active[0])?.id;
+    let status = "pending";
+    for (let attempt = 0; waiterId && attempt < 3 && status === "pending"; attempt++) {
+      try {
+        const { version } = await readSnapshot(db);
+        await execute(db, { id: randomUUID(), version, type: "guest.accept", payload: { id, waiterId } }, { role: "system", name: "Menuja online" });
+        status = "accepted";
+      } catch (e) {
+        if (e.statusCode !== 409) break;
+      }
+    }
+    if (status === "pending") await bumpRevision(db);
+    reply.code(201);
+    return { id, token, status };
+  });
+  // The guest's phone follows its order: waiting, accepted (on its way) or rejected.
+  app.get("/api/menu/:slug/orders/:id", async (request) => {
+    const { db } = await menuVenue(request);
+    const id = Number(request.params.id);
+    const token = String(request.query.token || "");
+    const row = Number.isSafeInteger(id) && token && (await db.query(
+      "SELECT status, reason FROM bluebar.guest_orders WHERE id = $1 AND token_hash = $2", [id, hashToken(token)],
+    )).rows[0];
+    if (!row) throw new AppError("Porosia nuk u gjet.", 404);
+    return { status: row.status, reason: row.reason };
+  });
+  // A product's photo, as the browser already shrank it (WebP or JPEG, at most ~400 KB).
+  // Checked by its first bytes, not by what the request claims.
+  const readPhoto = (dataUrl, { png = false, max = 400000 } = {}) => {
+    const m = /^data:(image\/(?:webp|jpeg|png));base64,([A-Za-z0-9+/]+=*)$/.exec(dataUrl);
+    const data = m && Buffer.from(m[2], "base64");
+    const isWebp = data && data.subarray(0, 4).toString("latin1") === "RIFF" && data.subarray(8, 12).toString("latin1") === "WEBP";
+    const isJpeg = data && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+    const isPng = png && data && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const ok = { "image/webp": isWebp, "image/jpeg": isJpeg, "image/png": isPng };
+    if (!data || !ok[m[1]]) throw new AppError(png ? "Logo duhet të jetë PNG, WebP ose JPEG." : "Fotoja nuk është WebP ose JPEG i vlefshëm.", 400);
+    if (data.length > max) throw new AppError("Fotoja është shumë e madhe.", 413);
+    return { type: m[1], data };
+  };
+  const productId = (request) => {
+    const id = Number(request.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) throw new AppError("Produkti nuk ekziston.", 404);
+    return id;
+  };
+  // A photo change isn't a till command (no version conflict for orders in flight), but it
+  // bumps the revision so every open screen picks up the new photo on its next refresh.
+  const photoChanged = (db, id, at) =>
+    db.query(
+      `WITH p AS (UPDATE bluebar.products SET photo_at = ${at} WHERE id = $1 RETURNING id)
+       UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1 AND EXISTS (SELECT 1 FROM p) RETURNING 1`,
+      [id],
+    );
+  app.get("/api/products/:id/photo", { preValidation: session("manager") }, async (request) => {
+    const photo = (await request.db.query("SELECT type, data FROM bluebar.product_photos WHERE product_id=$1", [productId(request)])).rows[0];
+    return { dataUrl: photo ? `data:${photo.type};base64,${Buffer.from(photo.data).toString("base64")}` : null };
+  });
+  app.put("/api/products/:id/photo", {
+    // The one route that carries a picture: the app's 16 KB limit stays everywhere else.
+    bodyLimit: 600000,
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["dataUrl"], properties: { dataUrl: { type: "string", maxLength: 560000 } } } },
+  }, async (request) => {
+    const id = productId(request);
+    const { type, data } = readPhoto(request.body.dataUrl);
+    await request.db.query(
+      `INSERT INTO bluebar.product_photos(product_id, type, data) VALUES($1,$2,$3)
+       ON CONFLICT(product_id) DO UPDATE SET type=$2, data=$3`, [id, type, data],
+    ).catch((error) => {
+      throw error.code === "23503" ? new AppError("Produkti nuk ekziston.", 404) : error;
+    });
+    await photoChanged(request.db, id, "now()");
+    return { ok: true };
+  });
+  // The menu's identity (Cilësimet → Menuja online): welcome line, brand colour, logo.
+  const ACCENTS = ["blue", "terracotta", "olive", "plum", "teal", "amber"];
+  app.get("/api/venue/menu-brand", { preValidation: session("manager") }, async (request) => {
+    const b = (await request.db.query("SELECT tagline, accent, logo_type, logo FROM bluebar.menu_branding WHERE id = 1")).rows[0];
+    return { tagline: b.tagline, accent: b.accent, logo: b.logo ? `data:${b.logo_type};base64,${Buffer.from(b.logo).toString("base64")}` : null };
+  });
+  app.put("/api/venue/menu-brand", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["tagline", "accent"],
+      properties: { tagline: { type: "string", maxLength: 90 }, accent: { type: "string", enum: ACCENTS } } } },
+  }, async (request) => {
+    await request.db.query("UPDATE bluebar.menu_branding SET tagline=$1, accent=$2 WHERE id = 1", [request.body.tagline.trim(), request.body.accent]);
+    return { tagline: request.body.tagline.trim(), accent: request.body.accent };
+  });
+  app.put("/api/venue/menu-logo", {
+    bodyLimit: 450000,
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["dataUrl"], properties: { dataUrl: { type: "string", maxLength: 410000 } } } },
+  }, async (request) => {
+    const { type, data } = readPhoto(request.body.dataUrl, { png: true, max: 300000 });
+    await request.db.query("UPDATE bluebar.menu_branding SET logo_type=$1, logo=$2, logo_at=now() WHERE id = 1", [type, data]);
+    return { ok: true };
+  });
+  app.delete("/api/venue/menu-logo", { preValidation: session("manager") }, async (request) => {
+    await request.db.query("UPDATE bluebar.menu_branding SET logo_type=NULL, logo=NULL, logo_at=NULL WHERE id = 1");
+    return { ok: true };
+  });
+  app.get("/api/menu/:slug/logo", async (request, reply) => {
+    const { db } = await menuVenue(request);
+    const b = (await db.query("SELECT logo_type, logo FROM bluebar.menu_branding WHERE id = 1 AND logo IS NOT NULL")).rows[0];
+    if (!b) throw new AppError("Logo nuk u gjet.", 404);
+    reply.header("Cache-Control", "public, max-age=31536000, immutable").type(b.logo_type);
+    return Buffer.from(b.logo);
+  });
+  app.delete("/api/products/:id/photo", { preValidation: session("manager") }, async (request) => {
+    const id = productId(request);
+    await request.db.query("DELETE FROM bluebar.product_photos WHERE product_id=$1", [id]);
+    await photoChanged(request.db, id, "NULL");
+    return { ok: true };
+  });
   app.get("/api/integrations/bluebill/connection", {
     preValidation: session("manager"),
   }, async request => {
@@ -733,6 +1021,10 @@ export function buildApp({
                 "table.layout",
                 "product.save",
                 "category.create",
+                "category.translate",
+                "guest.accept",
+                "guest.reject",
+                "guest.seen",
                 "department.create",
                 "stock.receive",
                 "stock.adjust",

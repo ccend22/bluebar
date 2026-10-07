@@ -4,7 +4,7 @@ import { hashSecret, validPin, ipPolicy } from "./auth.js";
 import { migrateTenant, tenantSQL } from "./migrate.js";
 
 export const validSlug = slug => typeof slug === "string" && /^[a-z0-9][a-z0-9-]{2,39}$/.test(slug);
-export const publicVenue = venue => ({ slug: venue.slug, name: venue.name, loginMode: venue.login_mode, managerLogin: venue.manager_login || "pin_only" });
+export const publicVenue = venue => ({ slug: venue.slug, name: venue.name, loginMode: venue.login_mode, managerLogin: venue.manager_login || "pin_only", menuEnabled: Boolean(venue.menu_enabled), menuOrdering: Boolean(venue.menu_ordering) });
 
 // Every auth and business query uses a request-local wrapper. No shared search_path
 // or mutable tenant state can leak between concurrent pooled connections.

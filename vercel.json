@@ -5,6 +5,10 @@
     {
       "source": "/api/(.*)",
       "destination": "/api"
+    },
+    {
+      "source": "/menu/:slug",
+      "destination": "/menu.html"
     }
   ],
   "functions": {

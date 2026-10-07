@@ -60,6 +60,18 @@ export const saveLoginMode = (loginMode) => send("PUT", "/venue/login-mode", { l
 export const saveManagerLogin = (managerLogin) => send("PUT", "/venue/manager-login", { managerLogin });
 // The signed-in manager's own name and/or PIN; the current PIN is always required.
 export const updateMyAccount = (body) => send("PUT", "/accounts/me", body);
+// Online menu: on/off (Cilësimet → Menuja online) and each product's photo (Produktet).
+export const saveMenuSettings = (body) => send("PUT", "/venue/menu", body);
+// Each active table's signed key: its QR code lets guests order for that table only.
+export const fetchMenuTables = () => request("/venue/menu/tables");
+// The menu's identity: welcome line, brand colour, logo.
+export const fetchMenuBrand = () => request("/venue/menu-brand");
+export const saveMenuBrand = (body) => send("PUT", "/venue/menu-brand", body);
+export const saveMenuLogo = (dataUrl) => send("PUT", "/venue/menu-logo", { dataUrl });
+export const deleteMenuLogo = () => send("DELETE", "/venue/menu-logo");
+export const fetchProductPhoto = (id) => request(`/products/${id}/photo`);
+export const saveProductPhoto = (id, dataUrl) => send("PUT", `/products/${id}/photo`, { dataUrl });
+export const deleteProductPhoto = (id) => send("DELETE", `/products/${id}/photo`);
 export function openBusiness(slug) {
   const url = new URL(window.location.href);
   url.search = "";
