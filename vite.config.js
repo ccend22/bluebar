@@ -13,7 +13,15 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
     plugins: [menuPage],
-    build: { rollupOptions: { input: { main: "index.html", menu: "menu.html" } } },
+    build: {
+      rollupOptions: {
+        input: { main: "index.html", menu: "menu.html" },
+        // "use client" is a React Server Components marker (motion, sonner, number-flow ship it); meaningless here.
+        onwarn(warning, warn) {
+          if (warning.code !== "MODULE_LEVEL_DIRECTIVE") warn(warning);
+        },
+      },
+    },
     server: {
       host: "127.0.0.1",
       proxy: {
