@@ -1521,3 +1521,52 @@ test("guests order from the menu: only with the table's QR key, at the server's 
     await t.close();
   }
 });
+
+test("the online menu's English is written by the translator on save, never typed, and never blocks a save", async () => {
+  const calls = [];
+  const fake = async (texts) => (calls.push(texts), texts.map((t) => ({ "Kafe turke": "Turkish coffee", "E fortë, me llokum": "Strong, with Turkish delight", "Ëmbëlsira": "Desserts" })[t] || `EN:${t}`));
+  const t = await setup({ translate: fake });
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } });
+    const cmd = async (type, payload) => {
+      const version = (await t.call("GET", "/api/state", { cookie })).json().version;
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    assert.equal((await cmd("product.save", { name: "Kafe turke", category: "Kafe", price: 150, description: "E fortë, me llokum" })).statusCode, 200);
+    const guest = async () => (await t.inject({ method: "GET", url: "/api/menu/bluebar", headers: { host: "localhost" } })).json();
+    const p = (await guest()).products.find((x) => x.name === "Kafe turke");
+    assert.equal(p.nameEn, "Turkish coffee");
+    assert.equal(p.descriptionEn, "Strong, with Turkish delight");
+    assert.equal((await cmd("category.create", { name: "Ëmbëlsira" })).statusCode, 200);
+    const s = (await t.call("GET", "/api/state", { cookie })).json().state;
+    assert.equal(s.categoryEn["Ëmbëlsira"], "Desserts");
+    // Bulk: everything still without English (the seeded categories), once.
+    const bulk = (await t.call("POST", "/api/venue/menu/translate", { cookie })).json();
+    assert.ok(bulk.categories >= 1);
+    assert.deepEqual((await t.call("POST", "/api/venue/menu/translate", { cookie })).json(), { products: 0, categories: 0 });
+    assert.equal((await t.call("GET", "/api/venue/menu-brand", { cookie })).json().translation, true);
+  } finally {
+    await t.close();
+  }
+  // A failing translator never fails the save; the menu keeps the Albanian.
+  const broken = await setup({ translate: async () => { throw new Error("down"); } });
+  try {
+    const cookie = broken.cookieOf(await broken.managerLogin());
+    const version = (await broken.call("GET", "/api/state", { cookie })).json().version;
+    const r = await broken.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type: "product.save", payload: { name: "Çaj", category: "Kafe", price: 100 } } });
+    assert.equal(r.statusCode, 200);
+    assert.equal((await broken.call("POST", "/api/venue/menu/translate", { cookie })).statusCode, 502);
+  } finally {
+    await broken.close();
+  }
+  // No key: no translation, and the manager is told so.
+  const none = await setup({ translate: null });
+  try {
+    const cookie = none.cookieOf(await none.managerLogin());
+    assert.equal((await none.call("GET", "/api/venue/menu-brand", { cookie })).json().translation, false);
+    assert.equal((await none.call("POST", "/api/venue/menu/translate", { cookie })).statusCode, 503);
+  } finally {
+    await none.close();
+  }
+});

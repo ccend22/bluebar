@@ -45,8 +45,11 @@ function QtyBox({ count, name, onPress, t }) {
 // One dish as a ruled line of the pad. Opened, the line unfolds into a slip right where
 // it is (a shared layout animation), with extras as form checkboxes, a note and the quantity.
 export function Line({ product: p, photo, open, onToggle, canOrder, count, onQuickAdd, onAdd, t, tr }) {
+  // In English, the translation the server wrote when the product was saved (DeepL);
+  // without one, the manager's Albanian, marked lang="sq" for a phone's own translator.
   const name = tr(p.name, p.nameEn);
   const description = tr(p.description, p.descriptionEn);
+  const textLang = name === p.name ? "sq" : "en";
   return (
     <m.li layout="position" className={clsx("line", !p.available && "sold-out", open && "open")} id={`line-${p.id}`}>
       <div className="line-row">
@@ -57,8 +60,8 @@ export function Line({ product: p, photo, open, onToggle, canOrder, count, onQui
         )}
         <button className="line-body" aria-expanded={open} onClick={onToggle}>
           <span className="line-text">
-            <strong>{name}</strong>
-            {description && !open && <span className="line-desc">{description}</span>}
+            <strong lang={textLang}>{name}</strong>
+            {description && !open && <span className="line-desc" lang={textLang}>{description}</span>}
             {!p.available && <span className="line-sold">{t.soldOut}</span>}
           </span>
           {photo && !open && <m.img layoutId={`photo-${p.id}`} className="line-photo" src={photo} alt="" loading="lazy" width="64" height="64" />}

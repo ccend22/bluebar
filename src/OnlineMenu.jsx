@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo } from "./api.js";
+import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo, translateMenu } from "./api.js";
 import { ACCENTS } from "./menu/accents.js";
 import { Icon } from "./components.jsx";
 
@@ -108,7 +108,7 @@ function MenuIdentity({ venueName }) {
     setNote({ text: "", error: false });
     try {
       await action();
-      setNote({ text: done, error: false });
+      if (done) setNote({ text: done, error: false });
     } catch (e) {
       setNote({ text: e.message, error: true });
     } finally {
@@ -168,6 +168,29 @@ function MenuIdentity({ venueName }) {
         <button className="primary" disabled={busy} onClick={() => run(() => saveMenuBrand({ tagline: tagline.trim(), accent: brand.accent }), "Identiteti u ruajt. Menuja përditësohet brenda një minute.")}>
           Ruaj identitetin
         </button>
+      </div>
+      <div className="menu-translate">
+        <strong>Anglisht për turistët</strong>
+        {brand.translation ? (
+          <>
+            <p className="helper">
+              Emrat dhe përshkrimet përkthehen vetë në anglisht sa herë ruani një produkt. Për produktet që ekzistonin
+              më parë, përktheni të gjitha njëherësh.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => run(async () => {
+                const r = await translateMenu();
+                setNote({ text: r.products || r.categories ? `U përkthyen ${r.products} produkte dhe ${r.categories} kategori.` : "Gjithçka është e përkthyer.", error: false });
+              }, "")}
+            >
+              Përkthe menunë
+            </button>
+          </>
+        ) : (
+          <p className="helper">Përkthimi automatik nuk është aktiv në këtë server: menuja në anglisht tregon emrat ashtu siç i shkruani.</p>
+        )}
       </div>
       {note.text && <p className={note.error ? "warning-text" : "helper"} role="status">{note.text}</p>}
     </section>

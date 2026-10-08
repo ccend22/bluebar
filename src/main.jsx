@@ -700,11 +700,9 @@ function App({ user, onLogout, onUserChange }) {
               const m = row.match(/^(.*?)\s*\+\s*(\d+)\s*(lek)?$/i);
               return m ? { name: m[1].trim(), price: Number(m[2]) } : { name: row, price: 0 };
             }),
-          // Online menu (guests): visibility and the Albanian/English texts.
+          // Online menu (guests): visibility and the description.
           menuVisible: form.get("menuVisible") === "on",
-          nameEn: String(form.get("nameEn") || "").trim(),
           description: String(form.get("description") || "").trim(),
-          descriptionEn: String(form.get("descriptionEn") || "").trim(),
         },
         editor.id
           ? "Produkti u përditësua. Porositë ekzistuese ruajnë çmimin e tyre."
@@ -2228,14 +2226,9 @@ function App({ user, onLogout, onUserChange }) {
                             <input type="checkbox" name="menuVisible" defaultChecked={editor.menuVisible !== false} />
                             Shfaqe në menunë online
                           </label>
-                          <Field label="Emri në anglisht" name="nameEn" defaultValue={editor.nameEn || ""} placeholder="bosh: mbetet emri shqip" maxLength={80} />
                           <label className="field">
-                            <span>Përshkrimi (shqip)</span>
+                            <span>Përshkrimi</span>
                             <textarea name="description" rows={2} maxLength={300} defaultValue={editor.description || ""} placeholder="p.sh. Espresso me pak qumësht të shkumëzuar" />
-                          </label>
-                          <label className="field">
-                            <span>Përshkrimi (anglisht)</span>
-                            <textarea name="descriptionEn" rows={2} maxLength={300} defaultValue={editor.descriptionEn || ""} placeholder="e.g. Espresso with a little foamed milk" />
                           </label>
                           {editor.id ? (
                             <ProductPhoto product={state.products.find((p) => p.id === editor.id) || editor} onChanged={() => database.refresh()} />

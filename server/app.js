@@ -9,6 +9,7 @@ import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
+import { deeplTranslator } from "./translate.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
   agentKeyValid,
@@ -69,6 +70,8 @@ export function buildApp({
     venueSlug: process.env.BLUEBILL_VENUE_SLUG,
   },
   secretKey = process.env.BLUEBAR_SECRET_KEY,
+  // Albanian → English for the online menu (null: no translation, the menu shows Albanian).
+  translate = deeplTranslator(process.env.DEEPL_API_KEY),
 }) {
   const app = Fastify({
     logger: false,
@@ -517,11 +520,56 @@ export function buildApp({
     await photoChanged(request.db, id, "now()");
     return { ok: true };
   });
+  // The online menu's English, written by the translator whenever a product or category
+  // is saved; the manager never types it. Awaited (a serverless function may stop after
+  // replying), bounded by the translator's own timeout, and never fails the save.
+  const clip = (text, max) => String(text || "").slice(0, max);
+  const translateSaved = async (db, type, payload, state) => {
+    if (!translate || !state) return;
+    try {
+      if (type === "product.save") {
+        const name = String(payload.name || "").trim().toLowerCase();
+        const p = state.products.find((x) => x.name.toLowerCase() === name);
+        if (!p) return;
+        const [nameEn, descriptionEn] = await translate(p.description ? [p.name, p.description] : [p.name]);
+        await db.query("UPDATE bluebar.products SET name_en=$2, description_en=$3 WHERE id=$1", [p.id, clip(nameEn, 80), clip(descriptionEn, 300)]);
+      } else {
+        const category = String(payload.name || "").trim();
+        const [nameEn] = await translate([category]);
+        await db.query("UPDATE bluebar.categories SET name_en=$2 WHERE name=$1", [category, clip(nameEn, 40)]);
+      }
+      await bumpRevision(db);
+    } catch {
+      // Best effort: the menu keeps the Albanian until the next save or a manual translate.
+    }
+  };
+  // Cilësimet → Menuja online → "Përkthe menunë": everything not yet in English.
+  app.post("/api/venue/menu/translate", { preValidation: session("manager") }, async (request) => {
+    if (!translate) throw new AppError("Përkthimi automatik nuk është konfiguruar (DEEPL_API_KEY).", 503);
+    const products = (await request.db.query("SELECT id, name, description FROM bluebar.products WHERE name_en = '' ORDER BY id LIMIT 200")).rows;
+    const categories = (await request.db.query("SELECT name FROM bluebar.categories WHERE name_en = ''")).rows;
+    const texts = [...products.flatMap((p) => [p.name, p.description || "-"]), ...categories.map((c) => c.name)];
+    if (!texts.length) return { products: 0, categories: 0 };
+    let out;
+    try {
+      out = [];
+      for (let i = 0; i < texts.length; i += 50) out.push(...(await translate(texts.slice(i, i + 50))));
+    } catch {
+      throw new AppError("Shërbimi i përkthimit nuk u përgjigj. Provoni pas pak.", 502);
+    }
+    for (const [n, p] of products.entries())
+      await request.db.query("UPDATE bluebar.products SET name_en=$2, description_en=$3 WHERE id=$1",
+        [p.id, clip(out[2 * n], 80), p.description ? clip(out[2 * n + 1], 300) : ""]);
+    for (const [n, c] of categories.entries())
+      await request.db.query("UPDATE bluebar.categories SET name_en=$2 WHERE name=$1", [c.name, clip(out[2 * products.length + n], 40)]);
+    await bumpRevision(request.db);
+    return { products: products.length, categories: categories.length };
+  });
   // The menu's identity (Cilësimet → Menuja online): welcome line, brand colour, logo.
   const ACCENTS = ["blue", "terracotta", "olive", "plum", "teal", "amber"];
   app.get("/api/venue/menu-brand", { preValidation: session("manager") }, async (request) => {
     const b = (await request.db.query("SELECT tagline, accent, logo_type, logo FROM bluebar.menu_branding WHERE id = 1")).rows[0];
-    return { tagline: b.tagline, accent: b.accent, logo: b.logo ? `data:${b.logo_type};base64,${Buffer.from(b.logo).toString("base64")}` : null };
+    return { tagline: b.tagline, accent: b.accent, logo: b.logo ? `data:${b.logo_type};base64,${Buffer.from(b.logo).toString("base64")}` : null, translation: Boolean(translate) };
   });
   app.put("/api/venue/menu-brand", {
     preValidation: session("manager"),
@@ -1061,6 +1109,7 @@ export function buildApp({
       const result = ["order.add", "order.remove"].includes(body.type)
         ? await executeOrderPatch(request.db, body, user)
         : await execute(request.db, body, user);
+      if (["product.save", "category.create"].includes(body.type)) await translateSaved(request.db, body.type, body.payload, result.state);
       return present(result, request);
     },
   );
