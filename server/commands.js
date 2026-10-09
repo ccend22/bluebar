@@ -151,7 +151,7 @@ export function applyCommand(state, type, payload, actor = null) {
   // A unit made and thrown away: it leaves stock as a loss, with why.
   const loss = (s, line, reason) => ({
     ...s,
-    products: s.products.map((x) => (x.id === line.id ? { ...x, stock: Math.max(0, x.stock - 1) } : x)),
+    products: s.products.map((x) => (x.id === line.id && x.trackStock !== false ? { ...x, stock: Math.max(0, x.stock - 1) } : x)),
     movements: [...s.movements, { product: line.name, qty: -1, reason, kind: "loss", actor: actor?.name || null, date: now }],
   });
   const deptOf = (productId) => state.products.find((x) => x.id === productId)?.department || "Tjetër";
@@ -441,7 +441,7 @@ export function applyCommand(state, type, payload, actor = null) {
       const reason = reasonOf(p.reason, "ripërgatitjes");
       const product = state.products.find((x) => x.id === line.id);
       const reserved = state.tables.flatMap((x) => x.lines).filter((l) => l.id === line.id).reduce((s, l) => s + l.qty, 0);
-      if (product.stock - reserved < 1) fail(`Nuk ka stok për të ripërgatitur ${line.name}.`);
+      if (product.trackStock !== false && product.stock - reserved < 1) fail(`Nuk ka stok për të ripërgatitur ${line.name}.`);
       next = { ...state, tickets: [...state.tickets, slip(t, line, "remake", 1, reason)] };
       next = loss(next, line, `Ripërgatitje (Tav. ${t.id}): ${reason}`);
       next = log(next, t.id, "remake", `Ripërgatitje 1 × ${describe(line)}: ${reason}`, { amount: line.price });
@@ -1050,7 +1050,7 @@ export function applyCommand(state, type, payload, actor = null) {
         price,
         category,
         department: department ?? existing?.department ?? null,
-        stock: existing?.stock || 0,
+        stock: existing ? existing.stock : 0,
         minStock: existing?.minStock ?? 10,
         available: existing?.available ?? true,
         extras: p.extras === undefined ? existing?.extras || [] : readExtras(p.extras),
@@ -1060,13 +1060,56 @@ export function applyCommand(state, type, payload, actor = null) {
         descriptionEn: menuText(p.descriptionEn, 300, existing?.descriptionEn),
         menuVisible: p.menuVisible === undefined ? existing?.menuVisible ?? true : bool(p.menuVisible),
         photoAt: existing?.photoAt ?? null,
+        // Counted in units (bottles, cans) or not (an espresso, a dish made to order).
+        trackStock: p.trackStock === undefined ? existing?.trackStock ?? true : bool(p.trackStock),
       };
+      // A new counted product can start with what's already on the shelf.
+      const opening = !existing && product.trackStock && p.initialStock !== undefined && p.initialStock !== null && p.initialStock !== ""
+        ? integer(p.initialStock, 0, 100000)
+        : 0;
+      product.stock += opening;
       next = {
         ...state,
         products: existing
           ? state.products.map((x) => (x.id === existing.id ? product : x))
           : [...state.products, product],
+        movements: opening
+          ? [...state.movements, { product: product.name, qty: opening, reason: "Stoku fillestar", kind: "receive", actor: actor?.name || null, date: now }]
+          : state.movements,
       };
+      break;
+    }
+    case "products.import": {
+      // Many products in one go (Produktet → "Shto shumë"): all or nothing. A category or
+      // department that doesn't exist yet is created; a stock number means the product is
+      // counted, starting from it; no number means it isn't counted.
+      if (!Array.isArray(p.products) || !p.products.length || p.products.length > 200) fail("Shtoni nga 1 deri në 200 produkte.");
+      next = state;
+      const same = (list, v) => list.find((x) => x.toLocaleLowerCase() === v.toLocaleLowerCase());
+      p.products.forEach((row, i) => {
+        try {
+          if (!row || typeof row !== "object") fail("Rresht i pavlefshëm.");
+          const category = name(row.category, 40);
+          const known = same(next.categories, category);
+          if (!known) next = applyCommand(next, "category.create", { name: category }, actor).state;
+          let department;
+          if (row.department !== undefined && row.department !== null && String(row.department).trim() !== "") {
+            department = same(next.departments, name(row.department, 40));
+            if (!department) {
+              department = name(row.department, 40);
+              next = applyCommand(next, "department.create", { name: department }, actor).state;
+            }
+          }
+          const counted = row.stock !== undefined && row.stock !== null && row.stock !== "";
+          next = applyCommand(next, "product.save", {
+            name: row.name, price: row.price, category: known || category, department,
+            trackStock: counted, initialStock: counted ? row.stock : undefined,
+          }, actor).state;
+        } catch (e) {
+          fail(`Rreshti ${i + 1}${typeof row?.name === "string" && row.name.trim() ? ` (${row.name.trim()})` : ""}: ${e.message}`);
+        }
+      });
+      result = { added: p.products.length };
       break;
     }
     case "category.create": {
@@ -1105,6 +1148,7 @@ export function applyCommand(state, type, payload, actor = null) {
       const qty = integer(p.qty, 1, 100000),
         product = state.products.find((x) => x.id === p.productId);
       if (!product) fail("Produkti nuk ekziston.");
+      if (product.trackStock === false) fail(`${product.name} nuk ndjek stokun. Aktivizojeni te Produktet.`);
       integer(product.stock + qty, 0);
       next = {
         ...state,
@@ -1125,12 +1169,36 @@ export function applyCommand(state, type, payload, actor = null) {
       };
       break;
     }
+    case "stock.receiveMany": {
+      // A delivery (Inventari → "Furnizim"): several products' quantities in one save.
+      if (!Array.isArray(p.items) || !p.items.length || p.items.length > 300) fail("Vendosni të paktën një sasi.");
+      const seen = new Set();
+      next = state;
+      for (const item of p.items) {
+        integer(item?.productId);
+        const qty = integer(item.qty, 1, 100000);
+        if (seen.has(item.productId)) fail("Një produkt shfaqet dy herë në furnizim.");
+        seen.add(item.productId);
+        const product = next.products.find((x) => x.id === item.productId);
+        if (!product) fail("Produkti nuk ekziston.");
+        if (product.trackStock === false) fail(`${product.name} nuk ndjek stokun.`);
+        integer(product.stock + qty, 0);
+        next = {
+          ...next,
+          products: next.products.map((x) => (x.id === product.id ? { ...x, stock: x.stock + qty } : x)),
+          movements: [...next.movements, { product: product.name, qty, reason: "Furnizim", kind: "receive", actor: actor?.name || null, date: now }],
+        };
+      }
+      result = { items: p.items.length };
+      break;
+    }
     case "stock.adjust": {
       // A correction or a loss, always with a reason: broken, expired, a recount.
       // Never automatic — a cancelled payment doesn't put a consumed product back.
       integer(p.productId);
       const product = state.products.find((x) => x.id === p.productId);
       if (!product) fail("Produkti nuk ekziston.");
+      if (product.trackStock === false) fail(`${product.name} nuk ndjek stokun.`);
       if (!Number.isSafeInteger(p.qty) || p.qty === 0 || Math.abs(p.qty) > 100000) fail("Vendosni sasinë e korrigjimit.");
       if (!STOCK_REASONS.includes(p.reason)) fail("Zgjidhni arsyen.");
       const note = p.note === undefined || p.note === null || String(p.note).trim() === "" ? "" : name(p.note, 120);

@@ -102,6 +102,14 @@ export function buildApp({
     // The public online menu: opened by guests' phones and <img> tags, read-only, no
     // session, and each route resolves its own business from the URL.
     if (request.method === "GET" && path.startsWith("/api/menu/")) return;
+    // Product photos on staff screens: an <img> can't send the app's header, so this one
+    // read-only route names its business in the URL (?b=) and still needs a staff session.
+    if (request.method === "GET" && path.startsWith("/api/product-photo/")) {
+      requireDb();
+      request.venue = await resolveVenue(pool, new URL(request.url, "http://x").searchParams.get("b") || "bluebar");
+      request.db = tenantPool(pool, request.venue.schema_name);
+      return;
+    }
     const origin = request.headers.origin;
     if (origin && !allowed.has(origin))
       return reply.code(403).send({ error: "Origin i palejuar." });
@@ -499,6 +507,13 @@ export function buildApp({
        UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1 AND EXISTS (SELECT 1 FROM p) RETURNING 1`,
       [id],
     );
+  app.get("/api/product-photo/:id", { preValidation: session() }, async (request, reply) => {
+    const photo = (await request.db.query("SELECT type, data FROM bluebar.product_photos WHERE product_id=$1", [productId(request)])).rows[0];
+    if (!photo) throw new AppError("Fotoja nuk u gjet.", 404);
+    // Versioned by the URL (?v=), private to this device's browser.
+    reply.header("Cache-Control", "private, max-age=31536000, immutable").type(photo.type);
+    return Buffer.from(photo.data);
+  });
   app.get("/api/products/:id/photo", { preValidation: session("manager") }, async (request) => {
     const photo = (await request.db.query("SELECT type, data FROM bluebar.product_photos WHERE product_id=$1", [productId(request)])).rows[0];
     return { dataUrl: photo ? `data:${photo.type};base64,${Buffer.from(photo.data).toString("base64")}` : null };
@@ -1068,6 +1083,8 @@ export function buildApp({
                 "table.delete",
                 "table.layout",
                 "product.save",
+                "products.import",
+                "stock.receiveMany",
                 "category.create",
                 "category.translate",
                 "guest.accept",

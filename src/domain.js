@@ -246,7 +246,8 @@ export function addItem(state, tableId, productId, waiter, details = {}) {
     .flatMap((t) => t.lines)
     .filter((l) => l.id === productId)
     .reduce((s, l) => s + l.qty, 0);
-  if (!product || reserved >= product.stock)
+  // A product that doesn't track stock (an espresso, a dish made to order) is always orderable.
+  if (!product || (product.trackStock !== false && reserved >= product.stock))
     throw Error("Nuk ka stok të disponueshëm për këtë produkt.");
   const d = readDetails(product, details);
   const price = unitPrice(product, d.extras);
@@ -352,6 +353,7 @@ export function checkout(state, tableId, payments, { units = null, by = null, no
 
   // Stock per product: two lines of the same product draw on the same stock.
   for (const p of state.products) {
+    if (p.trackStock === false) continue;
     const need = lines.filter((l) => l.id === p.id).reduce((s, l) => s + l.qty, 0);
     if (need > p.stock) throw Error("Stok i pamjaftueshëm.");
   }
@@ -385,7 +387,7 @@ export function checkout(state, tableId, payments, { units = null, by = null, no
     state: {
       ...state,
       invoices: [invoice, ...state.invoices],
-      products: state.products.map((p) => ({ ...p, stock: p.stock - lines.filter((l) => l.id === p.id).reduce((s, l) => s + l.qty, 0) })),
+      products: state.products.map((p) => (p.trackStock === false ? p : { ...p, stock: p.stock - lines.filter((l) => l.id === p.id).reduce((s, l) => s + l.qty, 0) })),
       // A settled bill frees the table; a split leaves the rest of the bill on it.
       tables: state.tables.map((t) =>
         t.id !== tableId
@@ -396,7 +398,8 @@ export function checkout(state, tableId, payments, { units = null, by = null, no
       ),
       movements: [
         ...state.movements,
-        ...lines.map((l) => ({ product: l.name, qty: -l.qty, reason: `Fatura D-${invoice.id}`, kind: "sale", date: now })),
+        ...lines.filter((l) => state.products.find((p) => p.id === l.id)?.trackStock !== false)
+          .map((l) => ({ product: l.name, qty: -l.qty, reason: `Fatura D-${invoice.id}`, kind: "sale", date: now })),
       ],
     },
     invoice,

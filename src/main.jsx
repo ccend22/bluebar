@@ -5,6 +5,7 @@ import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total } from "
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
+import { ProductImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
@@ -294,6 +295,8 @@ function App({ user, onLogout, onUserChange }) {
   const [receipt, setReceipt] = useState(null),
     [payment, setPayment] = useState(null),
     [editor, setEditor] = useState(null),
+    [bulkOpen, setBulkOpen] = useState(false),
+    [deliveryOpen, setDeliveryOpen] = useState(false),
     [paymentFilter, setPaymentFilter] = useState("Të gjitha"),
     [stockFilter, setStockFilter] = useState("Të gjitha"),
     [settingsTab, setSettingsTab] = useState("Printerët"),
@@ -336,14 +339,14 @@ function App({ user, onLogout, onUserChange }) {
       dialog.current?.showModal();
     }
   }, [payment]);
+  // The table's order opens as a popup over the floor: focus its heading, and the floor
+  // behind it doesn't scroll.
   useEffect(() => {
-    if (selected !== null && window.matchMedia("(max-width: 760px), (max-height: 500px) and (pointer: coarse)").matches) {
-      orderHeading.current?.focus({ preventScroll: true });
-      orderHeading.current
-        ?.closest(".order")
-        ?.scrollIntoView({ block: "start" });
-    }
-  }, [selected]);
+    if (selected === null || page !== "Tavolinat" || manageTables) return;
+    orderHeading.current?.focus({ preventScroll: true });
+    document.body.classList.add("order-open");
+    return () => document.body.classList.remove("order-open");
+  }, [selected, page, manageTables]);
   const notify = (text, tone = "success") => setNotice({ text, tone });
   // An order's messages name its table: with several tables open, "out of stock" alone
   // doesn't say where.
@@ -497,8 +500,9 @@ function App({ user, onLogout, onUserChange }) {
   const floorClashes = [...new Set(collisions(floorTables).flat())];
   const table = activeTables.find((t) => t.id === selected),
     occupied = activeTables.filter((t) => t.lines.length).length;
+  // Not counted (an espresso, a cocktail): always available, never low.
   const available = (p) =>
-    p.stock -
+    p.trackStock === false ? Infinity : p.stock -
     state.tables
       .flatMap((t) => t.lines)
       .filter((l) => l.id === p.id)
@@ -520,8 +524,9 @@ function App({ user, onLogout, onUserChange }) {
   );
   const unrouted = state.products.filter((p) => !p.department).length;
   // Each product's own threshold (10 until the manager sets one).
-  const isLow = (p) => p.stock <= (p.minStock ?? 10);
-  const filteredStock = state.products.filter(
+  const isLow = (p) => p.trackStock !== false && p.stock <= (p.minStock ?? 10);
+  const counted = state.products.filter((p) => p.trackStock !== false);
+  const filteredStock = counted.filter(
     (p) =>
       matches(`${p.name} ${p.category}`, query) &&
       (stockFilter === "Të gjitha" || isLow(p)),
@@ -691,6 +696,8 @@ function App({ user, onLogout, onUserChange }) {
           price,
           category: form.get("category"),
           department: form.get("department") || undefined,
+          trackStock: form.get("trackStock") === "on",
+          ...(!editor.id && form.get("initialStock") ? { initialStock: Number(form.get("initialStock")) } : {}),
           // "Qumësht soje +50" → {name, price: 50}; no "+N" means no extra charge.
           extras: String(form.get("extras") || "")
             .split("\n")
@@ -933,10 +940,16 @@ function App({ user, onLogout, onUserChange }) {
               </div>
               <div className="title-actions">
                 {page === "Produktet" ? (
-                  <button className="primary" onClick={() => setEditor({})}>
-                    <Icon name="plus" size={18} />
-                    Shto produkt
-                  </button>
+                  <>
+                    <button onClick={() => (setBulkOpen(true), setEditor(null))}>
+                      <Icon name="list" size={18} />
+                      Shto shumë
+                    </button>
+                    <button className="primary" onClick={() => (setEditor({}), setBulkOpen(false))}>
+                      <Icon name="plus" size={18} />
+                      Shto produkt
+                    </button>
+                  </>
                 ) : page === "Tavolinat" && role === "Menaxher" ? (
                   manageTables ? (
                     <button
@@ -1445,7 +1458,7 @@ function App({ user, onLogout, onUserChange }) {
                     </strong>
                   </div>
                 </div>
-                <div className={`floor-layout ${table ? "has-order" : ""}`}>
+                <div className="floor-layout">
                   <section
                     className={`floor ${table ? "mobile-hidden" : ""}`}
                     aria-label="Tavolinat e lokalit"
@@ -1527,7 +1540,9 @@ function App({ user, onLogout, onUserChange }) {
                       );
                     })()}
                   </section>
-                  {table ? (
+                  {table && (
+                    <div className="order-modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
+                      <div className="order-modal" role="dialog" aria-modal="true" aria-label={`Porosia e tavolinës ${table.id}`}>
                     <TableOrder
                       table={table}
                       state={state}
@@ -1555,7 +1570,10 @@ function App({ user, onLogout, onUserChange }) {
                       setCancelling={setCancelling}
                       headingRef={orderHeading}
                     />
-                  ) : (
+                      </div>
+                    </div>
+                  )}
+                  {(
                     <aside className="floor-guide">
                       <div className="guide-symbol">
                         <TableSymbol />
@@ -1857,10 +1875,23 @@ function App({ user, onLogout, onUserChange }) {
                     title="Gjendja e stokut"
                     description="Njësi të shitshme · rezervimet përfshijnë porositë e hapura"
                   >
-                    <Badge tone={lowStock ? "amber" : "green"}>
-                      {lowStock} produkte me stok të ulët
-                    </Badge>
+                    <div className="actions">
+                      <Badge tone={lowStock ? "amber" : "green"}>
+                        {lowStock} produkte me stok të ulët
+                      </Badge>
+                      <button className="primary" onClick={() => setDeliveryOpen(true)} disabled={!counted.length}>
+                        <Icon name="plus" size={17} />
+                        Furnizim i ri
+                      </button>
+                    </div>
                   </SectionHeading>
+                  {deliveryOpen && <StockDelivery state={state} update={update} onClose={() => setDeliveryOpen(false)} />}
+                  {state.products.length > counted.length && (
+                    <p className="helper stock-untracked">
+                      {state.products.length - counted.length} produkte nuk numërohen (kafe, koktej, pjata): stoku nuk ua bllokon shitjen dhe nuk shfaqen këtu.
+                      Ndryshojeni te Produktet → "Ndiq stokun".
+                    </p>
+                  )}
                   <div className="toolbar">
                     <Search
                       label="Kërko në inventar"
@@ -1984,9 +2015,9 @@ function App({ user, onLogout, onUserChange }) {
                   ) : (
                     <Empty
                       icon="stock"
-                      title={state.products.length ? "Nuk ka produkte në këtë filtër" : "Ende pa inventar"}
+                      title={!counted.length && state.products.length ? "Produktet tuaja nuk numërohen" : state.products.length ? "Nuk ka produkte në këtë filtër" : "Ende pa inventar"}
                       action={
-                        !state.products.length ? <button onClick={() => nav("Produktet")}>Shko te produktet</button> : <button
+                        !counted.length ? <button onClick={() => nav("Produktet")}>Shko te produktet</button> : <button
                           onClick={() => {
                             setQuery("");
                             setStockFilter("Të gjitha");
@@ -1996,7 +2027,7 @@ function App({ user, onLogout, onUserChange }) {
                         </button>
                       }
                     >
-                      {state.products.length ? "Kërkoni një produkt tjetër ose shfaqni gjithë stokun." : "Shtoni produktet në menu, pastaj regjistroni sasitë e stokut këtu."}
+                      {!counted.length && state.products.length ? 'Aktivizoni "Ndiq stokun" te produktet që doni të numëroni.' : state.products.length ? "Kërkoni një produkt tjetër ose shfaqni gjithë stokun." : "Shtoni produktet në menu, pastaj regjistroni sasitë e stokut këtu."}
                     </Empty>
                   )}
                 </section>
@@ -2050,6 +2081,7 @@ function App({ user, onLogout, onUserChange }) {
               </>
             )}
 
+            {page === "Produktet" && bulkOpen && <ProductImport state={state} update={update} onClose={() => setBulkOpen(false)} />}
             {page === "Produktet" && (
               <div className="management-layout">
                 <section className="panel">
@@ -2107,7 +2139,7 @@ function App({ user, onLogout, onUserChange }) {
                             <tr key={p.id}>
                               <td data-label="Produkti">
                                 <strong>{p.name}</strong>
-                                <small>{p.stock} copë në stok</small>
+                                <small>{p.trackStock === false ? "Pa numërim stoku" : `${p.stock} copë në stok`}</small>
                               </td>
                               <td data-label="Reparti i përgatitjes">
                                 {p.department ? (
@@ -2211,6 +2243,7 @@ function App({ user, onLogout, onUserChange }) {
                           placeholder="0"
                           required
                         />
+                        <StockFields key={editor.id || "new"} product={editor} />
                         <label className="field">
                           <span>Variante dhe shtesa (një për rresht)</span>
                           <textarea
@@ -2239,7 +2272,7 @@ function App({ user, onLogout, onUserChange }) {
                         <p className="helper">
                           {editor.id
                             ? "Çmimi i ri zbatohet për produktet e shtuara në porosi të reja."
-                            : "Produkti nis me stok zero. Hyrjet regjistrohen te Inventari."}
+                            : "Për shumë produkte njëherësh përdorni \"Shto shumë\"."}
                         </p>
                         <button className="primary">
                           {editor.id ? "Ruaj ndryshimet" : "Shto produkt"}

@@ -1418,6 +1418,10 @@ test("online menu: off until enabled, public read-only, only visible products an
     assert.equal((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: photoOf(250000) } })).statusCode, 200);
     assert.ok([400, 413].includes((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: photoOf(420000) } })).statusCode));
     assert.equal((await t.call("PUT", `/api/products/${id}/photo`, { cookie, body: { dataUrl: jpeg } })).statusCode, 200);
+    // Staff screens get the photo with a session (and only with one), even with the menu off.
+    const staffPhoto = (c) => t.inject({ method: "GET", url: `/api/product-photo/${id}?b=bluebar&v=1`, headers: { host: "localhost", ...(c && { cookie: c }) } });
+    assert.equal((await staffPhoto()).statusCode, 401);
+    assert.equal((await staffPhoto(cookie)).headers["content-type"], "image/jpeg");
     const version = (await guest("/api/menu/bluebar")).json().products[0].photo;
     assert.ok(version);
     const photo = await guest(`/api/menu/bluebar/photo/${id}?v=${version}`);
@@ -1568,5 +1572,64 @@ test("the online menu's English is written by the translator on save, never type
     assert.equal((await none.call("POST", "/api/venue/menu/translate", { cookie })).statusCode, 503);
   } finally {
     await none.close();
+  }
+});
+
+test("products: stock tracking is optional, many can be added at once, and a delivery is one save", async () => {
+  const t = await setup();
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    // Many at once: new categories/departments appear; a stock number means counted.
+    const imported = await t.send("products.import", {
+      products: [
+        { name: "Espresso", price: 100, category: "Kafe", department: "Bar" },
+        { name: "Kokteil", price: 600, category: "Kokteje", department: "Bar" },
+        { name: "Coca-Cola", price: 150, category: "Pije", stock: 24 },
+      ],
+    });
+    const s = imported.state;
+    assert.ok(s.categories.includes("Kokteje"), "a new category is created");
+    assert.ok(s.departments.includes("Bar"));
+    const by = (n) => s.products.find((p) => p.name === n);
+    assert.equal(by("Espresso").trackStock, false);
+    assert.equal(by("Coca-Cola").trackStock, true);
+    assert.equal(by("Coca-Cola").stock, 24);
+    assert.ok(s.movements.some((m) => m.product === "Coca-Cola" && m.reason === "Stoku fillestar" && m.qty === 24));
+    // All or nothing, and the error names the row.
+    await assert.rejects(
+      t.send("products.import", { products: [{ name: "Çaj", price: 100, category: "Kafe" }, { name: "Espresso", price: 90, category: "Kafe" }] }),
+      /Rreshti 2 \(Espresso\)/,
+    );
+    assert.equal((await readSnapshot(t.pool)).state.products.some((p) => p.name === "Çaj"), false, "nothing from a failed batch is saved");
+    // Not counted: orderable with no stock at all, and paying doesn't touch its stock.
+    const espresso = by("Espresso").id;
+    for (let n = 0; n < 3; n++) await t.send("order.add", { tableId: 1, productId: espresso, waiterId: 1 });
+    const paid = await t.send("order.pay", { tableId: 1, method: "Cash", received: 300 });
+    assert.equal(paid.state.products.find((p) => p.id === espresso).stock, 0);
+    assert.equal(paid.state.movements.some((m) => m.product === "Espresso" && m.kind === "sale"), false, "uncounted sales do not create fictitious stock movements");
+    await assert.rejects(t.send("stock.receive", { productId: espresso, qty: 5 }), /nuk ndjek stokun/);
+    // Counted: still limited by its stock.
+    const cola = by("Coca-Cola").id;
+    // One delivery for several products, in one save.
+    await t.send("product.save", { name: "Ujë", price: 80, category: "Pije", trackStock: true, initialStock: 0 });
+    const water = (await readSnapshot(t.pool)).state.products.find((p) => p.name === "Ujë").id;
+    const delivered = await t.send("stock.receiveMany", { items: [{ productId: cola, qty: 48 }, { productId: water, qty: 12 }] });
+    assert.equal(delivered.state.products.find((p) => p.id === cola).stock, 72);
+    assert.equal(delivered.state.products.find((p) => p.id === water).stock, 12);
+    assert.equal(delivered.state.movements.filter((m) => m.reason === "Furnizim").length, 2);
+    await assert.rejects(t.send("stock.receiveMany", { items: [{ productId: espresso, qty: 5 }] }), /nuk ndjek stokun/);
+    await assert.rejects(t.send("stock.receiveMany", { items: [{ productId: cola, qty: 1 }, { productId: cola, qty: 2 }] }), /dy herë/);
+    const before = (await readSnapshot(t.pool)).state.products.find((p) => p.id === cola).stock;
+    await assert.rejects(t.send("stock.receiveMany", { items: [{ productId: cola, qty: 1 }, { productId: water, qty: -2 }] }));
+    assert.equal((await readSnapshot(t.pool)).state.products.find((p) => p.id === cola).stock, before, "an invalid delivery saves none of its rows");
+    // The fast add path used by the waiter must honor the same optional-stock rule.
+    const cookie = t.cookieOf(await t.managerLogin());
+    const snapshot = await readSnapshot(t.pool);
+    const fast = await t.call("POST", "/api/commands", { cookie, body: {
+      id: randomUUID(), version: snapshot.version, type: "order.add", payload: { tableId: 1, productId: espresso, waiterId: 1 },
+    } });
+    assert.equal(fast.statusCode, 200, fast.body);
+  } finally {
+    await t.close();
   }
 });

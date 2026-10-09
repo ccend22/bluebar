@@ -34,7 +34,7 @@ export async function loadState(client) {
       id: p.id, name: p.name, category: p.category, price: p.price, stock: p.stock,
       department: p.department, minStock: p.min_stock, available: p.available, extras: p.extras,
       nameEn: p.name_en, description: p.description, descriptionEn: p.description_en,
-      menuVisible: p.menu_visible, photoAt: iso(p.photo_at),
+      menuVisible: p.menu_visible, photoAt: iso(p.photo_at), trackStock: p.track_stock,
     }));
   const waiters = (rows("waiters"))
     .sort((a, b) => a.id - b.id)
@@ -279,12 +279,12 @@ export async function persist(client, previous, next) {
   ))
     await client.query(
       // photo_at is never written here: only the photo upload sets it.
-      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras,name_en,description,description_en,menu_visible)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras,name_en,description,description_en,menu_visible,track_stock)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT(id) DO UPDATE SET name=$2,category=$3,price=$4,stock=$5,department=$6,min_stock=$7,available=$8,extras=$9,
-         name_en=$10,description=$11,description_en=$12,menu_visible=$13`,
+         name_en=$10,description=$11,description_en=$12,menu_visible=$13,track_stock=$14`,
       [p.id, p.name, p.category, p.price, p.stock, p.department || null, p.minStock ?? 10, p.available !== false, JSON.stringify(p.extras || []),
-        p.nameEn || "", p.description || "", p.descriptionEn || "", p.menuVisible !== false],
+        p.nameEn || "", p.description || "", p.descriptionEn || "", p.menuVisible !== false, p.trackStock !== false],
     );
   // Tills first: waiters, shifts and printers reference them; a removed till's
   // waiters and printers were already moved off it (pos.delete).
@@ -596,7 +596,7 @@ export async function executeOrderPatch(pool, command, actor = null) {
           tp.id AS table_pos, tp.name AS table_pos_name, aw.pos_id AS actor_pos,
           t.id AS table_id, t.active AS table_active,
           w.active AS waiter_active,
-          p.name AS product_name, p.price AS product_price, p.stock AS product_stock, p.available AS product_available,
+          p.name AS product_name, p.price AS product_price, p.stock AS product_stock, p.available AS product_available, p.track_stock AS product_tracks,
           COALESCE((SELECT sum(qty) FROM bluebar.order_lines WHERE product_id = $4), 0)::integer AS reserved,
           line.line_key, line.name AS line_name, line.qty AS line_qty, line.sent AS line_sent,
           EXISTS(SELECT 1 FROM bluebar.order_payments WHERE table_id = $2) AS has_payments,
@@ -656,7 +656,7 @@ export async function executeOrderPatch(pool, command, actor = null) {
       if (!context.waiter_active) throw new AppError("Zgjidhni një kamarier aktiv.");
       if (context.product_name && context.product_available === false)
         throw new AppError(`${context.product_name} nuk është në dispozicion tani.`);
-      if (!context.product_name || context.reserved >= context.product_stock)
+      if (!context.product_name || (context.product_tracks !== false && context.reserved >= context.product_stock))
         throw new AppError("Nuk ka stok të disponueshëm për këtë produkt.");
       if (context.line_key)
         await client.query("UPDATE bluebar.order_lines SET qty = qty + 1 WHERE table_id = $1 AND line_key = $2", [tableId, context.line_key]);

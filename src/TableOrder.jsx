@@ -3,10 +3,20 @@ import { bill, COURSES, money, pendingUnits, posOf, shiftFor, tableShift } from 
 import { ChoiceField } from "./ChoiceField.jsx";
 import { DepartmentTag, Empty, Field, Icon, Search } from "./components.jsx";
 import { OrderHistory } from "./OrderHistory.jsx";
+import { venueSlug } from "./api.js";
 
-// The waiter's whole job at a table, in one panel: pick from the menu, send each new
-// round to the stations, take payment. The footer always offers exactly one primary
-// next step — "Dërgo" while something hasn't gone to a station yet, else "Paguaj".
+const WIDE = "(min-width: 900px)";
+// "09.10 · 13:21": day.month, 24-hour, never ambiguous.
+const billDate = (since) => {
+  const d = new Date(since || Date.now());
+  const two = (n) => String(n).padStart(2, "0");
+  return `${two(d.getDate())}.${two(d.getMonth() + 1)} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+};
+const photoOf = (p) => (p.photoAt ? `/api/product-photo/${p.id}?b=${encodeURIComponent(venueSlug)}&v=${encodeURIComponent(p.photoAt)}` : null);
+
+// The waiter's whole job at a table, in one large popup: the menu with photos, the order
+// being built beside it (stacked behind a switch on phones), and the footer's buttons —
+// "Dërgo" while something hasn't gone to a station yet, else "Paguaj".
 export function TableOrder({
   table,
   state,
@@ -39,6 +49,20 @@ export function TableOrder({
   const [voidKey, setVoidKey] = useState(null);
   const [course, setCourse] = useState(0);
   const heading = useRef(null);
+  // Wide enough for menu and order side by side; a phone keeps the Menuja / Porosia switch.
+  const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE);
+    const change = () => setWide(mq.matches);
+    mq.addEventListener("change", change);
+    return () => mq.removeEventListener("change", change);
+  }, []);
+  // Escape closes the popup, unless a menu, an inline form or the payment dialog is open.
+  useEffect(() => {
+    const escape = (e) => e.key === "Escape" && !menu && !panel && !document.querySelector("dialog[open]") && onClose();
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [menu, panel, onClose]);
   useEffect(() => (setMenu(null), setPanel(null), setEditKey(null), setVoidKey(null), setCourse(0)), [table.id]);
   useEffect(() => {
     if (!menu) return;
@@ -105,6 +129,259 @@ export function TableOrder({
     update("order.remove", { tableId: table.id, productId: line.id, lineKey: line.key });
   };
   const product = (id) => state.products.find((p) => p.id === id);
+  const menuView = (
+          <div className="menu-view">
+            {/* Search, and — only for courses — which course new items go to. */}
+            <div className="menu-tools">
+              <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
+              <ChoiceField
+                compact
+                label="Kursi"
+                value={String(course)}
+                options={COURSES.map((c, i) => ({ value: String(i), label: c }))}
+                onChange={(v) => setCourse(Number(v))}
+              />
+            </div>
+            <div className="chip-row" aria-label="Kategoritë e menusë">
+              {["Të gjitha", ...state.categories].map((c) => (
+                <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            <div className="menu-grid">
+              {products.map((p) => {
+                const qty = qtyOf.get(p.id) || 0;
+                const off = p.available === false;
+                const out = off || available(p) <= 0;
+                return (
+                  <button
+                    key={p.id}
+                    className={`menu-tile ${qty ? "in-order" : ""}`}
+                    disabled={!canAdd || out}
+                    aria-label={`Shto ${p.name}, ${money(p.price)}${qty ? `, ${qty} në porosi` : ""}`}
+                    onClick={() => add(p.id)}
+                  >
+                    <span className="menu-tile-photo" aria-hidden="true">
+                      {photoOf(p) ? <img src={photoOf(p)} alt="" loading="lazy" /> : <b>{p.name.slice(0, 1)}</b>}
+                    </span>
+                    <span className="menu-tile-name">{p.name}</span>
+                    <span className="menu-tile-price">{off ? "Jo në dispozicion" : out ? "Pa stok" : money(p.price)}</span>
+                    {qty > 0 ? (
+                      <span className="menu-tile-qty" key={qty}>{qty}</span>
+                    ) : (
+                      <span className="menu-tile-add" aria-hidden="true">
+                        <Icon name="plus" size={14} />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {!products.length && (
+              <p className="inline-empty">Nuk u gjet asnjë produkt. Provoni një emër tjetër.</p>
+            )}
+          </div>
+  );
+  // Total and the next step (Paguaj / Dërgo): at the foot of the order column when the
+  // menu sits beside it, at the bottom of the popup on a phone.
+  const footer = hasOrder && (
+        <div className="order-footer">
+          <div className="order-footer-total">
+            <span>
+              {items} {items === 1 ? "artikull" : "artikuj"}
+              {pending > 0 && <em> · {pending} pa dërguar</em>}
+            </span>
+            <strong>{money(b.remaining)}</strong>
+          </div>
+          {(b.comps > 0 || b.discount > 0 || b.paid > 0) && (
+            <dl className="bill-lines" aria-label="Llogaria">
+              {(b.comps > 0 || b.discount > 0) && (<><dt>Artikujt</dt><dd>{money(b.subtotal)}</dd></>)}
+              {b.comps > 0 && (<><dt>Qerasje</dt><dd>−{money(b.comps)}</dd></>)}
+              {b.discount > 0 && (<><dt>Ulje{table.discount?.kind === "percent" ? ` ${table.discount.value}%` : ""}</dt><dd>−{money(b.discount)}</dd></>)}
+              <dt>Totali</dt><dd>{money(b.due)}</dd>
+              {b.paid > 0 && (<><dt>Paguar</dt><dd>{money(b.paid)}</dd><dt className="bill-left">Mbetur</dt><dd className="bill-left">{money(b.remaining)}</dd></>)}
+            </dl>
+          )}
+          <div className={`order-footer-actions ${sendable > 0 || waitingCourse ? "split" : ""}`}>
+            {sendable > 0 ? (
+              <>
+                <button disabled={!shiftOpen || foreign} onClick={onPay}>
+                  Paguaj
+                </button>
+                <button className="primary" disabled={!shiftOpen || foreign} onClick={() => onSend(table)}>
+                  <Icon name="arrow" size={17} />
+                  Dërgo në repartet · {sendable}
+                </button>
+              </>
+            ) : waitingCourse ? (
+              <>
+                <button disabled={!shiftOpen || foreign} onClick={onPay}>
+                  Paguaj
+                </button>
+                <button
+                  className="primary"
+                  disabled={!shiftOpen || foreign}
+                  onClick={() => update("order.fire", { tableId: table.id, course: waitingCourse }, `filloi kursi: ${COURSES[waitingCourse]}.`)}
+                >
+                  <Icon name="arrow" size={17} />
+                  Fillo: {COURSES[waitingCourse]} · {waitingUnits}
+                </button>
+              </>
+            ) : (
+              <button className="primary" disabled={!shiftOpen || foreign} onClick={onPay}>
+                <Icon name="check" size={17} />
+                Paguaj · {money(b.remaining)}
+              </button>
+            )}
+          </div>
+        </div>
+  );
+  const orderView = (
+          <div className="order-view">
+            {(table.allergy || table.note) && (
+              <p className="order-note">
+                {table.allergy && <b className="allergy-mark">ALERGJI: {table.allergy}</b>}
+                {table.note && <span>{table.note}</span>}
+              </p>
+            )}
+            {editKey && table.lines.some((l) => l.key === editKey) && (
+              <LinePanel
+                key={editKey}
+                table={table}
+                line={table.lines.find((l) => l.key === editKey)}
+                product={product(table.lines.find((l) => l.key === editKey).id)}
+                update={update}
+                onClose={() => setEditKey(null)}
+              />
+            )}
+            {voidKey && table.lines.some((l) => l.key === voidKey) && (
+              <VoidPanel
+                table={table}
+                line={table.lines.find((l) => l.key === voidKey)}
+                update={update}
+                onClose={() => setVoidKey(null)}
+              />
+            )}
+            {stations.length > 0 && (
+              <div className="station-status" aria-label="Gjendja në repartet">
+                {stations.map((s) => (
+                  <span key={s.key} className={s.ready ? "ready" : ""}>
+                    <DepartmentTag name={s.department} />
+                    {s.label && <b>{s.label}</b>}
+                    {s.ready ? (
+                      <>
+                        <Icon name="check" size={13} /> Gati
+                      </>
+                    ) : (
+                      "Në përgatitje"
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+            {hasOrder ? (
+              // Printed like the bill it becomes: table, waiter and time on top, the lines,
+              // and the total at the foot, on a strip of receipt paper.
+              <div className="order-bill">
+                <header className="order-bill-head">
+                  <strong>Tavolina {String(table.id).padStart(2, "0")}</strong>
+                  <span>{table.area}{owner ? ` · ${owner.name}` : ""}</span>
+                  <span>{billDate(table.occupiedSince)}</span>
+                </header>
+              <ul className="order-list">
+                {lines.map((l) => {
+                  const unsent = fresh(l);
+                  const locked = isWaiter && unsent === 0;
+                  return (
+                    <li key={l.key || l.id} className={unsent > 0 ? "fresh" : ""}>
+                      <div className="order-item-main">
+                        <button
+                          type="button"
+                          className="line-name"
+                          disabled={foreign}
+                          aria-label={`Ndrysho ${l.name}: shënim, shtesa, kurs`}
+                          onClick={() => setEditKey(editKey === l.key ? null : l.key)}
+                        >
+                          {l.name}
+                        </button>
+                        {(l.extras?.length > 0 || l.note || l.allergy || l.course > 0 || (l.hold && unsent > 0)) && (
+                          <span className="line-details">
+                            {l.course > 0 && <span className="course-mark">{COURSES[l.course]}</span>}
+                            {l.hold && unsent > 0 && <span className="hold-mark">Në pritje</span>}
+                            {l.allergy && <b className="allergy-mark">ALERGJI: {l.allergy}</b>}
+                            {l.extras?.map((x) => <span key={x.name}>+ {x.name}</span>)}
+                            {l.note && <em>{l.note}</em>}
+                          </span>
+                        )}
+                        <small>
+                          <DepartmentTag name={departmentOf(l.id)} />
+                          {l.comp > 0 && <span className="comp-mark">{l.comp} qerasur</span>}
+                          {unsent > 0 ? (
+                            <span className="pending-mark">
+                              {l.sent ? `${unsent} e re · ${l.sent} dërguar` : "E re"}
+                            </span>
+                          ) : (
+                            <span className="sent-mark">
+                              <Icon name="check" size={12} /> Dërguar
+                            </span>
+                          )}
+                        </small>
+                      </div>
+                      <div className="quantity">
+                        <button
+                          disabled={locked || foreign}
+                          title={locked ? "Dërguar në repart — vetëm menaxheri mund ta heqë" : undefined}
+                          aria-label={`Hiq një ${l.name}`}
+                          onClick={() => remove(l)}
+                        >
+                          −
+                        </button>
+                        <span>{l.qty}</span>
+                        <button
+                          disabled={!canAdd || !product(l.id) || available(product(l.id)) <= 0}
+                          aria-label={`Shto një ${l.name}`}
+                          onClick={() => add(l.id, sameAs(l))}
+                        >
+                          +
+                        </button>
+                      </div>
+                      <b>{money(l.price * (l.qty - (l.comp || 0)))}</b>
+                    </li>
+                  );
+                })}
+              </ul>
+                <div className="order-bill-sum">
+                  {(b.comps > 0 || b.discount > 0) && <p><span>Artikujt</span><span>{money(b.subtotal)}</span></p>}
+                  {b.comps > 0 && <p><span>Qerasje</span><span>−{money(b.comps)}</span></p>}
+                  {b.discount > 0 && <p><span>Ulje</span><span>−{money(b.discount)}</span></p>}
+                  <p className="order-bill-total"><span>Totali</span><span>{money(b.due)}</span></p>
+                  {b.paid > 0 && <p><span>Paguar</span><span>−{money(b.paid)}</span></p>}
+                </div>
+              </div>
+            ) : (
+              <Empty
+                icon="coffee"
+                title="Tavolina është bosh"
+                action={
+                  !wide && (
+                    <button className="primary" onClick={() => setMode("add")}>
+                      <Icon name="plus" size={16} /> Hap menunë
+                    </button>
+                  )
+                }
+              >
+                {wide ? "Prekni një produkt majtas për ta shtuar në porosi." : "Shtoni produktet nga menuja."}
+              </Empty>
+            )}
+            {hasOrder && showHistory && (
+              <section className="order-history-panel" aria-label="Historiku i porosisë">
+                <h3>Historiku</h3>
+                <OrderHistory tableId={table.id} refreshKey={JSON.stringify(table.lines) + table.waiter} />
+              </section>
+            )}
+          </div>
+  );
 
   return (
     <section className="order" aria-label={`Porosia e tavolinës ${table.id}`}>
@@ -335,6 +612,7 @@ export function TableOrder({
           <CompPanel table={table} update={update} onClose={() => setPanel(null)} />
         )}
 
+        {!wide && (
         <div className="order-segment" role="tablist" aria-label="Pamja e porosisë">
           <button role="tab" aria-selected={mode === "add"} onClick={() => setMode("add")}>
             Menuja
@@ -344,238 +622,24 @@ export function TableOrder({
             {items > 0 && <span className="segment-count">{items}</span>}
           </button>
         </div>
+        )}
 
-        {mode === "add" ? (
-          <div className="menu-view">
-            {/* Search, and — only for courses — which course new items go to. */}
-            <div className="menu-tools">
-              <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
-              <ChoiceField
-                compact
-                label="Kursi"
-                value={String(course)}
-                options={COURSES.map((c, i) => ({ value: String(i), label: c }))}
-                onChange={(v) => setCourse(Number(v))}
-              />
+        {wide ? (
+          <div className="order-split">
+            <div className="order-split-menu">{menuView}</div>
+            <div className="order-split-order" aria-label="Porosia">
+              <div className="order-split-scroll">{orderView}</div>
+              {footer}
             </div>
-            <div className="chip-row" aria-label="Kategoritë e menusë">
-              {["Të gjitha", ...state.categories].map((c) => (
-                <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
-                  {c}
-                </button>
-              ))}
-            </div>
-            <div className="menu-grid">
-              {products.map((p) => {
-                const qty = qtyOf.get(p.id) || 0;
-                const off = p.available === false;
-                const out = off || available(p) <= 0;
-                return (
-                  <button
-                    key={p.id}
-                    className={`menu-tile ${qty ? "in-order" : ""}`}
-                    disabled={!canAdd || out}
-                    aria-label={`Shto ${p.name}, ${money(p.price)}${qty ? `, ${qty} në porosi` : ""}`}
-                    onClick={() => add(p.id)}
-                  >
-                    <span className="menu-tile-name">{p.name}</span>
-                    <span className="menu-tile-price">{off ? "Jo në dispozicion" : out ? "Pa stok" : money(p.price)}</span>
-                    {qty > 0 ? (
-                      <span className="menu-tile-qty" key={qty}>{qty}</span>
-                    ) : (
-                      <span className="menu-tile-add" aria-hidden="true">
-                        <Icon name="plus" size={14} />
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {!products.length && (
-              <p className="inline-empty">Nuk u gjet asnjë produkt. Provoni një emër tjetër.</p>
-            )}
           </div>
+        ) : mode === "add" ? (
+          menuView
         ) : (
-          <div className="order-view">
-            {(table.allergy || table.note) && (
-              <p className="order-note">
-                {table.allergy && <b className="allergy-mark">ALERGJI: {table.allergy}</b>}
-                {table.note && <span>{table.note}</span>}
-              </p>
-            )}
-            {editKey && table.lines.some((l) => l.key === editKey) && (
-              <LinePanel
-                key={editKey}
-                table={table}
-                line={table.lines.find((l) => l.key === editKey)}
-                product={product(table.lines.find((l) => l.key === editKey).id)}
-                update={update}
-                onClose={() => setEditKey(null)}
-              />
-            )}
-            {voidKey && table.lines.some((l) => l.key === voidKey) && (
-              <VoidPanel
-                table={table}
-                line={table.lines.find((l) => l.key === voidKey)}
-                update={update}
-                onClose={() => setVoidKey(null)}
-              />
-            )}
-            {stations.length > 0 && (
-              <div className="station-status" aria-label="Gjendja në repartet">
-                {stations.map((s) => (
-                  <span key={s.key} className={s.ready ? "ready" : ""}>
-                    <DepartmentTag name={s.department} />
-                    {s.label && <b>{s.label}</b>}
-                    {s.ready ? (
-                      <>
-                        <Icon name="check" size={13} /> Gati
-                      </>
-                    ) : (
-                      "Në përgatitje"
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-            {hasOrder ? (
-              <ul className="order-list">
-                {lines.map((l) => {
-                  const unsent = fresh(l);
-                  const locked = isWaiter && unsent === 0;
-                  return (
-                    <li key={l.key || l.id} className={unsent > 0 ? "fresh" : ""}>
-                      <div className="order-item-main">
-                        <button
-                          type="button"
-                          className="line-name"
-                          disabled={foreign}
-                          aria-label={`Ndrysho ${l.name}: shënim, shtesa, kurs`}
-                          onClick={() => setEditKey(editKey === l.key ? null : l.key)}
-                        >
-                          {l.name}
-                        </button>
-                        {(l.extras?.length > 0 || l.note || l.allergy || l.course > 0 || (l.hold && unsent > 0)) && (
-                          <span className="line-details">
-                            {l.course > 0 && <span className="course-mark">{COURSES[l.course]}</span>}
-                            {l.hold && unsent > 0 && <span className="hold-mark">Në pritje</span>}
-                            {l.allergy && <b className="allergy-mark">ALERGJI: {l.allergy}</b>}
-                            {l.extras?.map((x) => <span key={x.name}>+ {x.name}</span>)}
-                            {l.note && <em>{l.note}</em>}
-                          </span>
-                        )}
-                        <small>
-                          <DepartmentTag name={departmentOf(l.id)} />
-                          {l.comp > 0 && <span className="comp-mark">{l.comp} qerasur</span>}
-                          {unsent > 0 ? (
-                            <span className="pending-mark">
-                              {l.sent ? `${unsent} e re · ${l.sent} dërguar` : "E re"}
-                            </span>
-                          ) : (
-                            <span className="sent-mark">
-                              <Icon name="check" size={12} /> Dërguar
-                            </span>
-                          )}
-                        </small>
-                      </div>
-                      <div className="quantity">
-                        <button
-                          disabled={locked || foreign}
-                          title={locked ? "Dërguar në repart — vetëm menaxheri mund ta heqë" : undefined}
-                          aria-label={`Hiq një ${l.name}`}
-                          onClick={() => remove(l)}
-                        >
-                          −
-                        </button>
-                        <span>{l.qty}</span>
-                        <button
-                          disabled={!canAdd || !product(l.id) || available(product(l.id)) <= 0}
-                          aria-label={`Shto një ${l.name}`}
-                          onClick={() => add(l.id, sameAs(l))}
-                        >
-                          +
-                        </button>
-                      </div>
-                      <b>{money(l.price * (l.qty - (l.comp || 0)))}</b>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <Empty
-                icon="coffee"
-                title="Tavolina është bosh"
-                action={
-                  <button className="primary" onClick={() => setMode("add")}>
-                    <Icon name="plus" size={16} /> Hap menunë
-                  </button>
-                }
-              >
-                Shtoni produktet nga menuja.
-              </Empty>
-            )}
-            {hasOrder && showHistory && (
-              <section className="order-history-panel" aria-label="Historiku i porosisë">
-                <h3>Historiku</h3>
-                <OrderHistory tableId={table.id} refreshKey={JSON.stringify(table.lines) + table.waiter} />
-              </section>
-            )}
-          </div>
+          orderView
         )}
       </div>
 
-      {hasOrder && (
-        <div className="order-footer">
-          <div className="order-footer-total">
-            <span>
-              {items} {items === 1 ? "artikull" : "artikuj"}
-              {pending > 0 && <em> · {pending} pa dërguar</em>}
-            </span>
-            <strong>{money(b.remaining)}</strong>
-          </div>
-          {(b.comps > 0 || b.discount > 0 || b.paid > 0) && (
-            <dl className="bill-lines" aria-label="Llogaria">
-              {(b.comps > 0 || b.discount > 0) && (<><dt>Artikujt</dt><dd>{money(b.subtotal)}</dd></>)}
-              {b.comps > 0 && (<><dt>Qerasje</dt><dd>−{money(b.comps)}</dd></>)}
-              {b.discount > 0 && (<><dt>Ulje{table.discount?.kind === "percent" ? ` ${table.discount.value}%` : ""}</dt><dd>−{money(b.discount)}</dd></>)}
-              <dt>Totali</dt><dd>{money(b.due)}</dd>
-              {b.paid > 0 && (<><dt>Paguar</dt><dd>{money(b.paid)}</dd><dt className="bill-left">Mbetur</dt><dd className="bill-left">{money(b.remaining)}</dd></>)}
-            </dl>
-          )}
-          <div className={`order-footer-actions ${sendable > 0 || waitingCourse ? "split" : ""}`}>
-            {sendable > 0 ? (
-              <>
-                <button disabled={!shiftOpen || foreign} onClick={onPay}>
-                  Paguaj
-                </button>
-                <button className="primary" disabled={!shiftOpen || foreign} onClick={() => onSend(table)}>
-                  <Icon name="arrow" size={17} />
-                  Dërgo në repartet · {sendable}
-                </button>
-              </>
-            ) : waitingCourse ? (
-              <>
-                <button disabled={!shiftOpen || foreign} onClick={onPay}>
-                  Paguaj
-                </button>
-                <button
-                  className="primary"
-                  disabled={!shiftOpen || foreign}
-                  onClick={() => update("order.fire", { tableId: table.id, course: waitingCourse }, `filloi kursi: ${COURSES[waitingCourse]}.`)}
-                >
-                  <Icon name="arrow" size={17} />
-                  Fillo: {COURSES[waitingCourse]} · {waitingUnits}
-                </button>
-              </>
-            ) : (
-              <button className="primary" disabled={!shiftOpen || foreign} onClick={onPay}>
-                <Icon name="check" size={17} />
-                Paguaj · {money(b.remaining)}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      {!wide && footer}
     </section>
   );
 }
