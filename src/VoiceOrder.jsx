@@ -71,7 +71,14 @@ export function useVoice(onHeard, onError, choose) {
     }
   };
   const start = () => {
-    if (!Recognition) return onError("Ky shfletues nuk e njeh zërin. Përdorni Chrome (Android, kompjuter) ose Safari (iPhone, iPad).");
+    if (!Recognition)
+      return onError(
+        /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent)
+          ? "Në iPhone/iPad zëri punon vetëm në Safari. Hapeni BlueBar me Safari."
+          : window.isSecureContext
+            ? "Ky shfletues nuk e njeh zërin. Përdorni Chrome (Android, kompjuter) ose Safari (iPhone, iPad)."
+            : "Zëri punon vetëm në faqe të sigurta (https).",
+      );
     // Tapped while listening: done now, with everything heard so far. Not waiting for the
     // recognizer to confirm: it can take seconds, or never come if it was between restarts.
     if (listening) {

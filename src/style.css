@@ -6187,3 +6187,5 @@ body.order-open { overflow: hidden; }
 .voice-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .voice-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px; border-radius: 9999px; font-size: 13px; }
 @media (prefers-reduced-motion: reduce) { .voice-mic.listening, .voice-dot, .voice-item-live { animation: none; } }
+.voice-error { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; padding: 10px 6px 10px 12px; border-radius: 10px; background: #fff6f4; color: #a3322a; font-size: 14px; font-weight: 500; }
+.voice-error .icon-button { margin-left: auto; color: inherit; }

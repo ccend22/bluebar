@@ -116,7 +116,9 @@ export function TableOrder({
   const itemsFor = (text) =>
     parseOrder(text, orderable()).map((x) => ({ ...x, max: Math.min(20, available(x.product)), qty: Math.min(x.qty, available(x.product)) }));
   const hear = (text) => setSpoken({ text, items: itemsFor(text) });
-  const voice = useVoice(hear, (message) => notify(message, "error"), (guesses) => bestGuess(guesses, orderable()));
+  // Shown under the mic, inside the popup: the app's notice bar sits behind it.
+  const [voiceError, setVoiceError] = useState("");
+  const voice = useVoice(hear, setVoiceError, (guesses) => bestGuess(guesses, orderable()));
   // One unit per command, as tapping a tile would; stops at the first refusal (the reason shows).
   const addSpoken = async () => {
     setAdding(true);
@@ -163,12 +165,18 @@ export function TableOrder({
               <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
               <button type="button" className="photo-toggle" aria-pressed={photos} onClick={togglePhotos}>Fotot</button>
               {canAdd && (
-                <button type="button" className={`voice-mic ${voice.listening ? "listening" : ""}`} aria-pressed={voice.listening} aria-label={voice.listening ? "Mbaro porosinë me zë" : "Porosit me zë"} onClick={() => (setSpoken(null), voice.start())}>
+                <button type="button" className={`voice-mic ${voice.listening ? "listening" : ""}`} aria-pressed={voice.listening} aria-label={voice.listening ? "Mbaro porosinë me zë" : "Porosit me zë"} onClick={() => (setSpoken(null), setVoiceError(""), voice.start())}>
                   <Icon name="mic" size={24} />
                   {voice.listening && <span>Mbaro</span>}
                 </button>
               )}
             </div>
+            {voiceError && (
+              <p className="voice-error" role="alert">
+                <Icon name="info" size={16} /> {voiceError}
+                <button type="button" className="icon-button" aria-label="Mbyll" onClick={() => setVoiceError("")}><Icon name="close" size={14} /></button>
+              </p>
+            )}
             {/* While the waiter talks: what's heard and, under it, the order as understood so far. */}
             {voice.listening && <VoicePanel live heard={voice.heard} items={itemsFor(voice.heard)} />}
             {spoken && (
@@ -179,7 +187,7 @@ export function TableOrder({
                 busy={adding}
                 onChange={(id, qty) => setSpoken((s) => ({ ...s, items: s.items.map((x) => (x.product.id === id ? { ...x, qty } : x)) }))}
                 onAdd={addSpoken}
-                onRetry={() => (setSpoken(null), voice.start())}
+                onRetry={() => (setSpoken(null), setVoiceError(""), voice.start())}
                 onClose={() => setSpoken(null)}
               />
             )}
