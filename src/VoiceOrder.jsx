@@ -24,10 +24,15 @@ export function useVoice(onHeard, onError, choose) {
   const [heard, setHeard] = useState("");
   const session = useRef(null);
   // Leaving the table stops listening for good: no restart in the background.
-  useEffect(() => () => session.current && ((session.current.wanted = false), session.current.rec?.abort()), []);
+  useEffect(() => () => session.current && ((session.current.done = true), (session.current.wanted = false), session.current.rec?.abort()), []);
+  // Once, whichever comes first: "Mbaro", an error, or the recognizer giving up.
   const finish = (s) => {
+    if (s.done) return;
+    s.done = true;
+    s.wanted = false;
     setListening(false);
-    if (s.text.trim()) onHeard(s.text);
+    const text = s.forming ? mergeHeard(s.text, s.forming) : s.text;
+    if (text.trim()) onHeard(text);
   };
   const listen = (s) => {
     const r = new Recognition();
@@ -36,21 +41,27 @@ export function useVoice(onHeard, onError, choose) {
     r.interimResults = true;
     r.maxAlternatives = 5;
     r.onresult = (e) => {
+      if (s.done) return;
       let forming = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
         if (res.isFinal) s.text = mergeHeard(s.text, choose([...res].map((alt) => alt.transcript)));
         else forming += ` ${res[0].transcript}`;
       }
-      setHeard(forming.trim() ? mergeHeard(s.text, forming) : s.text);
+      s.forming = forming.trim();
+      setHeard(s.forming ? mergeHeard(s.text, s.forming) : s.text);
     };
     r.onerror = (e) => {
-      if (e.error === "aborted" || e.error === "no-speech") return;
+      if (s.done || e.error === "aborted" || e.error === "no-speech") return;
       s.wanted = false;
       onError(ERRORS[e.error] || `Njohja e zërit nuk punoi (${e.error}). Provoni sërish.`);
     };
     // A pause ended it: start again shortly, unless the waiter is done.
-    r.onend = () => (s.wanted ? setTimeout(() => s.wanted && listen(s), 200) : finish(s));
+    r.onend = () => {
+      if (s.done) return;
+      s.forming = "";
+      s.wanted ? setTimeout(() => s.wanted && !s.done && listen(s), 200) : finish(s);
+    };
     s.rec = r;
     try {
       r.start();
@@ -61,9 +72,15 @@ export function useVoice(onHeard, onError, choose) {
   };
   const start = () => {
     if (!Recognition) return onError("Ky shfletues nuk e njeh zërin. Përdorni Chrome (Android, kompjuter) ose Safari (iPhone, iPad).");
-    // Tapped while listening: the waiter is done.
-    if (listening) return (session.current.wanted = false), session.current.rec.stop();
-    session.current = { wanted: true, text: "", rec: null };
+    // Tapped while listening: done now, with everything heard so far. Not waiting for the
+    // recognizer to confirm: it can take seconds, or never come if it was between restarts.
+    if (listening) {
+      const s = session.current;
+      finish(s);
+      try { s.rec?.abort(); } catch {}
+      return;
+    }
+    session.current = { wanted: true, done: false, text: "", forming: "", rec: null };
     setHeard("");
     setListening(true);
     listen(session.current);
