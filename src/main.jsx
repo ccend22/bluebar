@@ -1547,6 +1547,7 @@ function App({ user, onLogout, onUserChange }) {
                     <TableOrder
                       table={table}
                       state={state}
+                      notify={notify}
                       role={role}
                       user={user}
                       waiter={waiter}

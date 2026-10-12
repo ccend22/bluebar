@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { defineConfig, loadEnv } from "vite";
 // Two pages: BlueBar itself (index.html) and the guests' online menu (menu.html, at /menu/<business>).
 const menuPage = {
@@ -24,6 +25,11 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: "127.0.0.1",
+      // Phones allow the microphone (ordering by voice) only on https pages: DEMO_HTTPS=<folder
+      // with cert.pem and key.pem> serves the local demo over it, so it can be tried from a phone.
+      https: process.env.DEMO_HTTPS
+        ? { cert: readFileSync(`${process.env.DEMO_HTTPS}/cert.pem`), key: readFileSync(`${process.env.DEMO_HTTPS}/key.pem`) }
+        : undefined,
       proxy: {
         "/api": {
           target: `http://127.0.0.1:${env.API_PORT || 3001}`,

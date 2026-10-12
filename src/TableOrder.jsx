@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { bill, COURSES, money, pendingUnits, posOf, shiftFor, tableShift } from "./domain.js";
 import { ChoiceField } from "./ChoiceField.jsx";
+import { VoicePanel, useVoice } from "./VoiceOrder.jsx";
+import { bestGuess, parseOrder } from "./voice.js";
 import { DepartmentTag, Empty, Field, Icon, Search } from "./components.jsx";
 import { OrderHistory } from "./OrderHistory.jsx";
 import { venueSlug } from "./api.js";
@@ -33,6 +35,7 @@ export function TableOrder({
   products,
   available,
   update,
+  notify,
   onClose,
   onSend,
   onPay,
@@ -106,6 +109,24 @@ export function TableOrder({
   const [photos, setPhotos] = useState(() => {
     try { return localStorage.getItem("order-photos") !== "0"; } catch { return true; }
   });
+  // Ordering by voice: what the waiter said and the products it named (null: no panel).
+  const [spoken, setSpoken] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const orderable = () => state.products.filter((p) => p.available !== false && available(p) > 0);
+  const itemsFor = (text) =>
+    parseOrder(text, orderable()).map((x) => ({ ...x, max: Math.min(20, available(x.product)), qty: Math.min(x.qty, available(x.product)) }));
+  const hear = (text) => setSpoken({ text, items: itemsFor(text) });
+  const voice = useVoice(hear, (message) => notify(message, "error"), (guesses) => bestGuess(guesses, orderable()));
+  // One unit per command, as tapping a tile would; stops at the first refusal (the reason shows).
+  const addSpoken = async () => {
+    setAdding(true);
+    try {
+      for (const x of spoken.items) for (let n = 0; n < x.qty; n++) if (!(await add(x.product.id))) return;
+      setSpoken(null);
+    } finally {
+      setAdding(false);
+    }
+  };
   const togglePhotos = () => {
     try { localStorage.setItem("order-photos", photos ? "0" : "1"); } catch {}
     setPhotos(!photos);
@@ -141,7 +162,27 @@ export function TableOrder({
             <div className="menu-tools">
               <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
               <button type="button" className="photo-toggle" aria-pressed={photos} onClick={togglePhotos}>Fotot</button>
+              {canAdd && (
+                <button type="button" className={`voice-mic ${voice.listening ? "listening" : ""}`} aria-pressed={voice.listening} aria-label={voice.listening ? "Mbaro porosinë me zë" : "Porosit me zë"} onClick={() => (setSpoken(null), voice.start())}>
+                  <Icon name="mic" size={24} />
+                  {voice.listening && <span>Mbaro</span>}
+                </button>
+              )}
             </div>
+            {/* While the waiter talks: what's heard and, under it, the order as understood so far. */}
+            {voice.listening && <VoicePanel live heard={voice.heard} items={itemsFor(voice.heard)} />}
+            {spoken && (
+              <VoicePanel
+                heard={spoken.text}
+                items={spoken.items}
+                onText={hear}
+                busy={adding}
+                onChange={(id, qty) => setSpoken((s) => ({ ...s, items: s.items.map((x) => (x.product.id === id ? { ...x, qty } : x)) }))}
+                onAdd={addSpoken}
+                onRetry={() => (setSpoken(null), voice.start())}
+                onClose={() => setSpoken(null)}
+              />
+            )}
             <div className="chip-row" aria-label="Kategoritë e menusë">
               {["Të gjitha", ...state.categories].map((c) => (
                 <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
