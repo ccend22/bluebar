@@ -31,6 +31,33 @@ const time = (v) => new Date(v).toLocaleTimeString("sq-AL", { hour: "2-digit", m
 const minutes = (s) => (s == null ? "—" : s < 60 ? `${s} sek` : `${Math.round(s / 60)} min`);
 const percent = (part, whole) => (whole ? Math.round((part / whole) * 100) : 0);
 
+// The audit log: who did what. Every command, in words.
+const AUDIT = {
+  "order.add": "Shtoi artikull", "order.remove": "Hoqi artikull", "order.assign": "Kaloi tavolinën", "order.send": "Dërgoi porosinë",
+  "order.pay": "Pagesë", "order.cancel": "Anuloi porosinë", "order.handover": "Dorëzoi tavolinën", "order.move": "Lëvizi porosinë",
+  "order.edit": "Ndryshoi artikull", "order.note": "Shënim porosie", "order.fire": "Filloi kursin", "order.remake": "Ripërgatitje",
+  "invoice.refund": "Rimbursim", "ticket.done": "Fletë gati", "ticket.transfer": "Transferoi fletën", "ticket.accept": "Pranoi fletën",
+  "station.save": "Ruajti repartin", "station.toggle": "Ndezi/fiku repartin", "station.delete": "Fshiu repartin",
+  "printer.save": "Ruajti printerin", "printer.delete": "Fshiu printerin",
+  "table.save": "Ruajti tavolinën", "tables.save": "Ruajti tavolinat", "table.toggle": "Ndezi/fiku tavolinën", "table.delete": "Fshiu tavolinën", "table.layout": "Ndryshoi planin",
+  "product.save": "Ruajti produktin", "products.import": "Importoi produkte", "product.stockRules": "Rregullat e stokut",
+  "stock.receive": "Furnizim", "stock.receiveMany": "Furnizim", "stock.adjust": "Korrigjoi stokun",
+  "category.create": "Shtoi kategori", "department.create": "Shtoi repart",
+  "guest.accept": "Pranoi porosinë online", "guest.reject": "Refuzoi porosinë online", "guest.seen": "Pa porosinë online",
+  "waiter.create": "Shtoi kamarier", "waiter.toggle": "Ndezi/fiku kamarierin", "waiter.pos": "Kaloi kamarierin në kasë",
+  "pos.save": "Ruajti kasën", "pos.delete": "Fshiu kasën", "shift.open": "Hapi turnin", "shift.close": "Mbylli turnin", "shift.cash": "Hyrje/dalje arke",
+};
+const auditDetail = (p = {}, products) =>
+  [
+    p.tableId && `Tav. ${String(p.tableId).padStart(2, "0")}`,
+    p.productId && (products.find((x) => x.id === p.productId)?.name || `#${p.productId}`),
+    typeof p.name === "string" && p.name,
+    p.qty && `× ${p.qty}`,
+    p.method,
+    p.amount != null && money(p.amount),
+    p.reason,
+  ].filter(Boolean).join(" · ");
+
 // Local calendar days: [from, to) for the chosen period.
 function periodRange(period, range) {
   const today = startOfDay(new Date());
@@ -451,6 +478,25 @@ export function Reports({ state }) {
               </p>
             </section>
           </div>
+
+          <section className="panel">
+            <h2>Regjistri i veprimeve</h2>
+            {data.audit?.length ? (
+              <ol className="order-history report-audit">
+                {data.audit.map((c, n) => (
+                  <li key={n} className={["order.cancel", "invoice.refund", "stock.adjust"].includes(c.type) ? "warn" : ""}>
+                    <time>{short(new Date(c.date))} {time(c.date)}</time>
+                    <div>
+                      <strong>{AUDIT[c.type] || c.type}</strong> {auditDetail(c.payload, state.products)}
+                      {c.actor && <small>{c.actor}</small>}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="helper">Asnjë veprim i regjistruar në këtë periudhë.</p>
+            )}
+          </section>
         </>
       )}
     </div>

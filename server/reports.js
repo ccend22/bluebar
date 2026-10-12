@@ -40,7 +40,7 @@ export async function report(db, { from, to, basis = "day", pos, shift, area, wa
     await db.query(
       `SELECT l.name, sum(l.qty)::integer AS qty, sum(l.qty * l.price)::bigint AS total
        FROM bluebar.invoice_lines l WHERE l.invoice_id IN (SELECT i.id ${scope})
-       GROUP BY l.name ORDER BY qty DESC, total DESC LIMIT 8`,
+       GROUP BY l.name ORDER BY qty DESC, total DESC LIMIT 20`,
       params,
     )
   ).rows.map((r) => ({ name: r.name, qty: r.qty, total: Number(r.total) }));
@@ -141,6 +141,15 @@ export async function report(db, { from, to, basis = "day", pos, shift, area, wa
     )
   ).rows.map((r) => ({ amount: r.amount, method: r.method, reason: r.reason, actor: r.actor, date: iso(r.created_at), invoice: r.invoice_id }));
 
+  // The audit log: every change anyone made in the period, newest first.
+  const audit = (
+    await db.query(
+      `SELECT type, actor, payload, created_at FROM bluebar.commands
+       WHERE created_at >= $1 AND created_at < $2 ORDER BY created_at DESC LIMIT 500`,
+      [from, to],
+    )
+  ).rows.map((c) => ({ type: c.type, actor: c.actor, payload: c.payload, date: iso(c.created_at) }));
+
   const avg = (list) => (list.length ? Math.round(list.reduce((a, b) => a + b, 0) / list.length) : null);
   return {
     invoices,
@@ -149,6 +158,7 @@ export async function report(db, { from, to, basis = "day", pos, shift, area, wa
     corrections,
     losses,
     refunds,
+    audit,
     service: {
       orderSeconds: avg(orderTimes),
       orders: orderTimes.length,

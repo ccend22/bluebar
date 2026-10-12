@@ -94,6 +94,14 @@ Testi: `server/tenants.test.js`.
 
 ## Inventari: hapat
 
+### Futja e produkteve dhe furnizimeve
+
+- **Produktet → Shto shumë:** shkruani disa produkte ose ngjitni një listë me emër dhe çmim. Rreshtat nga Excel mund të kenë kolonat Emri, Çmimi, Kategoria, Reparti, Stoku. Kontrolloni tabelën përpara ruajtjes; një gabim e refuzon të gjithë grupin.
+- **Ndiq stokun:** produktet ekzistuese vazhdojnë të numërohen. Për një produkt të ri mund të lini numërimin të fikur ose të vendosni stokun fillestar në të njëjtin formular. Në import, stoku bosh do të thotë pa numërim; `0` do të thotë produkt i numëruar, por pa gjendje.
+- Produktet pa numërim nuk bllokohen për mungesë stoku dhe shitjet e tyre nuk krijojnë lëvizje fiktive inventari. Mund të shënohen përsëri si përkohësisht të padisponueshme.
+- **Inventari → Furnizim i ri:** vendosni sasitë e ardhura për disa produkte dhe ruajini bashkë. Kërkimi nuk i heq sasitë e futura; një sasi e pavlefshme duhet korrigjuar përpara ruajtjes.
+- Migrimi `024_track_stock.sql` duhet aplikuar në ambientin përkatës përpara përdorimit të këtyre funksioneve.
+
 1. **I zbatuar:** pragu minimal për produkt, heqja e përkohshme nga menuja, korrigjimet dhe humbjet me arsye dhe person.
 2. **Hapi tjetër:** recetat (përbërës, njësi matëse: g, ml, copë) dhe konsumi i tyre në shitje.
 3. **Më pas:** gjendje sipas vendndodhjes (magazina, secili bar) dhe transferime mes tyre.

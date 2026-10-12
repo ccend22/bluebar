@@ -10,7 +10,8 @@ import { Toaster, toast } from "sonner";
 import { Line } from "./Line.jsx";
 import { CheckContent, Copies, Sheet, Stub } from "./Check.jsx";
 import { useOrder } from "./useOrder.js";
-import { TEXT, clock } from "./text.js";
+import { Icon } from "./icons.jsx";
+import { LANGS, TEXT, clock, currency } from "./text.js";
 import { ACCENTS } from "./accents.js";
 import "./fonts.css";
 import "./menu.css";
@@ -25,18 +26,77 @@ const savedLang = (() => {
 const photoUrl = (p) => (p.photo ? `/api/menu/${slug}/photo/${p.id}?v=${p.photo}` : null);
 // Springs, layout and drag load after first paint: the menu shows before motion arrives.
 const motionFeatures = () => import("motion/react").then((r) => r.domMax);
+// Lower case, without marks: ç → c, ë → e.
+const plain = (s) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// The language: the form's last box, written like TAVOLINA and ORA. Tapped, a slip of
+// pad paper with the six languages drops from it (from its own corner, not the centre).
+function LangBox({ lang, onChange, label }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => !box.current?.contains(e.target) && setOpen(false);
+    const esc = (e) => e.key === "Escape" && (setOpen(false), box.current?.querySelector("button")?.focus());
+    // Scrolling away closes it too: left open it would float over the category tabs.
+    const scrolled = () => setOpen(false);
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    window.addEventListener("scroll", scrolled, { passive: true, once: true });
+    return () => (document.removeEventListener("pointerdown", away), document.removeEventListener("keydown", esc), window.removeEventListener("scroll", scrolled));
+  }, [open]);
+  return (
+    <div className="form-box lang" ref={box}>
+      <button type="button" className="lang-trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <small>{label}</small>
+        <span>{LANGS[lang]}<Icon name="chevronDown" size={14} /></span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <m.ul
+            className="lang-menu"
+            role="menu"
+            aria-label={label}
+            initial={{ opacity: 0, transform: "translateY(-4px) scale(0.97)" }}
+            animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
+            exit={{ opacity: 0, transform: "translateY(-4px) scale(0.97)", transition: { duration: 0.12 } }}
+            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+          >
+            {Object.entries(LANGS).map(([l, name]) => (
+              <li key={l} role="none">
+                <button type="button" role="menuitemradio" aria-checked={l === lang} lang={l} onClick={() => (onChange(l), setOpen(false))}>
+                  {name}
+                  {l === lang && <Icon name="check" size={16} />}
+                </button>
+              </li>
+            ))}
+          </m.ul>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 function Menu() {
   const [menu, setMenu] = useState(null);
   const [failed, setFailed] = useState(false);
-  const [lang, setLang] = useState(savedLang || (navigator.language?.toLowerCase().startsWith("sq") ? "sq" : "en"));
+  // The phone's language when the menu speaks it, else English.
+  const [lang, setLang] = useState(() => {
+    const phone = navigator.language?.slice(0, 2).toLowerCase();
+    return TEXT[savedLang] ? savedLang : TEXT[phone] ? phone : "en";
+  });
   const [openId, setOpenId] = useState(null);
   const [active, setActive] = useState("");
+  const [search, setSearch] = useState("");
   const [checkOpen, setCheckOpen] = useState(false);
   const [copiesOpen, setCopiesOpen] = useState(false);
   const [tearing, setTearing] = useState(false);
-  const t = TEXT[lang];
+  const t = {
+    ...TEXT[lang], ...currency(lang, menu?.euroRate),
+    // An extra in the guest's language; the order still names it in Albanian.
+    extra: (p, x) => p?.i18n?.[lang]?.extras?.[x] || x,
+  };
   const order = useOrder({ slug, table, tableKey, menu, t, lang });
   const load = () => {
     setFailed(false);
@@ -68,12 +128,18 @@ function Menu() {
       seenStatus.current[o.id] = o.status;
     }
   }, [order.placed]);
-  // English where the manager wrote it, Albanian otherwise.
-  const tr = (sq, en) => (lang === "en" && en) || sq;
-  const sections = useMemo(
-    () => (menu ? menu.categories.map((c) => ({ ...c, products: menu.products.filter((p) => p.category === c.name) })) : []),
-    [menu],
-  );
+  // The guest's language where the translator wrote it, Albanian otherwise.
+  const tr = (item, field) => item.i18n?.[lang]?.[field] || item[field];
+  // Search matches the Albanian and the guest's language, ignoring case and marks
+  // ("caj" finds "Çaj"); categories left empty drop out of the tabs and the pad.
+  const sections = useMemo(() => {
+    if (!menu) return [];
+    const q = plain(search.trim());
+    const match = (p) => !q || plain(`${p.name} ${p.description} ${tr(p, "name")} ${tr(p, "description")}`).includes(q);
+    return menu.categories
+      .map((c) => ({ ...c, products: menu.products.filter((p) => p.category === c.name && match(p)) }))
+      .filter((s) => s.products.length);
+  }, [menu, search, lang]);
   // The category being read: the last whose heading passed under the tab strip.
   useEffect(() => {
     if (!sections.length) return;
@@ -132,15 +198,17 @@ function Menu() {
                 <small>{t.copies}</small>{order.placed.length}
               </button>
             )}
-            <div className="form-box lang" role="group" aria-label={t.language}>
-              <small>{t.language}</small>
-              <span>
-                {["sq", "en"].map((l) => (
-                  <button key={l} aria-pressed={lang === l} onClick={() => setLang(l)}>{l.toUpperCase()}</button>
-                ))}
-              </span>
-            </div>
+            <LangBox lang={lang} onChange={setLang} label={t.language} />
           </div>
+          <label className="search-line">
+            <Icon name="search" size={18} />
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t.search} aria-label={t.search} enterKeyHint="search" />
+            {search && (
+              <button type="button" onClick={() => setSearch("")} aria-label={t.close}>
+                <Icon name="close" size={16} />
+              </button>
+            )}
+          </label>
         </header>
         <nav className="tabs" aria-label={t.categories}>
           {sections.map((s) => (
@@ -154,7 +222,7 @@ function Menu() {
                 document.getElementById(s.name)?.scrollIntoView({ behavior: "smooth" });
               }}
             >
-              {tr(s.name, s.nameEn)}
+              {tr(s, "name")}
               {active === s.name && <m.span layoutId="tab-ink" className="tab-ink" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
             </a>
           ))}
@@ -166,7 +234,7 @@ function Menu() {
           {sections.map((s) => (
             <section key={s.name} id={s.name} data-category={s.name}>
               <h2>
-                <span>{tr(s.name, s.nameEn)}</span>
+                <span>{tr(s, "name")}</span>
                 <small>{s.products.length}</small>
               </h2>
               <ul>
@@ -188,7 +256,8 @@ function Menu() {
               </ul>
             </section>
           ))}
-          <footer className="foot">{t.prices}</footer>
+          {!sections.length && <p className="no-results">{t.noResults}</p>}
+          <footer className="foot">{t.priceNote}</footer>
         </main>
       </div>
       <AnimatePresence>

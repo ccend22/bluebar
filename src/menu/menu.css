@@ -63,12 +63,55 @@ h1, h2, h3 { text-wrap: balance; }
 .form-box small { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--label); }
 .form-box.action { color: var(--ink-brand); }
 .form-box.action:active { background: color-mix(in srgb, var(--ink-brand) 10%, transparent); }
-.form-box.lang span { display: flex; gap: 2px; }
-.form-box.lang button {
-  min-width: 34px; min-height: 26px; padding: 0 4px; border: 0; border-radius: 4px; background: none;
-  font-family: var(--form); font-weight: 700; font-size: 16px; color: var(--ink-soft);
+/* The language: the last box fills the row; its menu is a slip of the same pad paper. */
+.form-boxes { display: flex; overflow: visible; }
+.form-box:first-child { border-radius: 5px 0 0 5px; }
+.form-box.lang { position: relative; flex: 1; padding: 0; border-radius: 0 5px 5px 0; }
+.lang-trigger {
+  display: grid; align-content: center; justify-items: end; gap: 1px; width: 100%; height: 100%; min-height: 52px; padding: 5px 12px;
+  border: 0; border-radius: inherit; background: none; font: inherit; color: var(--ink); text-align: right; cursor: pointer;
+  transition: background-color 140ms ease;
 }
-.form-box.lang button[aria-pressed="true"] { background: var(--ink-brand); color: #fff; }
+.lang-trigger > span { display: inline-flex; align-items: center; gap: 4px; }
+.lang-trigger svg { color: var(--label); transition: rotate 180ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lang-trigger[aria-expanded="true"] svg { rotate: 180deg; }
+.lang-trigger:active { background: color-mix(in srgb, var(--ink-brand) 8%, transparent); }
+.lang-trigger:focus-visible { outline: 2px solid var(--ink-brand); outline-offset: -3px; }
+@media (hover: hover) and (pointer: fine) { .lang-trigger:hover { background: color-mix(in srgb, var(--ink-brand) 5%, transparent); } }
+.lang-menu {
+  position: absolute; top: calc(100% + 6px); right: -1px; z-index: 8; min-width: 176px; margin: 0; padding: 4px 0; list-style: none;
+  border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper-hi);
+  box-shadow: 0 10px 28px rgba(36, 48, 42, 0.16), 0 2px 6px rgba(36, 48, 42, 0.08); transform-origin: top right;
+}
+.lang-menu li + li { border-top: 1px solid var(--rule); }
+.lang-menu button {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 0 14px;
+  border: 0; background: none; font-family: var(--form); font-weight: 600; font-size: 19px; color: var(--ink); text-align: left; cursor: pointer;
+}
+.lang-menu button[aria-checked="true"] { color: var(--ink-brand); font-weight: 700; }
+.lang-menu button:active { background: color-mix(in srgb, var(--ink-brand) 8%, transparent); }
+.lang-menu button:focus-visible { outline: 2px solid var(--ink-brand); outline-offset: -3px; }
+@media (hover: hover) and (pointer: fine) { .lang-menu button:hover { background: color-mix(in srgb, var(--ink-brand) 5%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .lang-trigger svg { transition: none; } }
+
+/* Search: one more ruled box under the form row, written in like the note lines. */
+.search-line {
+  grid-column: 1 / -1; position: relative; display: flex; align-items: center; margin-top: 10px; min-height: 48px;
+  border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper-hi); color: var(--label);
+}
+.search-line > svg { position: absolute; left: 13px; pointer-events: none; }
+.search-line input {
+  flex: 1; min-width: 0; height: 46px; padding: 0 8px 0 40px; border: 0; border-radius: 6px; background: none; outline: none;
+  font: inherit; font-size: 17px; color: var(--ink); -webkit-appearance: none; appearance: none;
+}
+.search-line input::-webkit-search-cancel-button { display: none; }
+.search-line input::placeholder { color: var(--ink-soft); opacity: 0.75; }
+.search-line:focus-within { border-color: var(--ink-brand); box-shadow: 0 0 0 1px var(--ink-brand); }
+.search-line button {
+  display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 6px; background: none; color: var(--ink-soft); cursor: pointer;
+}
+.search-line button:active { background: color-mix(in srgb, var(--ink-brand) 8%, transparent); }
+.no-results { margin: 28px 18px 0; text-align: center; color: var(--ink-soft); font-size: 15px; }
 
 /* ---- Category tabs: the pad's column-header strip, always at the top ---- */
 .tabs {
@@ -187,6 +230,7 @@ h1, h2, h3 { text-wrap: balance; }
 .stamp-button:active { transform: scale(0.97); background: var(--ink-brand-press); }
 .stamp-button:disabled { opacity: 0.6; }
 .stamp-button.wide { width: 100%; }
+.slip-actions .stamp-button { min-width: 0; padding: 0 10px; font-size: 17px; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stepper { display: inline-flex; align-items: stretch; border: 1.5px solid var(--rule-strong); border-radius: 8px; overflow: hidden; background: var(--paper-hi); }
 .stepper button { display: grid; place-items: center; width: 42px; min-height: 44px; border: 0; background: none; color: var(--ink-brand); }
 .stepper button:active { background: color-mix(in srgb, var(--ink-brand) 10%, transparent); }

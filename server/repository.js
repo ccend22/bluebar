@@ -25,16 +25,13 @@ export async function loadState(client) {
   const rows = (name) => data[name];
   const control = (rows("control"))[0];
   const categories = (rows("categories")).map((r) => r.name).sort();
-  // English names for the online menu, only where the manager wrote one.
-  const categoryEn = Object.fromEntries(rows("categories").filter((r) => r.name_en).map((r) => [r.name, r.name_en]));
   const departments = (rows("departments")).map((r) => r.name).sort();
   const products = rows("products")
     .sort((a, b) => a.id - b.id)
     .map((p) => ({
       id: p.id, name: p.name, category: p.category, price: p.price, stock: p.stock,
       department: p.department, minStock: p.min_stock, available: p.available, extras: p.extras,
-      nameEn: p.name_en, description: p.description, descriptionEn: p.description_en,
-      menuVisible: p.menu_visible, photoAt: iso(p.photo_at), trackStock: p.track_stock,
+      description: p.description, menuVisible: p.menu_visible, photoAt: iso(p.photo_at), trackStock: p.track_stock,
     }));
   const waiters = (rows("waiters"))
     .sort((a, b) => a.id - b.id)
@@ -178,7 +175,6 @@ export async function loadState(client) {
     revision: Number(control.revision),
     state: {
       categories,
-      categoryEn,
       guestOrders: rows("guest_orders").map((g) => ({ id: g.id, table: g.table_id, items: g.items, note: g.note, date: iso(g.created_at) })),
       guestAlerts: rows("guest_alerts").map((g) => ({ id: g.id, table: g.table_id, items: g.items, note: g.note, date: iso(g.decided_at) })),
       departments,
@@ -263,8 +259,6 @@ export async function persist(client, previous, next) {
     await client.query("INSERT INTO bluebar.categories(name) VALUES($1)", [
       category,
     ]);
-  for (const category of next.categories.filter((c) => (next.categoryEn?.[c] || "") !== (previous.categoryEn?.[c] || "")))
-    await client.query("UPDATE bluebar.categories SET name_en=$2 WHERE name=$1", [category, next.categoryEn?.[category] || ""]);
   for (const department of next.departments.filter(
     (d) => !previous.departments.includes(d),
   ))
@@ -278,13 +272,13 @@ export async function persist(client, previous, next) {
     ),
   ))
     await client.query(
-      // photo_at is never written here: only the photo upload sets it.
-      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras,name_en,description,description_en,menu_visible,track_stock)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      // photo_at and i18n are never written here: only the photo upload and the translator set them.
+      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras,description,menu_visible,track_stock)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT(id) DO UPDATE SET name=$2,category=$3,price=$4,stock=$5,department=$6,min_stock=$7,available=$8,extras=$9,
-         name_en=$10,description=$11,description_en=$12,menu_visible=$13,track_stock=$14`,
+         description=$10,menu_visible=$11,track_stock=$12`,
       [p.id, p.name, p.category, p.price, p.stock, p.department || null, p.minStock ?? 10, p.available !== false, JSON.stringify(p.extras || []),
-        p.nameEn || "", p.description || "", p.descriptionEn || "", p.menuVisible !== false, p.trackStock !== false],
+        p.description || "", p.menuVisible !== false, p.trackStock !== false],
     );
   // Tills first: waiters, shifts and printers reference them; a removed till's
   // waiters and printers were already moved off it (pos.delete).
@@ -567,6 +561,11 @@ const logEvent = (client, tableId, kind, detail, actor) =>
   ]);
 // The high-frequency POS path reads and returns only the affected order.
 // Full snapshots remain the source of truth for initial load and management actions.
+// What the audit log keeps of a command: its payload, never a PIN or a password.
+const SECRET = /pin|pass|secret|token/i;
+const auditPayload = (payload) =>
+  JSON.stringify(payload ?? {}, (key, value) => (SECRET.test(key) ? undefined : value));
+
 export async function executeOrderPatch(pool, command, actor = null) {
   if (!["order.add", "order.remove"].includes(command.type))
     throw new AppError("Veprimi i porosisë është i pavlefshëm.");
@@ -717,10 +716,10 @@ export async function executeOrderPatch(pool, command, actor = null) {
            UPDATE bluebar.control SET version = version + 1, revision = revision + 1 WHERE id = 1
            RETURNING version, revision
          )
-         INSERT INTO bluebar.commands(id, payload_hash, type, result)
-         SELECT $1, $2, $3, '{}'::jsonb FROM bumped
+         INSERT INTO bluebar.commands(id, payload_hash, type, result, actor, payload)
+         SELECT $1, $2, $3, '{}'::jsonb, $4, $5 FROM bumped
          RETURNING (SELECT version FROM bumped) AS version, (SELECT revision FROM bumped) AS revision`,
-        [command.id, hash, command.type],
+        [command.id, hash, command.type, actor?.name || null, auditPayload(command.payload)],
       )
     ).rows[0];
     const table = await readOrderTable(client, tableId);
@@ -783,8 +782,8 @@ export async function execute(pool, command, actor = null) {
       ])).rows[0].revision,
     );
     await client.query(
-      "INSERT INTO bluebar.commands(id,payload_hash,type,result) VALUES($1,$2,$3,$4)",
-      [command.id, hash, command.type, JSON.stringify(next.result)],
+      "INSERT INTO bluebar.commands(id,payload_hash,type,result,actor,payload) VALUES($1,$2,$3,$4,$5,$6)",
+      [command.id, hash, command.type, JSON.stringify(next.result), actor?.name || null, auditPayload(command.payload)],
     );
     await client.query("COMMIT");
     const { events, guestDecided, guestSeen, ...state } = next.state;

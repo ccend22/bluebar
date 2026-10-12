@@ -42,12 +42,11 @@ export function TableOrder({
   headingRef,
 }) {
   const [menu, setMenu] = useState(null);
-  // One inline form at a time: move, handover, discount, comps.
+  // One inline form at a time: move, handover, note.
   const [panel, setPanel] = useState(null);
-  // The line being edited or voided, and the course new items go to.
+  // The line being edited or voided.
   const [editKey, setEditKey] = useState(null);
   const [voidKey, setVoidKey] = useState(null);
-  const [course, setCourse] = useState(0);
   const heading = useRef(null);
   // Wide enough for menu and order side by side; a phone keeps the Menuja / Porosia switch.
   const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
@@ -63,7 +62,7 @@ export function TableOrder({
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
   }, [menu, panel, onClose]);
-  useEffect(() => (setMenu(null), setPanel(null), setEditKey(null), setVoidKey(null), setCourse(0)), [table.id]);
+  useEffect(() => (setMenu(null), setPanel(null), setEditKey(null), setVoidKey(null)), [table.id]);
   useEffect(() => {
     if (!menu) return;
     const outside = (e) => !heading.current?.contains(e.target) && setMenu(null);
@@ -103,6 +102,14 @@ export function TableOrder({
   const departmentOf = (id) => state.products.find((p) => p.id === id)?.department || "Tjetër";
   const lines = [...table.lines].sort((a, b) => (fresh(b) > 0) - (fresh(a) > 0));
   const [showHistory, setShowHistory] = useState(false);
+  // Product photos on the tiles, per device: off gives a denser, text-only menu.
+  const [photos, setPhotos] = useState(() => {
+    try { return localStorage.getItem("order-photos") !== "0"; } catch { return true; }
+  });
+  const togglePhotos = () => {
+    try { localStorage.setItem("order-photos", photos ? "0" : "1"); } catch {}
+    setPhotos(!photos);
+  };
   const tickets = state.tickets.filter((k) => k.table === table.id && !k.invoice && !k.cancelledAt && !k.void);
   // One chip per place preparing this order: its station (if stations are set up), else its department.
   const placeOf = (k) => (state.stations || []).find((x) => x.id === k.station)?.name || k.department;
@@ -113,8 +120,8 @@ export function TableOrder({
   const minutes = hasOrder && table.occupiedSince
     ? Math.max(0, Math.round((Date.now() - new Date(table.occupiedSince)) / 60000))
     : null;
-  // From the menu: a plain unit of the chosen course. From a line's "+": one more made the same way.
-  const add = (productId, details = course ? { course } : {}) =>
+  // From the menu: a plain unit. From a line's "+": one more made the same way.
+  const add = (productId, details = {}) =>
     update("order.add", { tableId: table.id, productId, waiterId: ownerId, ...details });
   const sameAs = (l) => ({
     ...(l.course ? { course: l.course } : {}),
@@ -131,16 +138,9 @@ export function TableOrder({
   const product = (id) => state.products.find((p) => p.id === id);
   const menuView = (
           <div className="menu-view">
-            {/* Search, and — only for courses — which course new items go to. */}
             <div className="menu-tools">
               <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
-              <ChoiceField
-                compact
-                label="Kursi"
-                value={String(course)}
-                options={COURSES.map((c, i) => ({ value: String(i), label: c }))}
-                onChange={(v) => setCourse(Number(v))}
-              />
+              <button type="button" className="photo-toggle" aria-pressed={photos} onClick={togglePhotos}>Fotot</button>
             </div>
             <div className="chip-row" aria-label="Kategoritë e menusë">
               {["Të gjitha", ...state.categories].map((c) => (
@@ -149,7 +149,7 @@ export function TableOrder({
                 </button>
               ))}
             </div>
-            <div className="menu-grid">
+            <div className={`menu-grid ${photos ? "" : "no-photos"}`}>
               {products.map((p) => {
                 const qty = qtyOf.get(p.id) || 0;
                 const off = p.available === false;
@@ -162,9 +162,11 @@ export function TableOrder({
                     aria-label={`Shto ${p.name}, ${money(p.price)}${qty ? `, ${qty} në porosi` : ""}`}
                     onClick={() => add(p.id)}
                   >
-                    <span className="menu-tile-photo" aria-hidden="true">
-                      {photoOf(p) ? <img src={photoOf(p)} alt="" loading="lazy" /> : <b>{p.name.slice(0, 1)}</b>}
-                    </span>
+                    {photos && (
+                      <span className="menu-tile-photo" aria-hidden="true">
+                        {photoOf(p) ? <img src={photoOf(p)} alt="" loading="lazy" /> : <b>{p.name.slice(0, 1)}</b>}
+                      </span>
+                    )}
                     <span className="menu-tile-name">{p.name}</span>
                     <span className="menu-tile-price">{off ? "Jo në dispozicion" : out ? "Pa stok" : money(p.price)}</span>
                     {qty > 0 ? (
@@ -458,20 +460,8 @@ export function TableOrder({
                 Dorëzo te kolegu
               </button>
             )}
-            {/* The manager's: money and cancellations. */}
+            {/* The manager's: cancelling the order. */}
             {!isWaiter && <hr className="menu-sep" />}
-            {!isWaiter && (
-              <button role="menuitem" onClick={() => open("comp")}>
-                <Icon name="check" size={17} />
-                Qerasje
-              </button>
-            )}
-            {!isWaiter && (
-              <button role="menuitem" onClick={() => open("discount")}>
-                <Icon name="receipt" size={17} />
-                {table.discount ? "Ndrysho uljen" : "Ulje"}
-              </button>
-            )}
             {!isWaiter && (
               <button role="menuitem" className="danger" onClick={() => (setMenu(null), setCancelling(true))}>
                 <Icon name="close" size={17} />
@@ -579,38 +569,8 @@ export function TableOrder({
             </div>
           </form>
         )}
-        {panel === "discount" && (
-          <form
-            className="stack-form order-panel"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              const payload = { tableId: table.id, kind: f.get("kind"), value: Number(f.get("value")), reason: f.get("reason") || "" };
-              if (await update("order.discount", payload, payload.value ? "ulja u vendos." : "ulja u hoq.")) setPanel(null);
-            }}
-          >
-            <ChoiceField
-              label="Lloji i uljes"
-              name="kind"
-              defaultValue={table.discount?.kind || "percent"}
-              options={[
-                { value: "percent", label: "Përqindje (%)" },
-                { value: "amount", label: "Shumë (Lek)" },
-              ]}
-            />
-            <Field label="Vlera (0 e heq uljen)" name="value" type="number" min="0" required defaultValue={table.discount?.value ?? ""} autoFocus />
-            <Field label="Arsyeja" name="reason" maxLength={120} defaultValue={table.discount?.reason || ""} placeholder="p.sh. klient i rregullt" />
-            <div className="actions">
-              <button type="button" onClick={() => setPanel(null)}>Kthehu</button>
-              <button className="primary">Ruaj uljen</button>
-            </div>
-          </form>
-        )}
 
         {panel === "note" && <OrderNotePanel table={table} state={state} update={update} onClose={() => setPanel(null)} />}
-        {panel === "comp" && (
-          <CompPanel table={table} update={update} onClose={() => setPanel(null)} />
-        )}
 
         {!wide && (
         <div className="order-segment" role="tablist" aria-label="Pamja e porosisë">
@@ -682,35 +642,6 @@ function MovePanel({ state, table, here, tillName, onCancel, onMove }) {
 
 // Comps (qerasje), manager only: one reason, then +/− per line. Kept off the order lines
 // so every line reads the same.
-function CompPanel({ table, update, onClose }) {
-  const [reason, setReason] = useState("");
-  const comp = (l, delta) =>
-    update("order.comp", { tableId: table.id, productId: l.id, delta, ...(delta > 0 && { reason }) }, delta > 0 ? `1 × ${l.name} u qeras.` : `hoqi 1 qerasje.`);
-  return (
-    <div className="stack-form order-panel">
-      <Field label="Arsyeja e qerasjes" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={120} placeholder="p.sh. ditëlindje" autoFocus />
-      <ul className="comp-list">
-        {table.lines.map((l) => (
-          <li key={l.key || l.id}>
-            <span>{l.name}</span>
-            <small>{l.comp || 0}/{l.qty} qerasur</small>
-            <div className="quantity">
-              <button type="button" aria-label={`Hiq 1 qerasje nga ${l.name}`} disabled={!l.comp} onClick={() => comp(l, -1)}>−</button>
-              <span>{l.comp || 0}</span>
-              <button type="button" aria-label={`Qeras 1 ${l.name}`} disabled={(l.comp || 0) >= l.qty || reason.trim().length < 3} onClick={() => comp(l, 1)}>+</button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <div className="actions">
-        <button type="button" onClick={onClose}>Mbyll</button>
-      </div>
-    </div>
-  );
-}
-
-// A line's details. Before sending: just corrected. After: a reason, and the station gets
-// a correction slip; "Ripërgatit" sends a remake (the first one is a loss).
 function LinePanel({ table, line, product, update, onClose }) {
   const unsent = line.qty - (line.sent || 0);
   const [one, setOne] = useState(false);
@@ -724,9 +655,9 @@ function LinePanel({ table, line, product, update, onClose }) {
       note: f.get("note") || "",
       allergy: f.get("allergy") || "",
       extras: f.getAll("extras"),
-      ...(line.sent ? {} : { course: Number(f.get("course") || 0) }),
+      ...(line.sent ? {} : { course: line.course || 0 }),
       ...(unsent ? { hold: f.get("hold") === "on" } : {}),
-      ...(one ? { one: true, course: Number(f.get("course") || 0) } : {}),
+      ...(one ? { one: true, course: line.course || 0 } : {}),
       ...(f.get("reason") ? { reason: f.get("reason") } : {}),
     };
     if (await update("order.edit", payload, `${line.name}: u ndryshua.`)) onClose();
@@ -753,14 +684,6 @@ function LinePanel({ table, line, product, update, onClose }) {
             </label>
           ))}
         </fieldset>
-      )}
-      {(!line.sent || one) && (
-        <ChoiceField
-          label="Kursi"
-          name="course"
-          defaultValue={String(line.course || 0)}
-          options={COURSES.map((c, i) => ({ value: String(i), label: c }))}
-        />
       )}
       {unsent > 0 && (
         <label className="check-row">

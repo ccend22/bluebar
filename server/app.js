@@ -9,7 +9,7 @@ import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
-import { deeplTranslator } from "./translate.js";
+import { deeplTranslator, LANGS } from "./translate.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
   agentKeyValid,
@@ -70,7 +70,7 @@ export function buildApp({
     venueSlug: process.env.BLUEBILL_VENUE_SLUG,
   },
   secretKey = process.env.BLUEBAR_SECRET_KEY,
-  // Albanian → English for the online menu (null: no translation, the menu shows Albanian).
+  // Albanian → the online menu's other languages (null: no translation, the menu shows Albanian).
   translate = deeplTranslator(process.env.DEEPL_API_KEY),
 }) {
   const app = Fastify({
@@ -308,10 +308,10 @@ export function buildApp({
   app.get("/api/menu/:slug", async (request, reply) => {
     const { venue, db } = await menuVenue(request);
     const [categories, products, brand] = await Promise.all([
-      db.query("SELECT name, name_en FROM bluebar.categories ORDER BY name"),
-      db.query(`SELECT id, name, name_en, description, description_en, price, category, available, extras, photo_at
+      db.query("SELECT name, i18n FROM bluebar.categories ORDER BY name"),
+      db.query(`SELECT id, name, i18n, description, price, category, available, extras, photo_at
                 FROM bluebar.products WHERE menu_visible ORDER BY name`),
-      db.query("SELECT tagline, accent, logo_at FROM bluebar.menu_branding WHERE id = 1"),
+      db.query("SELECT tagline, accent, logo_at, euro, euro_rate FROM bluebar.menu_branding WHERE id = 1"),
     ]);
     const b = brand.rows[0] || {};
     // The edge (Vercel) answers most guests for up to a minute; a phone always asks again,
@@ -321,11 +321,13 @@ export function buildApp({
       name: venue.name,
       ordering: Boolean(venue.menu_ordering),
       brand: { tagline: b.tagline || "", accent: b.accent || "blue", logo: photoVersion(b.logo_at) },
+      // Lek for 1 €, when foreign guests see prices in euro; null: always Lek.
+      euroRate: b.euro ? Number(b.euro_rate) : null,
       categories: categories.rows
         .filter((c) => products.rows.some((p) => p.category === c.name))
-        .map((c) => ({ name: c.name, nameEn: c.name_en })),
+        .map((c) => ({ name: c.name, i18n: c.i18n })),
       products: products.rows.map((p) => ({
-        id: p.id, name: p.name, nameEn: p.name_en, description: p.description, descriptionEn: p.description_en,
+        id: p.id, name: p.name, description: p.description, i18n: p.i18n,
         price: p.price, category: p.category, available: p.available,
         extras: (p.extras || []).map(({ name, price }) => ({ name, price })),
         photo: photoVersion(p.photo_at),
@@ -535,10 +537,28 @@ export function buildApp({
     await photoChanged(request.db, id, "now()");
     return { ok: true };
   });
-  // The online menu's English, written by the translator whenever a product or category
-  // is saved; the manager never types it. Awaited (a serverless function may stop after
-  // replying), bounded by the translator's own timeout, and never fails the save.
+  // The online menu's other languages, written by the translator whenever a product or
+  // category is saved; the manager never types them. Awaited (a serverless function may
+  // stop after replying), the languages in parallel so the translator's own timeout bounds
+  // it, and never fails the save.
   const clip = (text, max) => String(text || "").slice(0, max);
+  // Rows into every language: [{name, description?, extras?}] → per row {lang: {name,
+  // description, extras: {Albanian extra: its translation}}}.
+  const translateRows = async (rows) => {
+    const at = [];
+    const texts = rows.flatMap((r) => (at.push(at.length ? at.at(-1) + 2 + (rows[at.length - 1].extras?.length || 0) : 0),
+      [r.name, r.description || "-", ...(r.extras || [])]));
+    const byLang = await Promise.all(LANGS.map(async (lang) => {
+      const out = [];
+      for (let i = 0; i < texts.length; i += 50) out.push(...(await translate(texts.slice(i, i + 50), lang)));
+      return out;
+    }));
+    return rows.map((r, n) => Object.fromEntries(LANGS.map((lang, l) => [lang, {
+      name: clip(byLang[l][at[n]], 80),
+      ...(r.description !== undefined && { description: r.description ? clip(byLang[l][at[n] + 1], 300) : "" }),
+      ...(r.extras?.length && { extras: Object.fromEntries(r.extras.map((x, k) => [x, clip(byLang[l][at[n] + 2 + k], 60)])) }),
+    }])));
+  };
   const translateSaved = async (db, type, payload, state) => {
     if (!translate || !state) return;
     try {
@@ -546,53 +566,56 @@ export function buildApp({
         const name = String(payload.name || "").trim().toLowerCase();
         const p = state.products.find((x) => x.name.toLowerCase() === name);
         if (!p) return;
-        const [nameEn, descriptionEn] = await translate(p.description ? [p.name, p.description] : [p.name]);
-        await db.query("UPDATE bluebar.products SET name_en=$2, description_en=$3 WHERE id=$1", [p.id, clip(nameEn, 80), clip(descriptionEn, 300)]);
+        const [i18n] = await translateRows([{ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) }]);
+        await db.query("UPDATE bluebar.products SET i18n=$2 WHERE id=$1", [p.id, i18n]);
       } else {
         const category = String(payload.name || "").trim();
-        const [nameEn] = await translate([category]);
-        await db.query("UPDATE bluebar.categories SET name_en=$2 WHERE name=$1", [category, clip(nameEn, 40)]);
+        const [i18n] = await translateRows([{ name: category }]);
+        await db.query("UPDATE bluebar.categories SET i18n=$2 WHERE name=$1", [category, i18n]);
       }
       await bumpRevision(db);
     } catch {
       // Best effort: the menu keeps the Albanian until the next save or a manual translate.
     }
   };
-  // Cilësimet → Menuja online → "Përkthe menunë": everything not yet in English.
+  // Cilësimet → Menuja online → "Përkthe menunë": everything missing a language.
   app.post("/api/venue/menu/translate", { preValidation: session("manager") }, async (request) => {
     if (!translate) throw new AppError("Përkthimi automatik nuk është konfiguruar (DEEPL_API_KEY).", 503);
-    const products = (await request.db.query("SELECT id, name, description FROM bluebar.products WHERE name_en = '' ORDER BY id LIMIT 200")).rows;
-    const categories = (await request.db.query("SELECT name FROM bluebar.categories WHERE name_en = ''")).rows;
-    const texts = [...products.flatMap((p) => [p.name, p.description || "-"]), ...categories.map((c) => c.name)];
-    if (!texts.length) return { products: 0, categories: 0 };
+    const missing = `NOT (i18n ?& '{${LANGS.join(",")}}')`;
+    const products = (await request.db.query(`SELECT id, name, description, extras FROM bluebar.products WHERE ${missing} ORDER BY id LIMIT 200`)).rows;
+    const categories = (await request.db.query(`SELECT name FROM bluebar.categories WHERE ${missing}`)).rows;
+    if (!products.length && !categories.length) return { products: 0, categories: 0 };
     let out;
     try {
-      out = [];
-      for (let i = 0; i < texts.length; i += 50) out.push(...(await translate(texts.slice(i, i + 50))));
+      out = await translateRows([...products.map((p) => ({ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) })), ...categories.map((c) => ({ name: c.name }))]);
     } catch {
       throw new AppError("Shërbimi i përkthimit nuk u përgjigj. Provoni pas pak.", 502);
     }
     for (const [n, p] of products.entries())
-      await request.db.query("UPDATE bluebar.products SET name_en=$2, description_en=$3 WHERE id=$1",
-        [p.id, clip(out[2 * n], 80), p.description ? clip(out[2 * n + 1], 300) : ""]);
+      await request.db.query("UPDATE bluebar.products SET i18n=$2 WHERE id=$1", [p.id, out[n]]);
     for (const [n, c] of categories.entries())
-      await request.db.query("UPDATE bluebar.categories SET name_en=$2 WHERE name=$1", [c.name, clip(out[2 * products.length + n], 40)]);
+      await request.db.query("UPDATE bluebar.categories SET i18n=$2 WHERE name=$1", [c.name, out[products.length + n]]);
     await bumpRevision(request.db);
     return { products: products.length, categories: categories.length };
   });
   // The menu's identity (Cilësimet → Menuja online): welcome line, brand colour, logo.
   const ACCENTS = ["blue", "terracotta", "olive", "plum", "teal", "amber"];
   app.get("/api/venue/menu-brand", { preValidation: session("manager") }, async (request) => {
-    const b = (await request.db.query("SELECT tagline, accent, logo_type, logo FROM bluebar.menu_branding WHERE id = 1")).rows[0];
-    return { tagline: b.tagline, accent: b.accent, logo: b.logo ? `data:${b.logo_type};base64,${Buffer.from(b.logo).toString("base64")}` : null, translation: Boolean(translate) };
+    const b = (await request.db.query("SELECT tagline, accent, logo_type, logo, euro, euro_rate FROM bluebar.menu_branding WHERE id = 1")).rows[0];
+    return { tagline: b.tagline, accent: b.accent, euro: b.euro, euroRate: Number(b.euro_rate),
+      logo: b.logo ? `data:${b.logo_type};base64,${Buffer.from(b.logo).toString("base64")}` : null, translation: Boolean(translate) };
   });
   app.put("/api/venue/menu-brand", {
     preValidation: session("manager"),
     schema: { body: { type: "object", additionalProperties: false, required: ["tagline", "accent"],
-      properties: { tagline: { type: "string", maxLength: 90 }, accent: { type: "string", enum: ACCENTS } } } },
+      properties: { tagline: { type: "string", maxLength: 90 }, accent: { type: "string", enum: ACCENTS },
+        euro: { type: "boolean" }, euroRate: { type: "number", exclusiveMinimum: 0, maximum: 100000 } } } },
   }, async (request) => {
-    await request.db.query("UPDATE bluebar.menu_branding SET tagline=$1, accent=$2 WHERE id = 1", [request.body.tagline.trim(), request.body.accent]);
-    return { tagline: request.body.tagline.trim(), accent: request.body.accent };
+    const { tagline, accent, euro, euroRate } = request.body;
+    const b = (await request.db.query(
+      `UPDATE bluebar.menu_branding SET tagline=$1, accent=$2, euro=COALESCE($3, euro), euro_rate=COALESCE(round($4::numeric, 2), euro_rate)
+       WHERE id = 1 RETURNING euro, euro_rate`, [tagline.trim(), accent, euro ?? null, euroRate ?? null])).rows[0];
+    return { tagline: tagline.trim(), accent, euro: b.euro, euroRate: Number(b.euro_rate) };
   });
   app.put("/api/venue/menu-logo", {
     bodyLimit: 450000,
@@ -1066,8 +1089,6 @@ export function buildApp({
                 "order.note",
                 "order.fire",
                 "order.remake",
-                "order.discount",
-                "order.comp",
                 "invoice.refund",
                 "ticket.done",
                 "ticket.transfer",
@@ -1086,7 +1107,6 @@ export function buildApp({
                 "products.import",
                 "stock.receiveMany",
                 "category.create",
-                "category.translate",
                 "guest.accept",
                 "guest.reject",
                 "guest.seen",

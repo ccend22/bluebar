@@ -12,15 +12,20 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"]
 export function PaymentForm({ table, initialMethod, fiscalEnabled, onCancel, onSubmit }) {
   const due = bill(table).remaining;
   const [payment, setPayment] = useState(initialMethod === "Kartë" ? "Kartë" : "Cash");
-  const [received, setReceived] = useState("");
+  // The exact amount by default; the first digit typed on the keypad starts over.
+  const [received, setReceivedRaw] = useState(String(due));
+  const [picked, setPicked] = useState(true);
+  const setReceived = (v) => (setReceivedRaw(v), setPicked(true));
   const short = payment === "Cash" && (received === "" || Number(received) < due);
-  const pressKey = (key) =>
-    setReceived((current) => {
+  const pressKey = (key) => {
+    setPicked(false);
+    setReceivedRaw((current) => {
       if (key === "clear") return "";
-      if (key === "back") return current.slice(0, -1);
-      const next = `${current}${key}`.replace(/^0+(?=\d)/, "");
+      if (key === "back") return picked ? "" : current.slice(0, -1);
+      const next = `${picked ? "" : current}${key}`.replace(/^0+(?=\d)/, "");
       return Number(next) <= 100000000 ? next : current;
     });
+  };
   const submit = (e) => {
     e.preventDefault();
     if (short) return;
@@ -74,7 +79,7 @@ export function PaymentForm({ table, initialMethod, fiscalEnabled, onCancel, onS
             step="1"
             required
             value={received}
-            onChange={(e) => setReceived(e.target.value)}
+            onChange={(e) => (setReceivedRaw(e.target.value), setPicked(false))}
             placeholder={String(due)}
           />
           <div className="cash-quick" role="group" aria-label="Shuma të shpejta">

@@ -98,26 +98,33 @@ function Qr({ text }) {
 function MenuIdentity({ venueName }) {
   const [brand, setBrand] = useState(null);
   const [tagline, setTagline] = useState("");
+  const [rate, setRate] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState({ text: "", error: false });
   useEffect(() => {
-    fetchMenuBrand().then((b) => (setBrand(b), setTagline(b.tagline))).catch((e) => setNote({ text: e.message, error: true }));
+    fetchMenuBrand().then((b) => (setBrand(b), setTagline(b.tagline), setRate(String(b.euroRate)))).catch((e) => setNote({ text: e.message, error: true }));
   }, []);
-  const run = async (action, done) => {
+  // A note shows under the panel whose action wrote it: the identity or the languages.
+  const run = async (action, done, at = "identity") => {
     setBusy(true);
     setNote({ text: "", error: false });
     try {
       await action();
-      if (done) setNote({ text: done, error: false });
+      if (done) setNote({ text: done, error: false, at });
     } catch (e) {
-      setNote({ text: e.message, error: true });
+      setNote({ text: e.message, error: true, at });
     } finally {
       setBusy(false);
     }
   };
   if (!brand) return null;
+  const rateValue = Number(rate.replace(",", "."));
+  const save = (done, at) =>
+    run(() => saveMenuBrand({ tagline: tagline.trim(), accent: brand.accent, euro: brand.euro, ...(rateValue > 0 && { euroRate: rateValue }) }), done, at);
+  const noteFor = (at) => note.text && (note.at || "identity") === at && <p className={note.error ? "warning-text" : "helper"} role="status">{note.text}</p>;
   const initials = venueName.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
+    <>
     <section className="panel menu-identity" style={{ "--accent": ACCENTS[brand.accent].hex }}>
       <h2>Identiteti i menusë</h2>
       <p className="helper">Çfarë sheh klienti në krye të menusë: logoja, emri, një rresht mirëseardhjeje dhe ngjyra e lokalit.</p>
@@ -165,39 +172,63 @@ function MenuIdentity({ venueName }) {
         ))}
       </fieldset>
       <div className="actions">
-        <button className="primary" disabled={busy} onClick={() => run(() => saveMenuBrand({ tagline: tagline.trim(), accent: brand.accent }), "Identiteti u ruajt. Menuja përditësohet brenda një minute.")}>
+        <button className="primary" disabled={busy} onClick={() => save("Identiteti u ruajt. Menuja përditësohet brenda një minute.")}>
           Ruaj identitetin
         </button>
       </div>
+      {noteFor("identity")}
+    </section>
+    <section className="panel menu-identity lang-panel">
+      <h2>Gjuhët dhe çmimet</h2>
+      <p className="helper">Klienti zgjedh gjuhën në menu: shqip, anglisht, italisht, gjermanisht, frëngjisht ose spanjisht.</p>
       <div className="menu-translate">
-        <strong>Anglisht për turistët</strong>
+        <strong>Përkthimi</strong>
         {brand.translation ? (
           <>
             <p className="helper">
-              Emrat dhe përshkrimet përkthehen vetë në anglisht sa herë ruani një produkt. Për produktet që ekzistonin
-              më parë, përktheni të gjitha njëherësh.
+              Emrat e produkteve, përshkrimet dhe kategoritë përkthehen vetë në të gjitha gjuhët sa herë ruani një produkt
+              ose shtoni një kategori. Për ato që ekzistonin më parë, përktheni të gjitha njëherësh.
             </p>
             <button
               type="button"
               disabled={busy}
               onClick={() => run(async () => {
                 const r = await translateMenu();
-                setNote({ text: r.products || r.categories ? `U përkthyen ${r.products} produkte dhe ${r.categories} kategori.` : "Gjithçka është e përkthyer.", error: false });
-              }, "")}
+                setNote({ text: r.products || r.categories ? `U përkthyen ${r.products} produkte dhe ${r.categories} kategori.` : "Gjithçka është e përkthyer.", error: false, at: "lang" });
+              }, "", "lang")}
             >
               Përkthe menunë
             </button>
           </>
         ) : (
-          <p className="helper">Përkthimi automatik nuk është aktiv në këtë server: menuja në anglisht tregon emrat ashtu siç i shkruani.</p>
+          <p className="helper">Përkthimi automatik nuk është aktiv në këtë server: në gjuhët e tjera, produktet dhe kategoritë shfaqen me emrat shqip.</p>
         )}
       </div>
-      {note.text && <p className={note.error ? "warning-text" : "helper"} role="status">{note.text}</p>}
+      <div className="menu-translate">
+        <strong>Çmimet në euro</strong>
+        <label className="printer-ascii">
+          <input type="checkbox" checked={brand.euro} onChange={(e) => setBrand((b) => ({ ...b, euro: e.target.checked }))} />
+          Në gjuhët e huaja, shfaq çmimet në euro
+        </label>
+        <label className="field">
+          <span>Kursi: sa Lek për 1 €</span>
+          <input inputMode="decimal" value={rate} disabled={!brand.euro} onChange={(e) => setRate(e.target.value)} />
+        </label>
+        <p className="helper">
+          {rateValue > 0 ? `p.sh. 320 Lek shfaqen ${(Math.round((320 / rateValue) * 100) / 100).toFixed(2)} €, të rrumbullakosura në 2 shifra. ` : "Vendosni një kurs më të madh se 0. "}
+          Në shqip çmimet mbeten në Lek; pagesa dhe fatura janë gjithmonë në Lek.
+        </p>
+        <button type="button" disabled={busy || (brand.euro && !(rateValue > 0))} onClick={() => save("Çmimet në euro u ruajtën. Menuja përditësohet brenda një minute.", "lang")}>
+          Ruaj çmimet
+        </button>
+      </div>
+      {noteFor("lang")}
     </section>
+    </>
   );
 }
 
-// Cilësimet → Menuja online: on/off, the link, English category names and table QR codes.
+// Cilësimet → Menuja online: on/off, the link and table QR codes.
 export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -239,7 +270,7 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
         <div className="online-menu-head">
           <div>
             <h2>Menuja online</h2>
-            <p className="helper">Klientët e hapin nga telefoni, në shqip ose anglisht. Çmimet dhe produktet vijnë nga Produktet.</p>
+            <p className="helper">Klientët e hapin nga telefoni, në shqip ose në një nga 5 gjuhët e huaja. Çmimet dhe produktet vijnë nga Produktet.</p>
           </div>
           <button className={enabled ? "" : "primary"} onClick={() => save({ enabled: !enabled })} disabled={busy} aria-pressed={enabled}>
             {enabled ? "Çaktivizo menunë" : "Aktivizo menunë"}
@@ -258,10 +289,9 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
         </div>
         <p className="helper">
           {enabled ? "Menuja është publike." : "Menuja është e fikur: lidhja tregon \"jo e disponueshme\"."}{" "}
-          {state.products.length - hidden} produkte shfaqen{hidden ? `, ${hidden} të fshehura` : ""}. Foton, përshkrimin dhe emrin në anglisht i vendosni te Produktet.
+          {state.products.length - hidden} produkte shfaqen{hidden ? `, ${hidden} të fshehura` : ""}. Foton dhe përshkrimin i vendosni te Produktet.
         </p>
       </section>
-      <MenuIdentity venueName={venue?.name || "BlueBar"} />
       <section className="panel">
         <div className="online-menu-head">
           <div>
@@ -283,26 +313,7 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
               : "Tani klientët vetëm e shohin menunë."}
         </p>
       </section>
-      <section className="panel">
-        <h2>Kategoritë në anglisht</h2>
-        <p className="helper">Si shfaqen kategoritë kur klienti zgjedh English. Bosh: mbetet emri shqip.</p>
-        <div className="category-en-list">
-          {state.categories.map((c) => (
-            <label className="field" key={c}>
-              <span>{c}</span>
-              <input
-                defaultValue={state.categoryEn?.[c] || ""}
-                maxLength={40}
-                placeholder={c}
-                onBlur={(e) => {
-                  const nameEn = e.target.value.trim();
-                  if (nameEn !== (state.categoryEn?.[c] || "")) update("category.translate", { name: c, nameEn }, "Kategoria u përkthye.");
-                }}
-              />
-            </label>
-          ))}
-        </div>
-      </section>
+      <MenuIdentity venueName={venue?.name || "BlueBar"} />
       <section className="panel">
         <div className="online-menu-head">
           <div>
@@ -322,7 +333,11 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
             Printo kodet QR
           </button>
         </div>
-        <div className="qr-sheet">{cards}</div>
+        {/* Twelve big codes are for printing, not reading: folded until asked for. */}
+        <details className="qr-details">
+          <summary>Shfaq kodet ({tables.length})</summary>
+          <div className="qr-sheet">{cards}</div>
+        </details>
       </section>
       {createPortal(<div className="qr-sheet qr-print-sheet">{cards}</div>, document.body)}
     </>

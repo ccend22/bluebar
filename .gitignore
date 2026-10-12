@@ -9,3 +9,5 @@ dist/
 .pwa-preview.mjs
 .impeccable/review/
 .impeccable/mocks/
+
+.demo-photos/

@@ -5,9 +5,8 @@ import NumberFlow from "@number-flow/react";
 import clsx from "clsx";
 import { Icon } from "./icons.jsx";
 import { Stepper } from "./Line.jsx";
-import { clock, price, unit } from "./text.js";
+import { clock, unit } from "./text.js";
 
-const lek = { maximumFractionDigits: 0 };
 const sheetSpring = { type: "spring", stiffness: 420, damping: 40 };
 
 // The torn-off stub of the check, docked at the bottom once something is written on it.
@@ -28,7 +27,7 @@ export function Stub({ count, total, onOpen, table, t }) {
         {table && <small>{t.table} {String(table).padStart(2, "0")}</small>}
       </span>
       <span className="stub-count form-box"><small>{t.qty}</small><NumberFlow value={count} /></span>
-      <strong className="stub-total"><NumberFlow value={total} locales="sq-AL" format={lek} suffix=" Lek" /></strong>
+      <strong className="stub-total"><NumberFlow {...t.flow(total)} /></strong>
       <Icon name="chevronDown" size={18} style={{ rotate: "180deg" }} />
     </m.button>
   );
@@ -105,10 +104,10 @@ export function CheckContent({ lines: live, productOf, total: liveTotal, setQty,
                   <m.li key={l.uid} layout initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, height: 0 }} transition={sheetSpring}>
                     <Stepper value={l.qty} min={0} onChange={(qty) => setQty(l.uid, qty)} t={t} />
                     <span className="check-item">
-                      <strong>{tr(p.name, p.nameEn)}</strong>
-                      {(l.extras.length > 0 || l.note) && <small>{[l.extras.join(", "), l.note && `“${l.note}”`].filter(Boolean).join(" · ")}</small>}
+                      <strong>{tr(p, "name")}</strong>
+                      {(l.extras.length > 0 || l.note) && <small>{[l.extras.map((x) => t.extra(p, x)).join(", "), l.note && `“${l.note}”`].filter(Boolean).join(" · ")}</small>}
                     </span>
-                    <span className="check-amount"><NumberFlow value={l.qty * unit(p, l.extras)} locales="sq-AL" format={lek} /></span>
+                    <span className="check-amount"><NumberFlow {...t.flow(l.qty * unit(p, l.extras))} /></span>
                   </m.li>
                 );
               })}
@@ -120,7 +119,7 @@ export function CheckContent({ lines: live, productOf, total: liveTotal, setQty,
           </label>
           <p className="check-total">
             <span>{t.total}</span>
-            <strong><NumberFlow value={total} locales="sq-AL" format={lek} suffix=" Lek" /></strong>
+            <strong><NumberFlow {...t.flow(total)} /></strong>
           </p>
           {error && <p className="check-error" role="alert">{error}</p>}
           <button className="stamp-button wide" disabled={sending} onClick={send}>
@@ -157,8 +156,8 @@ export function Copies({ placed, productOf, t, tr }) {
               return (
                 <li key={n}>
                   <span className="copy-qty">{i.qty}</span>
-                  <span className="copy-item">{p ? tr(p.name, p.nameEn) : "—"}{i.extras.length > 0 && <small> · {i.extras.join(", ")}</small>}</span>
-                  {p && <span className="copy-amount">{price(i.qty * unit(p, i.extras))}</span>}
+                  <span className="copy-item">{p ? tr(p, "name") : "—"}{i.extras.length > 0 && <small> · {i.extras.map((x) => t.extra(p, x)).join(", ")}</small>}</span>
+                  {p && <span className="copy-amount">{t.money(i.qty * unit(p, i.extras))}</span>}
                 </li>
               );
             })}
@@ -167,7 +166,7 @@ export function Copies({ placed, productOf, t, tr }) {
       ))}
       <p className="check-total">
         <span>{t.soFar}</span>
-        <strong>{price(sent.reduce((s, o) => s + (o.total || 0), 0))}</strong>
+        <strong>{t.money(sent.reduce((s, o) => s + (o.total || 0), 0))}</strong>
       </p>
       <p className="check-hint">{t.estimate}</p>
     </div>

@@ -25,7 +25,7 @@ const shapeClass = {
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
-function FloorTable({ t, editing, isSelected, onSelect, onChange, onGhost, others }) {
+function FloorTable({ t, waiter, editing, isSelected, onSelect, onChange, onGhost, others }) {
   const occupied = t.lines.length > 0;
   const itemCount = t.lines.reduce((sum, line) => sum + line.qty, 0);
   const ref = useRef(null);
@@ -79,7 +79,7 @@ function FloorTable({ t, editing, isSelected, onSelect, onChange, onGhost, other
       })}
       role="button"
       tabIndex={0}
-      aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? `e zënë, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(bill(t).remaining)}${bill(t).paid ? ", paguar pjesërisht" : ""}` : "e lirë"}`}
+      aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? `e zënë${waiter ? ` nga ${waiter}` : ""}, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(bill(t).remaining)}${bill(t).paid ? ", paguar pjesërisht" : ""}` : "e lirë"}`}
       aria-pressed={isSelected}
       onClick={(e) => {
         if (editing) e.stopPropagation();
@@ -92,7 +92,8 @@ function FloorTable({ t, editing, isSelected, onSelect, onChange, onGhost, other
         <strong>{String(t.id).padStart(2, "0")}</strong>
         {occupied && (
           <span className="fp-info">
-            <span>{itemCount} {itemCount === 1 ? "artikull" : "artikuj"}</span>
+            {/* Whose table it is, when there's a waiter on it; otherwise how much is on it. */}
+            {waiter ? <span className="fp-waiter">{waiter}</span> : <span>{itemCount} {itemCount === 1 ? "artikull" : "artikuj"}</span>}
             <b>{money(bill(t).remaining)}</b>
           </span>
         )}
@@ -155,7 +156,7 @@ function FloorTable({ t, editing, isSelected, onSelect, onChange, onGhost, other
   );
 }
 
-export function FloorPlan({ tables, editing, selected, onSelectTable, onLayoutChange }) {
+export function FloorPlan({ tables, waiters = [], editing, selected, onSelectTable, onLayoutChange }) {
   const canvasRef = useRef(null);
   // The block a dragged/resized/turned table is aiming at: green if free, red if taken.
   const [ghost, setGhost] = useState(null);
@@ -179,6 +180,7 @@ export function FloorPlan({ tables, editing, selected, onSelectTable, onLayoutCh
           <FloorTable
             key={t.id}
             t={t}
+            waiter={waiters.find((w) => w.id === t.waiter)?.name.split(" ")[0]}
             editing={editing}
             isSelected={selected === t.id}
             onSelect={onSelectTable}

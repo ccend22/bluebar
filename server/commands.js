@@ -859,44 +859,6 @@ export function applyCommand(state, type, payload, actor = null) {
       next = log(next, to.id, "move", `${what} nga Tavolina ${from.id} (${bill(from).due} Lek)`);
       break;
     }
-    case "order.discount": {
-      // The manager's, always with a reason. value 0 removes it.
-      const t = table();
-      if (!t.lines.length) fail("Tavolina nuk ka porosi të hapur.");
-      if (p.kind !== "percent" && p.kind !== "amount") fail("Zgjidhni përqindje ose shumë.");
-      const value = integer(p.value, 0, p.kind === "percent" ? 100 : 100000000);
-      const discount = value ? { kind: p.kind, value, reason: name(p.reason, 120), by: actor?.name || null } : null;
-      if (discount && discount.reason.length < 3) fail("Shkruani arsyen e uljes.");
-      const after = { ...t, discount };
-      if (bill(after).due < bill(t).paid) fail("Me këtë ulje, detyrimi bie nën shumën që është paguar tashmë.");
-      next = { ...state, tables: state.tables.map((x) => (x.id === t.id ? after : x)) };
-      next = log(
-        next,
-        t.id,
-        "discount",
-        discount ? `Ulje ${p.kind === "percent" ? `${value}%` : `${value} Lek`} (${bill(after).discount} Lek): ${discount.reason}` : "Hoqi uljen",
-        { amount: bill(after).discount },
-      );
-      break;
-    }
-    case "order.comp": {
-      // Comp (qerasje) one unit — or take it back: delta 1 / -1. Manager only, with a reason.
-      const t = table();
-      const line = findLine(t, p);
-      if (!line) fail("Produkti nuk është në porosi.");
-      if (p.delta !== 1 && p.delta !== -1) fail("Veprim i pavlefshëm.");
-      const comp = (line.comp || 0) + p.delta;
-      if (comp < 0 || comp > line.qty) fail(p.delta > 0 ? "Të gjitha copët janë qerasur." : "Asnjë copë nuk është qerasur.");
-      const reason = p.delta > 0 ? name(p.reason, 120) : null;
-      if (reason !== null && reason.length < 3) fail("Shkruani arsyen e qerasjes.");
-      const after = { ...t, lines: t.lines.map((l) => (l === line ? { ...l, comp } : l)) };
-      if (bill(after).due < bill(t).paid) fail("Kjo llogari është paguar pjesërisht: qerasja e çon detyrimin nën shumën e paguar.");
-      next = { ...state, tables: state.tables.map((x) => (x.id === t.id ? after : x)) };
-      next = log(next, t.id, "comp", p.delta > 0 ? `Qerasi 1 × ${line.name}: ${reason}` : `Hoqi qerasjen e 1 × ${line.name}`, {
-        amount: p.delta * line.price,
-      });
-      break;
-    }
     case "invoice.refund": {
       // Money back on a paid invoice: manager, reason, never more than it took. A cash
       // refund comes out of the drawer of its till's open shift. Stock isn't put back.
@@ -1054,10 +1016,8 @@ export function applyCommand(state, type, payload, actor = null) {
         minStock: existing?.minStock ?? 10,
         available: existing?.available ?? true,
         extras: p.extras === undefined ? existing?.extras || [] : readExtras(p.extras),
-        // What the online menu shows. Left out of the request: kept as they were.
-        nameEn: menuText(p.nameEn, 80, existing?.nameEn),
+        // What the online menu shows. Left out of the request: kept as it was.
         description: menuText(p.description, 300, existing?.description),
-        descriptionEn: menuText(p.descriptionEn, 300, existing?.descriptionEn),
         menuVisible: p.menuVisible === undefined ? existing?.menuVisible ?? true : bool(p.menuVisible),
         photoAt: existing?.photoAt ?? null,
         // Counted in units (bottles, cans) or not (an espresso, a dish made to order).
@@ -1121,15 +1081,6 @@ export function applyCommand(state, type, payload, actor = null) {
       )
         fail("Kjo kategori menuje ekziston.");
       next = { ...state, categories: [...state.categories, category] };
-      break;
-    }
-    case "category.translate": {
-      // The category's English name on the online menu ("" clears it).
-      const category = name(p.name, 40);
-      if (!state.categories.includes(category)) fail("Kategoria e menusë nuk ekziston.");
-      const nameEn = menuText(p.nameEn, 40, "");
-      const { [category]: _, ...rest } = state.categoryEn || {};
-      next = { ...state, categoryEn: nameEn ? { ...rest, [category]: nameEn } : rest };
       break;
     }
     case "department.create": {

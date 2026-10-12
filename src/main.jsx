@@ -1516,6 +1516,7 @@ function App({ user, onLogout, onUserChange }) {
                       return visible.length ? (
                         <FloorPlan
                           tables={visible}
+                          waiters={state.waiters}
                           editing={false}
                           selected={selected}
                           onSelectTable={(t) => t && selectTable(t)}
@@ -2615,8 +2616,7 @@ function App({ user, onLogout, onUserChange }) {
             {page === "Raportet" && <Reports state={state} />}
             {page === "Cilësimet" && (
               <>
-              <ConfigCheck state={state} />
-              {/* One topic at a time instead of ten panels on one page. */}
+              {/* One topic at a time instead of ten panels on one page; what needs a look, one line under the tabs. */}
               <div className="tabs settings-tabs" role="tablist" aria-label="Cilësimet">
                 {SETTINGS_TABS.map((t) => (
                   <button key={t} role="tab" aria-selected={settingsTab === t} aria-pressed={settingsTab === t} onClick={() => setSettingsTab(t)}>
@@ -2624,6 +2624,7 @@ function App({ user, onLogout, onUserChange }) {
                   </button>
                 ))}
               </div>
+              <ConfigCheck state={state} />
               <div className="settings-grid">
                 {settingsTab === "Printerët" && (
                   <div className="settings-column settings-wide">

@@ -848,6 +848,14 @@ main {
   font-weight: 600;
   color: #3f7b62;
 }
+.fp-waiter {
+  max-width: 100%;
+  overflow: hidden;
+  color: #245d45;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .fp-info b {
   max-width: 100%;
   color: #245d45;
@@ -5916,7 +5924,6 @@ a.onboard-back { display: inline-flex; align-items: center; text-decoration: non
 }
 .online-menu-link code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .online-menu-link.off code { color: var(--muted); text-decoration: line-through; }
-.category-en-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
 .qr-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 16px; }
 .qr-card { margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; text-align: center; background: #fff; }
 .qr-card .qr { display: block; width: 100%; max-width: 140px; aspect-ratio: 1; margin: 0 auto 8px; }
@@ -5952,6 +5959,9 @@ a.onboard-back { display: inline-flex; align-items: center; text-decoration: non
 /* Menuja online → Identiteti: logo, welcome line and brand colour. */
 .menu-identity { display: grid; gap: 12px; }
 .menu-identity h2 { margin: 0; }
+.menu-translate { display: grid; gap: 10px; justify-items: start; padding-top: 12px; border-top: 1px solid var(--line, #e6e6e8); }
+.menu-translate .field { width: min(240px, 100%); }
+.menu-translate .field input:disabled { opacity: 0.5; cursor: not-allowed; }
 .identity-row { display: flex; align-items: center; gap: 16px; }
 .identity-logo {
   display: grid; place-items: center; flex: none; width: 76px; height: 76px; overflow: hidden;
@@ -6098,3 +6108,57 @@ body.order-open { overflow: hidden; }
 .order-bill-sum { padding-top: 8px; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: #555; }
 .order-bill-sum p { display: flex; justify-content: space-between; gap: 10px; margin: 4px 0; }
 .order-bill-total { margin-top: 8px !important; padding-top: 8px; border-top: 2px solid #1d1d1f; font-size: 15px; font-weight: 700; color: #1d1d1f; }
+.report-audit {
+  margin-top: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.report-audit li {
+  grid-template-columns: 84px 1fr;
+}
+.photo-toggle {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.photo-toggle[aria-pressed="true"] {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+/* Without photos the "+" / count badge sits on the tile itself: keep the name clear of it. */
+.menu-grid.no-photos .menu-tile { min-height: 72px; padding: 12px; }
+.menu-grid.no-photos .menu-tile-name { padding: 0 30px 0 0; }
+.menu-grid.no-photos .menu-tile-price { padding: 0; }
+.menu-grid.no-photos .menu-tile-qty, .menu-grid.no-photos .menu-tile-add { top: 10px; right: 10px; }
+/* ---- Cilësimet, tidied: one reading column for every tab, even spacing, buttons their own size ---- */
+.settings-grid { grid-template-columns: minmax(0, 760px); gap: 16px; }
+.settings-column { gap: 16px; }
+.settings-grid .panel { margin-bottom: 0; }
+.settings-wide { max-width: none; }
+.settings-tabs { margin-bottom: 16px; }
+.settings-grid .panel button.primary:not(.icon-button) { justify-self: start; width: auto; min-width: 160px; padding-inline: 22px; }
+.settings-grid .panel .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-grid .panel .actions button { padding-inline: 22px; }
+/* The configuration check: one amber line under the tabs, opened for the list. */
+.config-check {
+  max-width: 760px; margin: 0 0 16px; border: 1px solid #f0dcb4; border-radius: var(--radius-control); background: #fffaf1; color: var(--amber);
+}
+.config-check summary {
+  display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 14px; font-size: 13px; cursor: pointer; list-style: none;
+}
+.config-check summary::-webkit-details-marker { display: none; }
+.config-check summary > span { flex: 1; }
+.config-check summary > svg:last-child { transition: rotate 180ms cubic-bezier(0.23, 1, 0.32, 1); }
+.config-check[open] summary > svg:last-child { rotate: 180deg; }
+.config-check summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: var(--radius-control); }
+.config-check .config-issues, .config-check .helper { margin: 0 14px 12px; }
+.config-check .helper { color: var(--muted); }
+.config-ok { max-width: 760px; }
+@media (prefers-reduced-motion: reduce) { .config-check summary > svg:last-child { transition: none; } }
+.lang-panel h2 { margin: 0; }
+.lang-panel .menu-translate:first-of-type { padding-top: 4px; border-top: 0; }
+.qr-details { margin-top: 12px; }
+.qr-details summary { display: inline-flex; align-items: center; min-height: 40px; color: var(--blue); font-size: 13px; font-weight: 600; cursor: pointer; }
+.qr-details summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+.qr-details .qr-sheet { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); }

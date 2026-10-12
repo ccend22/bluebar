@@ -3,7 +3,7 @@ import * as m from "motion/react-m";
 import { AnimatePresence } from "motion/react";
 import clsx from "clsx";
 import { Icon } from "./icons.jsx";
-import { price, unit } from "./text.js";
+import { unit } from "./text.js";
 
 const press = { type: "spring", stiffness: 520, damping: 22 };
 
@@ -45,11 +45,11 @@ function QtyBox({ count, name, onPress, t }) {
 // One dish as a ruled line of the pad. Opened, the line unfolds into a slip right where
 // it is (a shared layout animation), with extras as form checkboxes, a note and the quantity.
 export function Line({ product: p, photo, open, onToggle, canOrder, count, onQuickAdd, onAdd, t, tr }) {
-  // In English, the translation the server wrote when the product was saved (DeepL);
-  // without one, the manager's Albanian, marked lang="sq" for a phone's own translator.
-  const name = tr(p.name, p.nameEn);
-  const description = tr(p.description, p.descriptionEn);
-  const textLang = name === p.name ? "sq" : "en";
+  // In the guest's language, the translation the server wrote when the product was saved
+  // (DeepL); without one, the manager's Albanian, marked lang="sq" for a phone's own translator.
+  const name = tr(p, "name");
+  const description = tr(p, "description");
+  const textLang = name === p.name ? "sq" : undefined;
   return (
     <m.li layout="position" className={clsx("line", !p.available && "sold-out", open && "open")} id={`line-${p.id}`}>
       <div className="line-row">
@@ -65,19 +65,19 @@ export function Line({ product: p, photo, open, onToggle, canOrder, count, onQui
             {!p.available && <span className="line-sold">{t.soldOut}</span>}
           </span>
           {photo && !open && <m.img layoutId={`photo-${p.id}`} className="line-photo" src={photo} alt="" loading="lazy" width="64" height="64" />}
-          <span className="line-price">{price(p.price)}</span>
+          <span className="line-price">{t.money(p.price)}</span>
         </button>
       </div>
       <AnimatePresence initial={false}>
         {open && (
-          <Slip key="slip" p={p} photo={photo} name={name} description={description} canOrder={canOrder && p.available} onAdd={onAdd} onToggle={onToggle} t={t} />
+          <Slip key="slip" p={p} photo={photo} name={name} description={description} textLang={textLang} canOrder={canOrder && p.available} onAdd={onAdd} onToggle={onToggle} t={t} />
         )}
       </AnimatePresence>
     </m.li>
   );
 }
 
-function Slip({ p, photo, name, description, canOrder, onAdd, onToggle, t }) {
+function Slip({ p, photo, name, description, textLang, canOrder, onAdd, onToggle, t }) {
   const [qty, setQty] = useState(1);
   const [extras, setExtras] = useState([]);
   const [note, setNote] = useState("");
@@ -92,15 +92,15 @@ function Slip({ p, photo, name, description, canOrder, onAdd, onToggle, t }) {
     >
       <div className="slip-inner">
         {photo && <m.img layoutId={`photo-${p.id}`} className="slip-photo" src={photo} alt={name} />}
-        {description && <p className="slip-desc">{description}</p>}
+        {description && <p className="slip-desc" lang={textLang}>{description}</p>}
         {p.extras.length > 0 && (
           <fieldset className="slip-extras" disabled={!canOrder}>
             <legend>{t.extras}</legend>
             {p.extras.map((x) => (
               <button type="button" key={x.name} role="checkbox" aria-checked={extras.includes(x.name)} onClick={() => toggleExtra(x.name)}>
                 <span className="form-check"><Icon name="check" size={15} /></span>
-                <span className="extra-name">{x.name}</span>
-                {x.price > 0 && <span className="extra-price">+{price(x.price)}</span>}
+                <span className="extra-name">{t.extra(p, x.name)}</span>
+                {x.price > 0 && <span className="extra-price">+{t.money(x.price)}</span>}
               </button>
             ))}
           </fieldset>
@@ -117,7 +117,7 @@ function Slip({ p, photo, name, description, canOrder, onAdd, onToggle, t }) {
                 className="stamp-button"
                 onClick={() => onAdd({ qty, extras: p.extras.filter((x) => extras.includes(x.name)).map((x) => x.name), note: note.trim() })}
               >
-                {t.add} · {price(qty * unit(p, extras))}
+                {t.add} · {t.money(qty * unit(p, extras))}
               </button>
             </div>
           </>

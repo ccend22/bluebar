@@ -1050,7 +1050,7 @@ test("Raportet: sales apart from the drawer, filters, cancellations, losses and 
   }
 });
 
-test("Llogaritë: partial and mixed payments, splits, discounts, comps, moves, handover, refunds — never charged twice", async () => {
+test("Llogaritë: partial and mixed payments, splits, moves, handover, refunds — never charged twice", async () => {
   const t = await setup();
   try {
     const boss = t.cookieOf(await t.managerLogin());
@@ -1107,24 +1107,9 @@ test("Llogaritë: partial and mixed payments, splits, discounts, comps, moves, h
     assert.deepEqual(s.invoices[0].lines.map((l) => [l.name, l.qty]), [["Ujë", 1]]);
     assert.deepEqual((await tableOf(2)).lines.map((l) => l.qty), [1]);
 
-    // Discounts and comps: the manager's, with a reason.
-    await add(arben, 3, 1, 2);
-    assert.equal((await cmd(arben, "order.discount", { tableId: 3, kind: "percent", value: 10, reason: "Klient i rregullt" })).statusCode, 403);
-    assert.equal((await cmd(boss, "order.discount", { tableId: 3, kind: "percent", value: 10, reason: "" })).statusCode, 400);
-    await ok(boss, "order.discount", { tableId: 3, kind: "percent", value: 10, reason: "Klient i rregullt" });
-    assert.equal((await cmd(arben, "order.comp", { tableId: 3, productId: 1, delta: 1, reason: "Ditëlindje" })).statusCode, 403);
-    await ok(boss, "order.comp", { tableId: 3, productId: 1, delta: 1, reason: "Ditëlindje" });
-    // 2 × 300 − 300 comped = 300, − 10% = 270.
-    const comped = await ok(arben, "order.pay", { tableId: 3, method: "Cash", received: 270 });
-    s = await state();
-    const inv = s.invoices.find((i) => i.id === comped.result.invoiceId);
-    assert.deepEqual([inv.subtotal, inv.comps, inv.discount, inv.total, inv.discountReason], [600, 300, 30, 270, "Klient i rregullt"]);
-
-    // A fully comped bill closes with no payment and a 0 invoice.
-    await add(arben, 4, 2, 1);
-    await ok(boss, "order.comp", { tableId: 4, productId: 2, delta: 1, reason: "E gabuar" });
-    const free = await ok(arben, "order.pay", { tableId: 4, method: "Cash" });
-    assert.equal((await state()).invoices.find((i) => i.id === free.result.invoiceId).total, 0);
+    // Discounts and comps were removed: their commands no longer exist.
+    assert.equal((await cmd(boss, "order.discount", { tableId: 3, kind: "percent", value: 10, reason: "Klient i rregullt" })).statusCode, 400);
+    assert.equal((await cmd(boss, "order.comp", { tableId: 3, productId: 1, delta: 1, reason: "Ditëlindje" })).statusCode, 400);
 
     // Moving: to an empty table the order (and its station tickets) follows; onto an
     // occupied table only as an explicit merge; a waiter moves only their own.
@@ -1153,9 +1138,9 @@ test("Llogaritë: partial and mixed payments, splits, discounts, comps, moves, h
     await ok(boss, "invoice.refund", { invoiceId: mixed.id, amount: 100, method: "Cash", reason: "Pjatë e ftohtë" });
     s = await state();
     assert.deepEqual(s.invoices.find((i) => i.id === mixed.id).refunds.map((r) => [r.amount, r.method, r.reason]), [[100, "Cash", "Pjatë e ftohtë"]]);
-    // The drawer: 1000 float + cash collected (500 + 270) − 100 refunded; card and card tips never in it.
+    // The drawer: 1000 float + cash collected (500) − 100 refunded; card and card tips never in it.
     const report = (await t.call("GET", `/api/shifts/${before.id}/report`, { cookie: boss })).json();
-    assert.deepEqual([report.cash, report.refundsCash, report.shift.expected], [770, 100, 1670]);
+    assert.deepEqual([report.cash, report.refundsCash, report.shift.expected], [500, 100, 1400]);
   } finally {
     await t.close();
   }
@@ -1388,9 +1373,8 @@ test("a client-written X-Forwarded-For can't fake the venue network", async () =
 test("online menu: off until enabled, public read-only, only visible products and guest fields", async () => {
   const t = await setup();
   try {
-    await t.send("product.save", { name: "Espresso", category: "Kafe", price: 100, nameEn: "Espresso", description: "Kafe e fortë", descriptionEn: "Strong coffee" });
+    await t.send("product.save", { name: "Espresso", category: "Kafe", price: 100, description: "Kafe e fortë" });
     await t.send("product.save", { name: "Sekret", category: "Kafe", price: 900, menuVisible: false });
-    await t.send("category.translate", { name: "Kafe", nameEn: "Coffee" });
     // A guest's phone sends no app header and no cookie.
     const guest = (url) => t.inject({ method: "GET", url, headers: { host: "localhost" } });
     assert.equal((await guest("/api/menu/bluebar")).statusCode, 404, "off by default");
@@ -1401,10 +1385,14 @@ test("online menu: off until enabled, public read-only, only visible products an
     assert.equal(menu.statusCode, 200);
     assert.match(menu.headers["cache-control"], /public/);
     const body = menu.json();
-    assert.deepEqual(body.categories, [{ name: "Kafe", nameEn: "Coffee" }]);
+    assert.deepEqual(body.categories, [{ name: "Kafe", i18n: {} }]);
+    assert.equal(body.euroRate, null, "Lek only until the manager turns euro on");
     assert.deepEqual(body.products.map((p) => p.name), ["Espresso"], "a hidden product never reaches guests");
     assert.deepEqual(Object.keys(body.products[0]).sort(),
-      ["available", "category", "description", "descriptionEn", "extras", "id", "name", "nameEn", "photo", "price"]);
+      ["available", "category", "description", "extras", "i18n", "id", "name", "photo", "price"]);
+    // Euro for foreign guests, at the venue's rate.
+    assert.equal((await t.call("PUT", "/api/venue/menu-brand", { cookie, body: { tagline: "", accent: "blue", euro: true, euroRate: 98.456 } })).json().euroRate, 98.46);
+    assert.equal((await guest("/api/menu/bluebar")).json().euroRate, 98.46);
     // Photos: only a real WebP/JPEG, only by a manager, versioned on the menu.
     const id = body.products[0].id;
     const jpeg = "data:image/jpeg;base64," + Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString("base64");
@@ -1526,9 +1514,8 @@ test("guests order from the menu: only with the table's QR key, at the server's 
   }
 });
 
-test("the online menu's English is written by the translator on save, never typed, and never blocks a save", async () => {
-  const calls = [];
-  const fake = async (texts) => (calls.push(texts), texts.map((t) => ({ "Kafe turke": "Turkish coffee", "E fortë, me llokum": "Strong, with Turkish delight", "Ëmbëlsira": "Desserts" })[t] || `EN:${t}`));
+test("the online menu's languages are written by the translator on save, never typed, and never block a save", async () => {
+  const fake = async (texts, lang) => texts.map((t) => (lang === "en" && { "Kafe turke": "Turkish coffee", "E fortë, me llokum": "Strong, with Turkish delight", "Ëmbëlsira": "Desserts" }[t]) || `${lang}:${t}`);
   const t = await setup({ translate: fake });
   try {
     const cookie = t.cookieOf(await t.managerLogin());
@@ -1540,11 +1527,22 @@ test("the online menu's English is written by the translator on save, never type
     assert.equal((await cmd("product.save", { name: "Kafe turke", category: "Kafe", price: 150, description: "E fortë, me llokum" })).statusCode, 200);
     const guest = async () => (await t.inject({ method: "GET", url: "/api/menu/bluebar", headers: { host: "localhost" } })).json();
     const p = (await guest()).products.find((x) => x.name === "Kafe turke");
-    assert.equal(p.nameEn, "Turkish coffee");
-    assert.equal(p.descriptionEn, "Strong, with Turkish delight");
+    assert.deepEqual(p.i18n.en, { name: "Turkish coffee", description: "Strong, with Turkish delight" });
+    assert.deepEqual(Object.keys(p.i18n).sort(), ["de", "en", "es", "fr", "it"]);
+    assert.equal(p.i18n.it.name, "it:Kafe turke");
+    // Extras too, keyed by their Albanian name (the order still sends that).
+    await cmd("product.save", { name: "Çaj", category: "Kafe", price: 100, extras: [{ name: "Me limon", price: 0 }] });
+    assert.equal((await guest()).products.find((x) => x.name === "Çaj").i18n.de.extras["Me limon"], "de:Me limon");
     assert.equal((await cmd("category.create", { name: "Ëmbëlsira" })).statusCode, 200);
-    const s = (await t.call("GET", "/api/state", { cookie })).json().state;
-    assert.equal(s.categoryEn["Ëmbëlsira"], "Desserts");
+    await cmd("product.save", { name: "Torta", category: "Ëmbëlsira", price: 300 });
+    const desserts = (await guest()).categories.find((c) => c.name === "Ëmbëlsira");
+    assert.equal(desserts.i18n.en.name, "Desserts");
+    // The audit log: who did what, never a secret.
+    const from = new Date(Date.now() - 60_000).toISOString(), to = new Date(Date.now() + 60_000).toISOString();
+    const audit = (await t.call("GET", `/api/reports?from=${from}&to=${to}`, { cookie })).json().audit;
+    assert.equal(audit[0].type, "product.save");
+    assert.equal(audit[0].payload.name, "Torta");
+    assert.ok(audit[0].actor);
     // Bulk: everything still without English (the seeded categories), once.
     const bulk = (await t.call("POST", "/api/venue/menu/translate", { cookie })).json();
     assert.ok(bulk.categories >= 1);

@@ -151,16 +151,16 @@ export function ConfigCheck({ state }) {
         <Icon name="check" size={15} /> Konfigurimi është në rregull: çdo produkt ka ku të shkojë dhe çdo stacion ka pajisje.
       </p>
     );
+  // Something to look at: one line that opens to the list, so it never pushes the settings down.
   return (
-    <section className="panel config-check">
-      <SectionHeading
-        title="Kontrolli i konfigurimit"
-        description="Zonat, kasat, stafi, produktet dhe stacionet: çfarë mund të ngecë gjatë shërbimit."
-      >
-        <Badge tone={issues.some((i) => i.level === "error") ? "amber" : "green"}>
-          {issues.length ? `${issues.length} për t'u parë` : "Në rregull"}
-        </Badge>
-      </SectionHeading>
+    <details className="config-check">
+      <summary>
+        <Icon name="info" size={16} />
+        <span>
+          <b>Kontrolli i konfigurimit:</b> {issues.length} {issues.length === 1 ? "gjë" : "gjëra"} për t'u parë para shërbimit
+        </span>
+        <Icon name="chevronDown" size={16} />
+      </summary>
       {issues.length > 0 && (
         <ul className="config-issues">
           {issues.map((i, n) => (
@@ -174,6 +174,6 @@ export function ConfigCheck({ state }) {
         </ul>
       )}
       <p className="helper">Inventari: një stok i përbashkët për të gjitha kasat dhe stacionet.</p>
-    </section>
+    </details>
   );
 }
