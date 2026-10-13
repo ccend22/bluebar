@@ -8,13 +8,11 @@ import { Icon } from "./components.jsx";
 const LIMIT = 30;
 
 async function toWav(blob) {
-  const decoded = await new AudioContext().decodeAudioData(await blob.arrayBuffer());
-  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
-  const source = offline.createBufferSource();
-  source.buffer = decoded;
-  source.connect(offline.destination);
-  source.start();
-  const samples = (await offline.startRendering()).getChannelData(0);
+  // An offline context decodes straight to 16 kHz and holds nothing open afterwards (a live
+  // AudioContext per order would run out on an iPhone, which allows only a few).
+  const decoded = await new OfflineAudioContext(1, 1, 16000).decodeAudioData(await blob.arrayBuffer());
+  const channels = Array.from({ length: decoded.numberOfChannels }, (_, c) => decoded.getChannelData(c));
+  const samples = channels.length === 1 ? channels[0] : channels[0].map((_, i) => channels.reduce((s, ch) => s + ch[i], 0) / channels.length);
   // Practically silent (mic muted, too far away): nothing worth sending. A voice service given
   // silence may "hear" an order that was never said.
   let loud = 0;
@@ -63,15 +61,20 @@ export function useRecorder(onAudio, onError) {
   const current = useRef(null);
   // Leaving the table drops the recording: nothing is sent.
   useEffect(() => () => current.current?.cancel(), []);
+  const opening = useRef(false);
   const start = async () => {
     // Tapped while recording: the waiter is done. MediaRecorder stops at once.
     if (recording) return current.current?.stop();
+    // Tapped again while the phone is still asking for the mic: one recording only.
+    if (opening.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")
       return onError(window.isSecureContext ? "Ky shfletues nuk mund të regjistrojë zë. Përdorni Chrome ose Safari." : "Zëri punon vetëm në faqe të sigurta (https).");
     let stream;
+    opening.current = true;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch (e) {
+      opening.current = false;
       return onError(
         // Chrome says "by system" when the computer (macOS / Windows) blocks the mic, not the site.
         e.name === "NotAllowedError" && /system/i.test(e.message)
@@ -81,6 +84,7 @@ export function useRecorder(onAudio, onError) {
             : `Mikrofoni nuk u hap (${e.name}).`,
       );
     }
+    opening.current = false;
     const recorder = new MediaRecorder(stream);
     const chunks = [];
     let cancelled = false;

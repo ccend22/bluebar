@@ -551,9 +551,13 @@ export function buildApp({
     const at = [];
     const texts = rows.flatMap((r) => (at.push(at.length ? at.at(-1) + 2 + (rows[at.length - 1].extras?.length || 0) : 0),
       [r.name, r.description || "-", ...(r.extras || [])]));
+    // Each piece once more after a short wait if DeepL is slow or busy: otherwise one language
+    // failing would drop all five.
+    const once = (batch, lang) =>
+      translate(batch, lang).catch(() => new Promise((r) => setTimeout(r, 400)).then(() => translate(batch, lang)));
     const byLang = await Promise.all(LANGS.map(async (lang) => {
       const out = [];
-      for (let i = 0; i < texts.length; i += 50) out.push(...(await translate(texts.slice(i, i + 50), lang)));
+      for (let i = 0; i < texts.length; i += 50) out.push(...(await once(texts.slice(i, i + 50), lang)));
       return out;
     }));
     return rows.map((r, n) => Object.fromEntries(LANGS.map((lang, l) => [lang, {

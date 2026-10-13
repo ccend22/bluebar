@@ -487,7 +487,7 @@ export function Reports({ state }) {
                   <li key={n} className={["order.cancel", "invoice.refund", "stock.adjust"].includes(c.type) ? "warn" : ""}>
                     <time>{short(new Date(c.date))} {time(c.date)}</time>
                     <div>
-                      <strong>{AUDIT[c.type] || c.type}</strong> {auditDetail(c.payload, state.products)}
+                      <strong>{AUDIT[c.type] || c.type}</strong> {auditDetail(c.payload || {}, state.products)}
                       {c.actor && <small>{c.actor}</small>}
                     </div>
                   </li>

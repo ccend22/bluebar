@@ -48,9 +48,8 @@ export function TableOrder({
   const [menu, setMenu] = useState(null);
   // One inline form at a time: move, handover, note.
   const [panel, setPanel] = useState(null);
-  // The line being edited or voided.
+  // The line being edited.
   const [editKey, setEditKey] = useState(null);
-  const [voidKey, setVoidKey] = useState(null);
   const heading = useRef(null);
   // Wide enough for menu and order side by side; a phone keeps the Menuja / Porosia switch.
   const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
@@ -66,7 +65,7 @@ export function TableOrder({
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
   }, [menu, panel, onClose]);
-  useEffect(() => (setMenu(null), setPanel(null), setEditKey(null), setVoidKey(null)), [table.id]);
+  useEffect(() => (setMenu(null), setPanel(null), setEditKey(null)), [table.id]);
   useEffect(() => {
     if (!menu) return;
     const outside = (e) => !heading.current?.contains(e.target) && setMenu(null);
@@ -166,11 +165,9 @@ export function TableOrder({
     ...(l.extras?.length ? { extras: l.extras.map((x) => x.name) } : {}),
     ...(l.hold ? { hold: true } : {}),
   });
-  const remove = (line) => {
-    // Every unit already at its station: a void needs a reason (and whether it was made).
-    if (fresh(line) === 0) return setVoidKey(line.key);
-    update("order.remove", { tableId: table.id, productId: line.id, lineKey: line.key });
-  };
+  // One tap removes a unit; if the station already has it, it gets a cancellation slip.
+  const remove = (line) =>
+    update("order.remove", { tableId: table.id, productId: line.id, lineKey: line.key }, fresh(line) === 0 ? `1 × ${line.name} u anulua; reparti u njoftua.` : undefined);
   const product = (id) => state.products.find((p) => p.id === id);
   const menuView = (
           <div className="menu-view">
@@ -316,14 +313,6 @@ export function TableOrder({
                 product={product(table.lines.find((l) => l.key === editKey).id)}
                 update={update}
                 onClose={() => setEditKey(null)}
-              />
-            )}
-            {voidKey && table.lines.some((l) => l.key === voidKey) && (
-              <VoidPanel
-                table={table}
-                line={table.lines.find((l) => l.key === voidKey)}
-                update={update}
-                onClose={() => setVoidKey(null)}
               />
             )}
             {stations.length > 0 && (
@@ -774,38 +763,6 @@ function LinePanel({ table, line, product, update, onClose }) {
           </button>
         )}
         <button className="primary">Ruaj</button>
-      </div>
-    </form>
-  );
-}
-
-// Voiding a unit the station already has: why, and whether it was already made (a loss).
-function VoidPanel({ table, line, update, onClose }) {
-  return (
-    <form
-      className="stack-form order-panel"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        const f = new FormData(e.currentTarget);
-        const payload = { tableId: table.id, productId: line.id, lineKey: line.key, reason: f.get("reason"), prepared: f.get("prepared") === "yes" };
-        if (await update("order.remove", payload, `1 × ${line.name} u anulua; reparti u njoftua.`)) onClose();
-      }}
-    >
-      <strong>Anulo 1 × {line.name}</strong>
-      <Field label="Arsyeja" name="reason" minLength={3} maxLength={200} required placeholder="p.sh. klienti ndryshoi mendje" autoFocus />
-      <div className="payment-methods" role="radiogroup" aria-label="A ishte përgatitur?">
-        <label className="refund-method">
-          <input type="radio" name="prepared" value="no" defaultChecked />
-          Ende jo: ndaloni përgatitjen
-        </label>
-        <label className="refund-method">
-          <input type="radio" name="prepared" value="yes" />
-          Po: hidhet (humbje stoku)
-        </label>
-      </div>
-      <div className="actions">
-        <button type="button" onClick={onClose}>Kthehu</button>
-        <button className="danger-button">Anulo 1 copë</button>
       </div>
     </form>
   );

@@ -320,7 +320,8 @@ export function applyCommand(state, type, payload, actor = null) {
       // which cancels the station's tickets outright). Why, and whether it was already
       // made — then it's a loss — are recorded.
       const voided = (line.sent || 0) >= line.qty;
-      const reason = voided ? reasonOf(p.reason, "anulimit") : null;
+      // A reason is optional: removed from the till with one tap, it reads "Hequr nga porosia".
+      const reason = voided ? (p.reason === undefined || p.reason === "" ? "Hequr nga porosia" : reasonOf(p.reason, "anulimit")) : null;
       if (voided && p.prepared !== undefined && typeof p.prepared !== "boolean") fail("Vlerë e pavlefshme.");
       let tickets = lines.length ? state.tickets : closeTickets(state.tickets, t.id, { cancelledAt: now });
       const voidSlip = voided && lines.length ? slip(t, line, "void", 1, reason) : null;

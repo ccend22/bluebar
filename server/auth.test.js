@@ -1019,7 +1019,8 @@ test("Raportet: sales apart from the drawer, filters, cancellations, losses and 
     // A void after sending, a cancelled order, a station finishing, a loss.
     for (let i = 0; i < 2; i++) await cmd("order.add", { tableId: 2, productId: 1, waiterId: 1 });
     const sent = await cmd("order.send", { tableId: 2 });
-    await cmd("order.remove", { tableId: 2, productId: 1, reason: "E porositur gabim" });
+    // One tap at the till: no reason asked.
+    await cmd("order.remove", { tableId: 2, productId: 1 });
     await cmd("ticket.done", { id: sent.result.tickets[0].id });
     await cmd("order.cancel", { tableId: 2, reason: "Klienti iku" });
     await cmd("stock.adjust", { productId: 1, qty: -2, reason: "Thyerje" });
@@ -1034,6 +1035,7 @@ test("Raportet: sales apart from the drawer, filters, cancellations, losses and 
     // The drawer: float + cash sales + in − out; card never enters it.
     assert.deepEqual([s.opening, s.cash, s.card, s.cashIn, s.cashOut, s.expected], [1000, 300, 600, 500, 200, 1600]);
     assert.deepEqual(all.corrections.map((c) => [c.kind, c.amount]), [["void", 300], ["cancel", 300]]);
+    assert.match(all.corrections[0].detail, /Hequr nga porosia/);
     assert.deepEqual(all.losses.map((m) => [m.qty, m.reason]), [[-2, "Thyerje"]]);
     assert.equal(all.service.orders, 2);
     assert.equal(all.service.prep[0].tickets, 1);
@@ -1662,5 +1664,26 @@ test("voice orders: Gemini hears, only orderable menu ids come back, and no key 
     assert.equal((await none.call("POST", "/api/voice-order", { cookie, body: { audio, mime: "audio/webm" } })).statusCode, 503);
   } finally {
     await none.close();
+  }
+});
+
+test("a language DeepL is slow on once is tried again, so the other four aren't lost", async () => {
+  let germanTries = 0;
+  const flaky = async (texts, lang) => {
+    if (lang === "de" && ++germanTries === 1) throw new Error("DeepL 429");
+    return texts.map((t) => `${lang}:${t}`);
+  };
+  const t = await setup({ translate: flaky });
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } });
+    const version = (await t.call("GET", "/api/state", { cookie })).json().version;
+    await t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type: "product.save", payload: { name: "Çaj", category: "Kafe", price: 100 } } });
+    const p = (await t.inject({ method: "GET", url: "/api/menu/bluebar", headers: { host: "localhost" } })).json().products.find((x) => x.name === "Çaj");
+    assert.deepEqual(Object.keys(p.i18n).sort(), ["de", "en", "es", "fr", "it"]);
+    assert.equal(p.i18n.de.name, "de:Çaj");
+    assert.equal(germanTries, 2);
+  } finally {
+    await t.close();
   }
 });
