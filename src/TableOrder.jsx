@@ -122,7 +122,9 @@ export function TableOrder({
   // The recording goes to the server (Gemini), which returns what was said and which products.
   const [thinking, setThinking] = useState(false);
   const fit = (product, qty) => ({ product, max: Math.min(20, available(product)), qty: Math.min(qty, available(product)) });
-  const voice = useRecorder(async (audio) => {
+  const voice = useRecorder(async (audio, preview) => {
+    // No usable recording, only the live preview's words: read those on the device.
+    if (!audio) return hear(preview);
     setThinking(true);
     try {
       const r = await voiceOrder(audio, "audio/wav");
@@ -193,7 +195,7 @@ export function TableOrder({
               </p>
             )}
             {/* While the waiter talks: what's heard and, under it, the order as understood so far. */}
-            {(voice.recording || thinking) && <VoicePanel live={voice.recording} thinking={thinking} seconds={voice.seconds} limit={voice.limit} items={[]} />}
+            {(voice.recording || thinking) && <VoicePanel live={voice.recording} thinking={thinking} seconds={voice.seconds} limit={voice.limit} preview={voice.live} items={[]} />}
             {spoken && (
               <VoicePanel
                 heard={spoken.text}

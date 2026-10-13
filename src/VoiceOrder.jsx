@@ -33,9 +33,33 @@ async function toWav(blob) {
   return btoa(binary);
 }
 
+// While recording, the device's own speech recognition (where there is one) writes what it
+// hears as a live preview. Only a preview: Gemini, given the whole recording, decides. If a
+// phone gives the mic to one of them only and the recording comes out silent, the preview is used.
+const Recognition = typeof window !== "undefined" && window.isSecureContext && (window.SpeechRecognition || window.webkitSpeechRecognition);
+function preview(onText) {
+  if (!Recognition) return { stop() {} };
+  let on = true, before = "", rec;
+  const listen = () => {
+    rec = new Recognition();
+    rec.lang = "sq-AL";
+    rec.continuous = true;
+    rec.interimResults = true;
+    let now = "";
+    rec.onresult = (e) => on && onText([before, (now = [...e.results].map((x) => x[0].transcript).join(" "))].filter(Boolean).join(" "));
+    rec.onerror = () => {};
+    // A pause ends it on most phones: start again while still recording.
+    rec.onend = () => ((before = [before, now].filter(Boolean).join(" ")), on && setTimeout(() => on && listen(), 150));
+    try { rec.start(); } catch { on = false; }
+  };
+  listen();
+  return { stop: () => ((on = false), rec?.abort()) };
+}
+
 export function useRecorder(onAudio, onError) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [live, setLive] = useState("");
   const current = useRef(null);
   // Leaving the table drops the recording: nothing is sent.
   useEffect(() => () => current.current?.cancel(), []);
@@ -67,8 +91,11 @@ export function useRecorder(onAudio, onError) {
       if (s >= LIMIT && recorder.state !== "inactive") recorder.stop();
     }, 250);
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    let heard = "";
+    const words = preview((text) => setLive((heard = text)));
     recorder.onstop = async () => {
       clearInterval(timer);
+      words.stop();
       stream.getTracks().forEach((t) => t.stop());
       setRecording(false);
       if (cancelled) return;
@@ -77,25 +104,28 @@ export function useRecorder(onAudio, onError) {
       try {
         wav = await toWav(new Blob(chunks, { type: recorder.mimeType }));
       } catch (e) {
+        // Silent recording but the preview heard words: this phone gave it the mic. Use them.
+        if (e.message === "silent" && heard.trim()) return onAudio(null, heard);
         return onError(e.message === "silent" ? "Nuk u dëgjua zëri. Flisni më afër mikrofonit dhe provoni sërish." : "Regjistrimi nuk u lexua. Provoni sërish.");
       }
-      onAudio(wav);
+      onAudio(wav, heard);
     };
     current.current = {
       stop: () => recorder.state !== "inactive" && recorder.stop(),
       cancel: () => ((cancelled = true), recorder.state !== "inactive" && recorder.stop()),
     };
     setSeconds(0);
+    setLive("");
     setRecording(true);
     recorder.start(250);
   };
-  return { recording, seconds, start, limit: LIMIT };
+  return { recording, seconds, live, start, limit: LIMIT };
 }
 
 // live: while the waiter talks, the words and the order as understood so far, read-only (a
 // spoken "jo ujë" visibly takes the water off). After "Mbaro": the words can be corrected by
 // hand, the list follows as you type, and quantities can be changed before adding.
-export function VoicePanel({ live = false, thinking = false, seconds = 0, limit = 30, heard, items, onText, onChange, onAdd, onRetry, onClose, busy }) {
+export function VoicePanel({ live = false, thinking = false, seconds = 0, limit = 30, preview = "", heard, items, onText, onChange, onAdd, onRetry, onClose, busy }) {
   const total = items.reduce((s, x) => s + x.qty * x.product.price, 0);
   if (live || thinking)
     return (
@@ -104,9 +134,17 @@ export function VoicePanel({ live = false, thinking = false, seconds = 0, limit 
           <span className={thinking ? "voice-spinner" : "voice-dot"} aria-hidden="true" />
           {thinking
             ? "Po e kuptoj porosinë…"
-            : `Po dëgjoj… 0:${String(seconds).padStart(2, "0")}. Thoni p.sh. “2 makiato dhe 1 ujë”; gabim? “jo ujë”, “hiq ujin”.`}
+            : preview
+              ? `“${preview}”`
+              : `Po dëgjoj… Thoni p.sh. “2 makiato dhe 1 ujë”; gabim? “jo ujë”, “hiq ujin”.`}
         </p>
-        {!thinking && <p className="voice-hint">Shtypni <b>Mbaro</b> kur të keni mbaruar{seconds >= limit - 10 ? ` · ndalon vetë pas ${limit - seconds} s` : ""}.</p>}
+        {thinking && preview && <p className="voice-preview">“{preview}”</p>}
+        {!thinking && (
+          <p className="voice-hint">
+            0:{String(seconds).padStart(2, "0")} · Shtypni <b>Mbaro</b> kur të keni mbaruar{seconds >= limit - 10 ? ` · ndalon vetë pas ${limit - seconds} s` : ""}
+            {preview && " · teksti është paraprak, lista del pas Mbaro"}
+          </p>
+        )}
       </div>
     );
   return (
