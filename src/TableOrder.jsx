@@ -106,8 +106,8 @@ export function TableOrder({
   const departmentOf = (id) => state.products.find((p) => p.id === id)?.department || "Tjetër";
   const lines = [...table.lines].sort((a, b) => (fresh(b) > 0) - (fresh(a) > 0));
   const [showHistory, setShowHistory] = useState(false);
-  // Product photos on the tiles, per device: off gives a denser, text-only menu.
-  const [photos, setPhotos] = useState(() => {
+  // Product photos on the tiles, per device (Cilësimet → Llogaria ime → Kjo pajisje).
+  const [photos] = useState(() => {
     try { return localStorage.getItem("order-photos") !== "0"; } catch { return true; }
   });
   // Ordering by voice: what the waiter said and the products it named (null: no panel).
@@ -146,10 +146,6 @@ export function TableOrder({
       setAdding(false);
     }
   };
-  const togglePhotos = () => {
-    try { localStorage.setItem("order-photos", photos ? "0" : "1"); } catch {}
-    setPhotos(!photos);
-  };
   const tickets = state.tickets.filter((k) => k.table === table.id && !k.invoice && !k.cancelledAt && !k.void);
   // One chip per place preparing this order: its station (if stations are set up), else its department.
   const placeOf = (k) => (state.stations || []).find((x) => x.id === k.station)?.name || k.department;
@@ -180,10 +176,9 @@ export function TableOrder({
           <div className="menu-view">
             <div className="menu-tools">
               <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
-              <button type="button" className="photo-toggle" aria-pressed={photos} onClick={togglePhotos}>Fotot</button>
               {canAdd && (
                 <button type="button" className={`voice-mic ${voice.recording ? "listening" : ""}`} disabled={thinking} aria-pressed={voice.recording} aria-label={voice.recording ? "Mbaro porosinë me zë" : "Porosit me zë"} onClick={() => (setSpoken(null), setVoiceError(""), voice.start())}>
-                  <Icon name="mic" size={24} />
+                  <Icon name="mic" size={28} />
                   {voice.recording && <span>Mbaro</span>}
                 </button>
               )}

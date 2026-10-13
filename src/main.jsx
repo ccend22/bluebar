@@ -274,6 +274,33 @@ function StationTicket({ ticket, waiterName }) {
     </>
   );
 }
+// Cilësimet → Llogaria ime → this device's own preferences (kept in this browser only).
+function DeviceSettings() {
+  const [photos, setPhotos] = useState(() => {
+    try { return localStorage.getItem("order-photos") !== "0"; } catch { return true; }
+  });
+  return (
+    <section className="panel">
+      <h2>Kjo pajisje</h2>
+      <p className="helper">Vlen vetëm për këtë tablet ose telefon; çdo pajisje ruan zgjedhjen e vet.</p>
+      <label className="printer-ascii device-option">
+        <input
+          type="checkbox"
+          checked={photos}
+          onChange={(e) => {
+            try { localStorage.setItem("order-photos", e.target.checked ? "1" : "0"); } catch {}
+            setPhotos(e.target.checked);
+          }}
+        />
+        <span>
+          Fotot e produkteve te porosia
+          <small>Pa foto, menuja e porosisë del më e ngjeshur, vetëm me emra dhe çmime.</small>
+        </span>
+      </label>
+    </section>
+  );
+}
+
 function App({ user, onLogout, onUserChange }) {
   const database = useDatabase();
   const online = useOnline();
@@ -2666,6 +2693,7 @@ function App({ user, onLogout, onUserChange }) {
                 {settingsTab === "Llogaria ime" && (
                   <div className="settings-column settings-wide">
                     <AccountSettings name={user.name} onChange={onUserChange} />
+                    <DeviceSettings />
                   </div>
                 )}
               </div>
