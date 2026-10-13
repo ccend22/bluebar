@@ -136,13 +136,13 @@ export function VoicePanel({ live = false, thinking = false, seconds = 0, limit 
             ? "Po e kuptoj porosinë…"
             : preview
               ? `“${preview}”`
-              : `Po dëgjoj… Thoni p.sh. “2 makiato dhe 1 ujë”; gabim? “jo ujë”, “hiq ujin”.`}
+              : "Po dëgjoj…"}
         </p>
         {thinking && preview && <p className="voice-preview">“{preview}”</p>}
         {!thinking && (
           <p className="voice-hint">
             0:{String(seconds).padStart(2, "0")} · Shtypni <b>Mbaro</b> kur të keni mbaruar{seconds >= limit - 10 ? ` · ndalon vetë pas ${limit - seconds} s` : ""}
-            {preview && " · teksti është paraprak, lista del pas Mbaro"}
+
           </p>
         )}
       </div>
