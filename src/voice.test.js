@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bestGuess, mergeHeard, parseOrder } from "./voice.js";
+import { parseOrder } from "./voice.js";
 
 const menu = [
   { id: 1, name: "Birrë Korça", i18n: { en: { name: "Korça Beer" } } },
@@ -21,18 +21,6 @@ test("what the guest said becomes menu items; what isn't on the menu is dropped"
   assert.deepEqual(said("macchiato e due macchiato"), [["Macchiato", 3]], "the same product adds up");
   assert.deepEqual(said("dua dicka te mire"), []);
   assert.deepEqual(said(""), []);
-});
-
-test("pieces heard one after another join without saying anything twice", () => {
-  assert.equal(mergeHeard("", "1 birrë korça"), "1 birrë korça");
-  assert.equal(mergeHeard("1 birrë korça", "1 birrë korça, 2 makiato"), "1 birrë korça, 2 makiato");
-  assert.equal(mergeHeard("1 birrë korça, 2 makiato", "2 makiato 2 ujë"), "1 birrë korça, 2 makiato 2 ujë");
-  assert.equal(mergeHeard("1 birrë korça", "2 ujë"), "1 birrë korça 2 ujë");
-});
-
-test("of the recognizer's guesses, the one naming the most of the menu wins", () => {
-  assert.equal(bestGuess(["dy mak jato", "dy makiato", "di makiato"], menu), "dy makiato");
-  assert.equal(bestGuess(["mirëdita", "mire dita"], menu), "mirëdita", "none better: the first guess");
 });
 
 test("corrections the way a waiter says them", () => {

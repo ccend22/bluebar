@@ -10,6 +10,7 @@ import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } fr
 import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
 import { deeplTranslator, LANGS } from "./translate.js";
+import { geminiVoice } from "./voice.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
   agentKeyValid,
@@ -72,6 +73,8 @@ export function buildApp({
   secretKey = process.env.BLUEBAR_SECRET_KEY,
   // Albanian → the online menu's other languages (null: no translation, the menu shows Albanian).
   translate = deeplTranslator(process.env.DEEPL_API_KEY),
+  // A waiter's spoken order → menu products (null: no voice ordering).
+  voice = geminiVoice(process.env.GEMINI_API_KEY),
 }) {
   const app = Fastify({
     logger: false,
@@ -578,6 +581,36 @@ export function buildApp({
       // Best effort: the menu keeps the Albanian until the next save or a manual translate.
     }
   };
+  // Ordering by voice (Tavolina popup): the recording goes to Gemini with the products that
+  // can be ordered now; only those ids come back, each with a sane quantity.
+  const voiceBudget = throttle(120, 10 * 60_000);
+  app.post("/api/voice-order", {
+    preValidation: session(),
+    bodyLimit: 2_000_000,
+    schema: { body: { type: "object", additionalProperties: false, required: ["audio", "mime"], properties: {
+      audio: { type: "string", minLength: 100, maxLength: 1_900_000 },
+      mime: { type: "string", maxLength: 80, pattern: "^audio/[a-z0-9.+-]+(;.*)?$" },
+    } } },
+  }, async (request) => {
+    if (!voice) throw new AppError("Porosia me zë nuk është konfiguruar në server (GEMINI_API_KEY).", 503);
+    if (!voiceBudget(`${request.venue.slug}:${request.user.id}`)) throw new AppError("Shumë porosi me zë për pak kohë. Prisni një minutë.", 429);
+    const products = (await request.db.query(
+      "SELECT id, name FROM bluebar.products WHERE available AND (NOT track_stock OR stock > 0) ORDER BY name",
+    )).rows;
+    let out;
+    try {
+      out = await voice({ audio: request.body.audio, mime: request.body.mime.split(";")[0], products });
+    } catch {
+      throw new AppError("Shërbimi i zërit nuk u përgjigj. Provoni sërish.", 502);
+    }
+    const known = new Set(products.map((p) => p.id));
+    const items = new Map();
+    for (const x of Array.isArray(out?.items) ? out.items : []) {
+      const id = Number(x?.id), qty = Number(x?.qty);
+      if (known.has(id) && Number.isInteger(qty) && qty > 0) items.set(id, Math.min(20, (items.get(id) || 0) + qty));
+    }
+    return { heard: String(out?.heard || "").slice(0, 500), items: [...items].map(([id, qty]) => ({ id, qty })) };
+  });
   // Cilësimet → Menuja online → "Përkthe menunë": everything missing a language.
   app.post("/api/venue/menu/translate", { preValidation: session("manager") }, async (request) => {
     if (!translate) throw new AppError("Përkthimi automatik nuk është konfiguruar (DEEPL_API_KEY).", 503);

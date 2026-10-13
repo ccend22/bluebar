@@ -1631,3 +1631,36 @@ test("products: stock tracking is optional, many can be added at once, and a del
     await t.close();
   }
 });
+
+test("voice orders: Gemini hears, only orderable menu ids come back, and no key means no voice", async () => {
+  const audio = Buffer.alloc(300, 1).toString("base64");
+  let asked;
+  const fake = async (input) => {
+    asked = input;
+    const id = (name) => input.products.find((p) => p.name === name).id;
+    return { heard: "2 makiato, 1 sushi", items: [{ id: id("Macchiato"), qty: 2 }, { id: 999, qty: 1 }, { id: id("Macchiato"), qty: 1 }, { id: id("Macchiato"), qty: 0 }] };
+  };
+  const t = await setup({ voice: fake });
+  try {
+    await t.send("product.save", { name: "Macchiato", category: "Kafe", price: 120, trackStock: false });
+    await t.send("product.save", { name: "Hidden", category: "Kafe", price: 1, trackStock: true });
+    const cookie = t.cookieOf(await t.managerLogin());
+    assert.equal((await t.call("POST", "/api/voice-order", { body: { audio, mime: "audio/webm" } })).statusCode, 401, "staff only");
+    assert.equal((await t.call("POST", "/api/voice-order", { cookie, body: { audio, mime: "text/html" } })).statusCode, 400);
+    const r = await t.call("POST", "/api/voice-order", { cookie, body: { audio, mime: "audio/webm;codecs=opus" } });
+    assert.equal(r.statusCode, 200);
+    const macchiato = asked.products.find((p) => p.name === "Macchiato").id;
+    assert.deepEqual(r.json(), { heard: "2 makiato, 1 sushi", items: [{ id: macchiato, qty: 3 }] });
+    assert.equal(asked.mime, "audio/webm");
+    assert.ok(!asked.products.some((p) => p.name === "Hidden"), "a counted product with no stock isn't offered");
+  } finally {
+    await t.close();
+  }
+  const none = await setup({ voice: null });
+  try {
+    const cookie = none.cookieOf(await none.managerLogin());
+    assert.equal((await none.call("POST", "/api/voice-order", { cookie, body: { audio, mime: "audio/webm" } })).statusCode, 503);
+  } finally {
+    await none.close();
+  }
+});

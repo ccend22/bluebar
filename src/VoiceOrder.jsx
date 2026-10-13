@@ -1,126 +1,109 @@
 import React, { useEffect, useRef, useState } from "react";
 import { money } from "./domain.js";
 import { Icon } from "./components.jsx";
-import { mergeHeard } from "./voice.js";
 
-// The device's own speech recognition (Chrome, Safari), only on https pages. Without it the
-// mic still shows and says which browser to use, rather than silently not being there.
-const Recognition = typeof window !== "undefined" && window.isSecureContext && (window.SpeechRecognition || window.webkitSpeechRecognition);
+// Recording the waiter until "Mbaro" (or 30 s), then handing over the audio as a small WAV
+// (16 kHz, mono): one format the voice service takes from every browser, whatever the browser
+// recorded in (WebM in Chrome, MP4 in Safari).
+const LIMIT = 30;
 
-const ERRORS = {
-  "not-allowed": "Lejoni mikrofonin te shfletuesi për të porositur me zë.",
-  "service-not-allowed": "Lejoni mikrofonin te shfletuesi për të porositur me zë.",
-  "audio-capture": "Nuk u gjet mikrofon në këtë pajisje.",
-  network: "Njohja e zërit kërkon internet: kontrolloni lidhjen.",
-  "language-not-supported": "Ky shfletues nuk e njeh shqipen me zë.",
-};
-
-// The waiter speaks the order in Albanian. Listening goes on until the waiter taps the mic
-// again: a phone stops on its own after a pause, so it is started again, keeping what was
-// already heard. Only final pieces are kept (each the best of several guesses, see choose),
-// merged without repeats; the guess still being formed only shows while they talk.
-export function useVoice(onHeard, onError, choose) {
-  const [listening, setListening] = useState(false);
-  const [heard, setHeard] = useState("");
-  const session = useRef(null);
-  // Leaving the table stops listening for good: no restart in the background.
-  useEffect(() => () => session.current && ((session.current.done = true), (session.current.wanted = false), session.current.rec?.abort()), []);
-  // Once, whichever comes first: "Mbaro", an error, or the recognizer giving up.
-  const finish = (s) => {
-    if (s.done) return;
-    s.done = true;
-    s.wanted = false;
-    setListening(false);
-    const text = s.forming ? mergeHeard(s.text, s.forming) : s.text;
-    if (text.trim()) onHeard(text);
-  };
-  const listen = (s) => {
-    const r = new Recognition();
-    r.lang = "sq-AL";
-    r.continuous = true;
-    r.interimResults = true;
-    r.maxAlternatives = 5;
-    r.onresult = (e) => {
-      if (s.done) return;
-      let forming = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i];
-        if (res.isFinal) s.text = mergeHeard(s.text, choose([...res].map((alt) => alt.transcript)));
-        else forming += ` ${res[0].transcript}`;
-      }
-      s.forming = forming.trim();
-      setHeard(s.forming ? mergeHeard(s.text, s.forming) : s.text);
-    };
-    r.onerror = (e) => {
-      if (s.done || e.error === "aborted" || e.error === "no-speech") return;
-      s.wanted = false;
-      onError(ERRORS[e.error] || `Njohja e zërit nuk punoi (${e.error}). Provoni sërish.`);
-    };
-    // A pause ended it: start again shortly, unless the waiter is done.
-    r.onend = () => {
-      if (s.done) return;
-      s.forming = "";
-      s.wanted ? setTimeout(() => s.wanted && !s.done && listen(s), 200) : finish(s);
-    };
-    s.rec = r;
-    try {
-      r.start();
-    } catch {
-      s.wanted = false;
-      finish(s);
-    }
-  };
-  const start = () => {
-    if (!Recognition)
-      return onError(
-        /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent)
-          ? "Në iPhone/iPad zëri punon vetëm në Safari. Hapeni BlueBar me Safari."
-          : window.isSecureContext
-            ? "Ky shfletues nuk e njeh zërin. Përdorni Chrome (Android, kompjuter) ose Safari (iPhone, iPad)."
-            : "Zëri punon vetëm në faqe të sigurta (https).",
-      );
-    // Tapped while listening: done now, with everything heard so far. Not waiting for the
-    // recognizer to confirm: it can take seconds, or never come if it was between restarts.
-    if (listening) {
-      const s = session.current;
-      finish(s);
-      try { s.rec?.abort(); } catch {}
-      return;
-    }
-    session.current = { wanted: true, done: false, text: "", forming: "", rec: null };
-    setHeard("");
-    setListening(true);
-    listen(session.current);
-  };
-  return { listening, heard, start };
+async function toWav(blob) {
+  const decoded = await new AudioContext().decodeAudioData(await blob.arrayBuffer());
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+  const samples = (await offline.startRendering()).getChannelData(0);
+  // Practically silent (mic muted, too far away): nothing worth sending. A voice service given
+  // silence may "hear" an order that was never said.
+  let loud = 0;
+  for (const x of samples) loud += x * x;
+  if (Math.sqrt(loud / samples.length) < 0.004) throw new Error("silent");
+  const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
+  const text = (at, s) => [...s].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+  text(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); text(8, "WAVEfmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 16000, true); view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, "data"); view.setUint32(40, samples.length * 2, true);
+  samples.forEach((x, i) => view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 0x7fff, true));
+  let binary = "";
+  const bytes = new Uint8Array(view.buffer);
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
 
-// What was understood, to check before it goes on the order: quantities can be changed, and
-// nothing is added until the waiter says so. Products not on the menu never get here.
+export function useRecorder(onAudio, onError) {
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const current = useRef(null);
+  // Leaving the table drops the recording: nothing is sent.
+  useEffect(() => () => current.current?.cancel(), []);
+  const start = async () => {
+    // Tapped while recording: the waiter is done. MediaRecorder stops at once.
+    if (recording) return current.current?.stop();
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")
+      return onError(window.isSecureContext ? "Ky shfletues nuk mund të regjistrojë zë. Përdorni Chrome ose Safari." : "Zëri punon vetëm në faqe të sigurta (https).");
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (e) {
+      return onError(
+        e.name === "NotAllowedError" ? "Lejoni mikrofonin te shfletuesi për të porositur me zë."
+          : e.name === "NotFoundError" ? "Nuk u gjet mikrofon në këtë pajisje."
+            : `Mikrofoni nuk u hap (${e.name}).`,
+      );
+    }
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+    let cancelled = false;
+    const began = Date.now();
+    const timer = setInterval(() => {
+      const s = Math.floor((Date.now() - began) / 1000);
+      setSeconds(s);
+      if (s >= LIMIT && recorder.state !== "inactive") recorder.stop();
+    }, 250);
+    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    recorder.onstop = async () => {
+      clearInterval(timer);
+      stream.getTracks().forEach((t) => t.stop());
+      setRecording(false);
+      if (cancelled) return;
+      if (Date.now() - began < 700) return onError("Shumë shkurt: shtypni 🎙, thoni porosinë, pastaj Mbaro.");
+      let wav;
+      try {
+        wav = await toWav(new Blob(chunks, { type: recorder.mimeType }));
+      } catch (e) {
+        return onError(e.message === "silent" ? "Nuk u dëgjua zëri. Flisni më afër mikrofonit dhe provoni sërish." : "Regjistrimi nuk u lexua. Provoni sërish.");
+      }
+      onAudio(wav);
+    };
+    current.current = {
+      stop: () => recorder.state !== "inactive" && recorder.stop(),
+      cancel: () => ((cancelled = true), recorder.state !== "inactive" && recorder.stop()),
+    };
+    setSeconds(0);
+    setRecording(true);
+    recorder.start(250);
+  };
+  return { recording, seconds, start, limit: LIMIT };
+}
+
 // live: while the waiter talks, the words and the order as understood so far, read-only (a
 // spoken "jo ujë" visibly takes the water off). After "Mbaro": the words can be corrected by
 // hand, the list follows as you type, and quantities can be changed before adding.
-export function VoicePanel({ live = false, heard, items, onText, onChange, onAdd, onRetry, onClose, busy }) {
+export function VoicePanel({ live = false, thinking = false, seconds = 0, limit = 30, heard, items, onText, onChange, onAdd, onRetry, onClose, busy }) {
   const total = items.reduce((s, x) => s + x.qty * x.product.price, 0);
-  if (live)
+  if (live || thinking)
     return (
       <div className="voice-panel live" role="status" aria-live="polite">
         <p className="voice-live">
-          <span className="voice-dot" aria-hidden="true" />
-          {heard ? `“${heard}”` : "Po dëgjoj… thoni p.sh. “2 makiato dhe 1 ujë”. Gabim? Thoni “jo ujë” ose “hiq ujin”."}
+          <span className={thinking ? "voice-spinner" : "voice-dot"} aria-hidden="true" />
+          {thinking
+            ? "Po e kuptoj porosinë…"
+            : `Po dëgjoj… 0:${String(seconds).padStart(2, "0")}. Thoni p.sh. “2 makiato dhe 1 ujë”; gabim? “jo ujë”, “hiq ujin”.`}
         </p>
-        {items.length > 0 && (
-          <ul className="voice-items">
-            {items.map((x) => (
-              <li key={x.product.id} className="voice-item-live">
-                <span>{x.product.name}</span>
-                <b className="voice-qty">× {x.qty}</b>
-                <b>{money(x.qty * x.product.price)}</b>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="voice-hint">Shtypni <b>Mbaro</b> kur të keni mbaruar.</p>
+        {!thinking && <p className="voice-hint">Shtypni <b>Mbaro</b> kur të keni mbaruar{seconds >= limit - 10 ? ` · ndalon vetë pas ${limit - seconds} s` : ""}.</p>}
       </div>
     );
   return (

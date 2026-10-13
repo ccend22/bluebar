@@ -98,3 +98,5 @@ export const fetchInvoiceHistory = (id) => request(`/invoices/${id}/history`);
 export const reportStationsSeen = (stations) => send("POST", "/stations/seen", { stations });
 export const fetchReport = (params) =>
   request(`/reports?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null))}`);
+// The waiter's spoken order (a WAV, base64): what was heard and which products.
+export const voiceOrder = (audio, mime) => request("/voice-order", { method: "POST", body: JSON.stringify({ audio, mime }) });

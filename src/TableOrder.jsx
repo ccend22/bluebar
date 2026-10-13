@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { bill, COURSES, money, pendingUnits, posOf, shiftFor, tableShift } from "./domain.js";
 import { ChoiceField } from "./ChoiceField.jsx";
-import { VoicePanel, useVoice } from "./VoiceOrder.jsx";
-import { bestGuess, parseOrder } from "./voice.js";
+import { VoicePanel, useRecorder } from "./VoiceOrder.jsx";
+import { parseOrder } from "./voice.js";
+import { voiceOrder } from "./api.js";
 import { DepartmentTag, Empty, Field, Icon, Search } from "./components.jsx";
 import { OrderHistory } from "./OrderHistory.jsx";
 import { venueSlug } from "./api.js";
@@ -113,12 +114,26 @@ export function TableOrder({
   const [spoken, setSpoken] = useState(null);
   const [adding, setAdding] = useState(false);
   const orderable = () => state.products.filter((p) => p.available !== false && available(p) > 0);
-  const itemsFor = (text) =>
-    parseOrder(text, orderable()).map((x) => ({ ...x, max: Math.min(20, available(x.product)), qty: Math.min(x.qty, available(x.product)) }));
+  // When the waiter corrects the heard words by hand, the list follows (read on the device).
+  const itemsFor = (text) => parseOrder(text, orderable()).map((x) => fit(x.product, x.qty));
   const hear = (text) => setSpoken({ text, items: itemsFor(text) });
   // Shown under the mic, inside the popup: the app's notice bar sits behind it.
   const [voiceError, setVoiceError] = useState("");
-  const voice = useVoice(hear, setVoiceError, (guesses) => bestGuess(guesses, orderable()));
+  // The recording goes to the server (Gemini), which returns what was said and which products.
+  const [thinking, setThinking] = useState(false);
+  const fit = (product, qty) => ({ product, max: Math.min(20, available(product)), qty: Math.min(qty, available(product)) });
+  const voice = useRecorder(async (audio) => {
+    setThinking(true);
+    try {
+      const r = await voiceOrder(audio, "audio/wav");
+      const items = r.items.map((x) => [state.products.find((p) => p.id === x.id), x.qty]).filter(([p]) => p && available(p) > 0);
+      setSpoken({ text: r.heard, items: items.map(([p, qty]) => fit(p, qty)) });
+    } catch (e) {
+      setVoiceError(e.message);
+    } finally {
+      setThinking(false);
+    }
+  }, setVoiceError);
   // One unit per command, as tapping a tile would; stops at the first refusal (the reason shows).
   const addSpoken = async () => {
     setAdding(true);
@@ -165,9 +180,9 @@ export function TableOrder({
               <Search label="Kërko produkt" placeholder="Kërko në menu…" value={query} onChange={setQuery} />
               <button type="button" className="photo-toggle" aria-pressed={photos} onClick={togglePhotos}>Fotot</button>
               {canAdd && (
-                <button type="button" className={`voice-mic ${voice.listening ? "listening" : ""}`} aria-pressed={voice.listening} aria-label={voice.listening ? "Mbaro porosinë me zë" : "Porosit me zë"} onClick={() => (setSpoken(null), setVoiceError(""), voice.start())}>
+                <button type="button" className={`voice-mic ${voice.recording ? "listening" : ""}`} disabled={thinking} aria-pressed={voice.recording} aria-label={voice.recording ? "Mbaro porosinë me zë" : "Porosit me zë"} onClick={() => (setSpoken(null), setVoiceError(""), voice.start())}>
                   <Icon name="mic" size={24} />
-                  {voice.listening && <span>Mbaro</span>}
+                  {voice.recording && <span>Mbaro</span>}
                 </button>
               )}
             </div>
@@ -178,7 +193,7 @@ export function TableOrder({
               </p>
             )}
             {/* While the waiter talks: what's heard and, under it, the order as understood so far. */}
-            {voice.listening && <VoicePanel live heard={voice.heard} items={itemsFor(voice.heard)} />}
+            {(voice.recording || thinking) && <VoicePanel live={voice.recording} thinking={thinking} seconds={voice.seconds} limit={voice.limit} items={[]} />}
             {spoken && (
               <VoicePanel
                 heard={spoken.text}

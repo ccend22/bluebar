@@ -6173,6 +6173,8 @@ body.order-open { overflow: hidden; }
 @keyframes voice-in { from { opacity: 0; transform: translateY(-4px); } }
 .voice-qty { color: var(--blue); font-variant-numeric: tabular-nums; }
 .voice-hint { margin: 0; color: var(--muted); font-size: 13px; }
+.voice-spinner { flex: none; width: 16px; height: 16px; margin-top: 5px; border: 2px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: voice-spin 0.8s linear infinite; }
+@keyframes voice-spin { to { rotate: 360deg; } }
 .voice-dot { flex: none; width: 10px; height: 10px; margin-top: 9px; border-radius: 50%; background: #c0392b; animation: voice-blink 1.2s ease-in-out infinite; }
 @keyframes voice-blink { 50% { opacity: 0.35; } }
 .voice-panel { display: grid; gap: 10px; margin: 10px 0 4px; padding: 14px; border: 1px solid var(--blue); border-radius: 14px; background: var(--blue-soft); }

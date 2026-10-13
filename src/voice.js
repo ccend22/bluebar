@@ -122,28 +122,3 @@ export function parseOrder(text, products) {
   }
   return [...order.values()];
 }
-
-// What was heard so far plus a new piece, without saying anything twice: some phones send
-// each new piece with the earlier words again ("1 birrë" then "1 birrë korça, 2 makiato").
-// The longest overlap between the end of what we have and the start of the piece is kept once,
-// as the newer piece wrote it.
-export function mergeHeard(have, piece) {
-  const a = have.trim().split(/\s+/).filter(Boolean);
-  const b = piece.trim().split(/\s+/).filter(Boolean);
-  const same = (x, y) => plain(x).replace(/[^a-z0-9]/g, "") === plain(y).replace(/[^a-z0-9]/g, "");
-  for (let k = Math.min(a.length, b.length); k > 0; k--)
-    if (a.slice(a.length - k).every((w, i) => same(w, b[i]))) return [...a.slice(0, a.length - k), ...b].join(" ");
-  return [...a, ...b].join(" ");
-}
-
-// Of the recognizer's guesses for one piece, the one that names most of the menu (the first
-// guess when none does better): "dy makiato" over "dy mak jato".
-export function bestGuess(guesses, products) {
-  let best = guesses[0] || "";
-  let most = parseOrder(best, products).length;
-  for (const g of guesses.slice(1)) {
-    const n = parseOrder(g, products).length;
-    if (n > most) (best = g), (most = n);
-  }
-  return best;
-}
