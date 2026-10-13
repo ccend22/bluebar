@@ -74,7 +74,7 @@ export function buildApp({
   // Albanian → the online menu's other languages (null: no translation, the menu shows Albanian).
   translate = deeplTranslator(process.env.DEEPL_API_KEY),
   // A waiter's spoken order → menu products (null: no voice ordering).
-  voice = geminiVoice(process.env.GEMINI_API_KEY),
+  voice = geminiVoice(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
 }) {
   const app = Fastify({
     logger: false,
@@ -600,8 +600,9 @@ export function buildApp({
     let out;
     try {
       out = await voice({ audio: request.body.audio, mime: request.body.mime.split(";")[0], products });
-    } catch {
-      throw new AppError("Shërbimi i zërit nuk u përgjigj. Provoni sërish.", 502);
+    } catch (e) {
+      console.error("voice-order:", e.message);
+      throw new AppError(`Shërbimi i zërit nuk u përgjigj${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
     }
     const known = new Set(products.map((p) => p.id));
     const items = new Map();

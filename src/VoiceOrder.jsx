@@ -49,7 +49,10 @@ export function useRecorder(onAudio, onError) {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch (e) {
       return onError(
-        e.name === "NotAllowedError" ? "Lejoni mikrofonin te shfletuesi për të porositur me zë."
+        // Chrome says "by system" when the computer (macOS / Windows) blocks the mic, not the site.
+        e.name === "NotAllowedError" && /system/i.test(e.message)
+          ? "Kompjuteri e bllokon mikrofonin për shfletuesin. Mac: System Settings → Privacy & Security → Microphone → ndizni Chrome, pastaj rinisni Chrome."
+          : e.name === "NotAllowedError" ? "Lejoni mikrofonin te shfletuesi (🔒 majtas adresës → Microphone → Allow), pastaj rifreskoni faqen."
           : e.name === "NotFoundError" ? "Nuk u gjet mikrofon në këtë pajisje."
             : `Mikrofoni nuk u hap (${e.name}).`,
       );

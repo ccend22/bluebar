@@ -51,7 +51,11 @@ export function geminiVoice(key, { model = process.env.GEMINI_MODEL || "gemini-3
     let response = await ask(QUICK(model));
     // A model that doesn't take that setting: ask again with its default (slower, still right).
     if (response.status === 400) response = await ask(null);
-    if (!response.ok) throw new Error(`Gemini ${response.status}`);
+    if (!response.ok) {
+      // Google's reason (quota, region, key…) for the server log; the waiter sees only the status.
+      const reason = await response.json().then((b) => b.error?.message, () => "");
+      throw Object.assign(new Error(`Gemini ${response.status}: ${String(reason || "").slice(0, 300)}`), { status: response.status });
+    }
     const parts = (await response.json()).candidates?.[0]?.content?.parts || [];
     return JSON.parse(parts.map((p) => p.text || "").join(""));
   };
