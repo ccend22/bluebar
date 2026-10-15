@@ -1706,3 +1706,65 @@ test("products added many at once are translated too, with the categories they b
     await t.close();
   }
 });
+
+test("a manager's fix of a translation stays until the Albanian changes; guests see only the words", async () => {
+  const fake = async (texts, lang) => texts.map((t) => `${lang}:${t}`);
+  const t = await setup({ translate: fake });
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } });
+    const cmd = async (type, payload) => {
+      const version = (await t.call("GET", "/api/state", { cookie })).json().version;
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    await cmd("product.save", { name: "Tost", category: "Kafe", price: 250, description: "Bukë e thekur" });
+    const id = (await t.call("GET", "/api/venue/menu/i18n", { cookie })).json().products.find((p) => p.name === "Tost").id;
+    const fix = (body) => t.call("PUT", "/api/venue/menu/i18n", { cookie, body });
+    const guest = async () => (await t.inject({ method: "GET", url: "/api/menu/bluebar", headers: { host: "localhost" } })).json().products.find((p) => p.id === id);
+
+    assert.equal((await fix({ kind: "product", key: id, lang: "it", name: "Toast", description: "Pane tostato" })).statusCode, 200);
+    assert.deepEqual((await guest()).i18n.it, { name: "Toast", description: "Pane tostato" }, "no manual/source for guests");
+    // Saved again with the same Albanian: the fix stays; the other languages are re-translated.
+    await cmd("product.save", { id, name: "Tost", category: "Kafe", price: 300 });
+    assert.equal((await guest()).i18n.it.name, "Toast");
+    assert.equal((await guest()).i18n.de.name, "de:Tost");
+    // The Albanian changes: the fix was for something else, so the translator writes it again.
+    await cmd("product.save", { id, name: "Tost me djathë", category: "Kafe", price: 300 });
+    assert.equal((await guest()).i18n.it.name, "it:Tost me djathë");
+    // An empty name drops a fix and brings the translator back.
+    await fix({ kind: "category", key: "Kafe", lang: "en", name: "Coffee & tea" });
+    assert.equal((await t.call("GET", "/api/venue/menu/i18n", { cookie })).json().categories.find((c) => c.name === "Kafe").i18n.en.manual, true);
+    await fix({ kind: "category", key: "Kafe", lang: "en", name: "" });
+    const kafe = (await t.call("GET", "/api/venue/menu/i18n", { cookie })).json().categories.find((c) => c.name === "Kafe").i18n.en;
+    assert.deepEqual([kafe.name, kafe.manual], ["en:Kafe", false]);
+    // Only a manager; only real products, categories and languages.
+    assert.equal((await t.call("PUT", "/api/venue/menu/i18n", { body: { kind: "category", key: "Kafe", lang: "en", name: "x" } })).statusCode, 401);
+    assert.equal((await fix({ kind: "product", key: 999, lang: "en", name: "x" })).statusCode, 404);
+    assert.equal((await fix({ kind: "category", key: "Kafe", lang: "sq", name: "x" })).statusCode, 400);
+  } finally {
+    await t.close();
+  }
+});
+
+test("the audit log records settings, PINs and translation fixes, never the secrets themselves", async () => {
+  const t = await setup();
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    await t.call("PUT", "/api/accounts/waiters/1/pin", { cookie, body: { pin: "582913" } });
+    await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } });
+    await t.call("PUT", "/api/venue/network", { cookie, body: { allowedIps: ["203.0.113.10"] } });
+    // A refused change leaves no entry.
+    await t.call("PUT", "/api/accounts/waiters/1/pin", { cookie, body: { pin: "111111" } });
+    const from = new Date(Date.now() - 60_000).toISOString(), to = new Date(Date.now() + 60_000).toISOString();
+    const audit = (await t.call("GET", `/api/reports?from=${from}&to=${to}`, { cookie })).json().audit;
+    const types = audit.map((a) => a.type);
+    assert.ok(types.includes("waiter.pin") && types.includes("menu.settings") && types.includes("venue.network"), types.join());
+    assert.equal(types.filter((x) => x === "waiter.pin").length, 1, "the refused PIN isn't logged");
+    const pin = audit.find((a) => a.type === "waiter.pin");
+    assert.deepEqual(pin.payload, { waiterId: 1 }, "which waiter, never the PIN");
+    assert.ok(pin.actor);
+    assert.ok(!JSON.stringify(audit).includes("582913"));
+  } finally {
+    await t.close();
+  }
+});

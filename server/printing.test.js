@@ -292,7 +292,8 @@ test("USB printers: saved as usb:<queue>, printed raw through lp, optionally wit
     // The bash agent hands it to lp, raw, for that queue. A fake lp records the call.
     const bin = join(home, "bin");
     await mkdir(bin);
-    await writeFile(join(bin, "lp"), `#!/bin/bash\necho "$@" > "${home}/lp-args"\ncat "\${@: -1}" > "${home}/lp-data"\n`);
+    // The bytes first, then the arguments: the test waits for lp-args, so lp-data is complete by then.
+    await writeFile(join(bin, "lp"), `#!/bin/bash\ncat "\${@: -1}" > "${home}/lp-data"\necho "$@" > "${home}/lp-args.tmp" && mv "${home}/lp-args.tmp" "${home}/lp-args"\n`);
     await writeFile(join(bin, "lpstat"), "#!/bin/bash\necho GEZHI_micro_printer\n");
     await chmod(join(bin, "lp"), 0o755);
     await chmod(join(bin, "lpstat"), 0o755);
@@ -302,7 +303,7 @@ test("USB printers: saved as usb:<queue>, printed raw through lp, optionally wit
     const agentScript = sh.split("<<'AGENT'\n")[1].split("\nAGENT\n")[0];
     agent = spawn("bash", ["-c", agentScript], { env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` }, stdio: "ignore" });
     let args = "";
-    for (let i = 0; i < 100 && !args; i++) {
+    for (let i = 0; i < 300 && !args; i++) {
       await new Promise((r) => setTimeout(r, 100));
       args = await read(join(home, "lp-args"), "utf8").catch(() => "");
     }

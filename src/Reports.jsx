@@ -46,12 +46,24 @@ const AUDIT = {
   "guest.accept": "Pranoi porosinë online", "guest.reject": "Refuzoi porosinë online", "guest.seen": "Pa porosinë online",
   "waiter.create": "Shtoi kamarier", "waiter.toggle": "Ndezi/fiku kamarierin", "waiter.pos": "Kaloi kamarierin në kasë",
   "pos.save": "Ruajti kasën", "pos.delete": "Fshiu kasën", "shift.open": "Hapi turnin", "shift.close": "Mbylli turnin", "shift.cash": "Hyrje/dalje arke",
+  // Settings and accounts (not commands).
+  "menu.settings": "Ndryshoi menunë online", "menu.brand": "Ndryshoi identitetin / çmimet në euro", "menu.logo": "Ngarkoi logon",
+  "menu.logoRemove": "Hoqi logon", "menu.translate": "Përktheu menunë", "menu.translationFix": "Korrigjoi një përkthim",
+  "product.photo": "Ngarkoi foton e produktit", "product.photoRemove": "Hoqi foton e produktit",
+  "fiscal.connect": "Lidhi fiskalizimin", "fiscal.disconnect": "Shkëputi fiskalizimin", "venue.network": "Ndryshoi rrjetin e lokalit",
+  "login.manager": "Ndryshoi hyrjen e menaxherit", "login.waiters": "Ndryshoi hyrjen e kamarierëve", "waiter.pin": "Ndryshoi PIN-in",
+  "waiter.pattern": "Ndryshoi pattern-in", "account.me": "Ndryshoi llogarinë e vet", "print.pairing": "Lidhi kompjuterin e printimit",
+  "print.key": "Krijoi çelës printimi", "print.test": "Provoi printerin", "print.reprint": "Printoi sërish",
 };
-const auditDetail = (p = {}, products) =>
+const auditDetail = (p = {}, products, waiters = []) =>
   [
+    p.waiterId && (waiters.find((w) => w.id === p.waiterId)?.name || `Kamarieri #${p.waiterId}`),
+    typeof p.enabled === "boolean" && (p.enabled ? "aktivizoi" : "çaktivizoi"),
+    typeof p.ordering === "boolean" && (p.ordering ? "lejoi porositë" : "ndali porositë"),
+    p.lang && p.key !== undefined && `${p.lang.toUpperCase()}: ${products.find((x) => x.id === Number(p.key))?.name || p.key}${p.name ? ` → ${p.name}` : " → automatike"}`,
     p.tableId && `Tav. ${String(p.tableId).padStart(2, "0")}`,
     p.productId && (products.find((x) => x.id === p.productId)?.name || `#${p.productId}`),
-    typeof p.name === "string" && p.name,
+    typeof p.name === "string" && !p.lang && p.name,
     p.qty && `× ${p.qty}`,
     p.method,
     p.amount != null && money(p.amount),
@@ -487,7 +499,7 @@ export function Reports({ state }) {
                   <li key={n} className={["order.cancel", "invoice.refund", "stock.adjust"].includes(c.type) ? "warn" : ""}>
                     <time>{short(new Date(c.date))} {time(c.date)}</time>
                     <div>
-                      <strong>{AUDIT[c.type] || c.type}</strong> {auditDetail(c.payload || {}, state.products)}
+                      <strong>{AUDIT[c.type] || c.type}</strong> {auditDetail(c.payload || {}, state.products, state.waiters)}
                       {c.actor && <small>{c.actor}</small>}
                     </div>
                   </li>

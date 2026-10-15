@@ -382,10 +382,17 @@ export function TableOrder({
                       </div>
                       <div className="quantity">
                         <button
-                          disabled={locked || foreign}
+                          // Sent to a station: a waiter can't take it back, but a tap says why
+                          // (a disabled button on a tablet just looks broken).
+                          disabled={foreign}
+                          aria-disabled={locked || undefined}
                           title={locked ? "Dërguar në repart — vetëm menaxheri mund ta heqë" : undefined}
                           aria-label={`Hiq një ${l.name}`}
-                          onClick={() => remove(l)}
+                          onClick={() =>
+                            locked
+                              ? notify(`${l.name} është dërguar te reparti. Vetëm menaxheri mund ta heqë: thërrisni menaxherin.`, "error")
+                              : remove(l)
+                          }
                         >
                           −
                         </button>

@@ -559,13 +559,15 @@ const logEvent = (client, tableId, kind, detail, actor) =>
   client.query("INSERT INTO bluebar.order_events(table_id,kind,detail,actor) VALUES($1,$2,$3,$4)", [
     tableId, kind, detail.slice(0, 300), actor?.name || null,
   ]);
-// The high-frequency POS path reads and returns only the affected order.
-// Full snapshots remain the source of truth for initial load and management actions.
-// What the audit log keeps of a command: its payload, never a PIN or a password.
-const SECRET = /pin|pass|secret|token/i;
-const auditPayload = (payload) =>
+// What the audit log keeps of a change: never a PIN, a pattern, a password, a token or an API
+// key, and not an uploaded image (only that one was uploaded). A plain "key" (which product a
+// translation fix is for) stays.
+const SECRET = /pin|pass|secret|token|pattern|apikey|api_key|dataurl/i;
+export const auditPayload = (payload) =>
   JSON.stringify(payload ?? {}, (key, value) => (SECRET.test(key) ? undefined : value));
 
+// The high-frequency POS path reads and returns only the affected order.
+// Full snapshots remain the source of truth for initial load and management actions.
 export async function executeOrderPatch(pool, command, actor = null) {
   if (!["order.add", "order.remove"].includes(command.type))
     throw new AppError("Veprimi i porosisë është i pavlefshëm.");

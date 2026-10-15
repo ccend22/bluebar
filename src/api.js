@@ -71,6 +71,9 @@ export const saveMenuLogo = (dataUrl) => send("PUT", "/venue/menu-logo", { dataU
 export const deleteMenuLogo = () => send("DELETE", "/venue/menu-logo");
 // Translate into English every product and category that has no English yet (DeepL).
 export const translateMenu = () => send("POST", "/venue/menu/translate");
+// Every menu name in every language, and a manager's fix of one ("" brings the translator back).
+export const fetchMenuI18n = () => request("/venue/menu/i18n");
+export const saveMenuI18n = (body) => send("PUT", "/venue/menu/i18n", body);
 export const fetchProductPhoto = (id) => request(`/products/${id}/photo`);
 export const saveProductPhoto = (id, dataUrl) => send("PUT", `/products/${id}/photo`, { dataUrl });
 export const deleteProductPhoto = (id) => send("DELETE", `/products/${id}/photo`);

@@ -6193,3 +6193,20 @@ body.order-open { overflow: hidden; }
 }
 @keyframes notice-drop { from { opacity: 0; transform: translateY(-8px); } }
 @media (prefers-reduced-motion: reduce) { .notice.floating { animation: none; } }
+/* Cilësimet → Menuja online → Korrigjo përkthimet: the Albanian, its translation, how it was made. */
+.translation-fixes { display: grid; gap: 12px; }
+.translation-fixes h2 { margin: 0; }
+.translation-fixes h3 { margin: 8px 0 0; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.translation-fixes .tabs { flex-wrap: wrap; }
+.fix-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.fix-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) 112px; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.fix-source { display: grid; gap: 2px; min-width: 0; }
+.fix-source small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.fix-target { display: grid; gap: 6px; }
+.fix-target input { min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 14px; }
+.fix-target .fix-description { min-height: 36px; font-size: 13px; color: var(--muted); }
+.fix-state { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.fix-badge { padding: 2px 8px; border-radius: 9999px; background: var(--blue-soft); color: var(--blue); font-size: 11px; font-weight: 700; }
+@media (max-width: 640px) { .fix-row { grid-template-columns: 1fr; gap: 6px; } }
+/* A "−" a waiter may not use (already at the station): looks unavailable, still explains on tap. */
+.quantity button[aria-disabled="true"] { opacity: 0.38; cursor: not-allowed; }

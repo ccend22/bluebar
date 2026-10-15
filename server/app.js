@@ -4,7 +4,7 @@ import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks,
 import { installer } from "./installers.js";
 import { encode } from "../public/bluebar-print.mjs";
 import { AppError } from "./commands.js";
-import { readSnapshot, readRevision, bumpRevision, execute, executeOrderPatch, setInvoiceFiscalResult } from "./repository.js";
+import { readSnapshot, readRevision, bumpRevision, execute, executeOrderPatch, setInvoiceFiscalResult, auditPayload } from "./repository.js";
 import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
@@ -91,6 +91,43 @@ export function buildApp({
     return ipPolicy(ips)(request.ip);
   };
   const loginBudget = throttle();
+  // The audit log for changes that aren't commands (settings, PINs, photos, fiscalization…):
+  // written before the reply leaves, only when it succeeded, with who made it. Secrets and
+  // images never reach it (auditPayload).
+  const AUDITED = {
+    "PUT /api/venue/menu": "menu.settings",
+    "PUT /api/venue/menu-brand": "menu.brand",
+    "PUT /api/venue/menu-logo": "menu.logo",
+    "DELETE /api/venue/menu-logo": "menu.logoRemove",
+    "POST /api/venue/menu/translate": "menu.translate",
+    "PUT /api/venue/menu/i18n": "menu.translationFix",
+    "PUT /api/products/:id/photo": "product.photo",
+    "DELETE /api/products/:id/photo": "product.photoRemove",
+    "PUT /api/integrations/bluebill": "fiscal.connect",
+    "DELETE /api/integrations/bluebill": "fiscal.disconnect",
+    "PUT /api/venue/network": "venue.network",
+    "PUT /api/venue/manager-login": "login.manager",
+    "PUT /api/venue/login-mode": "login.waiters",
+    "PUT /api/accounts/waiters/:id/pin": "waiter.pin",
+    "PUT /api/accounts/waiters/:id/pattern": "waiter.pattern",
+    "PUT /api/accounts/me": "account.me",
+    "POST /api/print/pairing": "print.pairing",
+    "POST /api/print/key": "print.key",
+    "POST /api/print/test": "print.test",
+    "POST /api/print/reprint": "print.reprint",
+  };
+  app.addHook("onSend", async (request, reply, payload) => {
+    const type = AUDITED[`${request.method} ${request.routeOptions?.url}`];
+    if (!type || reply.statusCode >= 400 || !request.db) return payload;
+    const id = request.params?.id;
+    const target = id === undefined ? {} : type.startsWith("waiter.") ? { waiterId: Number(id) } : { productId: Number(id) };
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    await request.db.query(
+      "INSERT INTO bluebar.commands(id, payload_hash, type, result, actor, payload) VALUES($1, '', $2, '{}'::jsonb, $3, $4)",
+      [randomUUID(), type, request.user?.name || null, auditPayload({ ...target, ...body })],
+    ).catch(() => {}); // never fails the change itself
+    return payload;
+  });
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     reply.header("X-Content-Type-Options", "nosniff");
@@ -308,6 +345,9 @@ export function buildApp({
     return { venue, db: tenantPool(pool, venue.schema_name) };
   };
   const photoVersion = (at) => (at ? new Date(at).getTime().toString(36) : null);
+  // A guest gets the words, not how they were made (a manager's fix and what it was for).
+  const publicI18n = (i18n) =>
+    Object.fromEntries(Object.entries(i18n || {}).map(([lang, { manual, source, ...words }]) => [lang, words]));
   app.get("/api/menu/:slug", async (request, reply) => {
     const { venue, db } = await menuVenue(request);
     const [categories, products, brand] = await Promise.all([
@@ -328,9 +368,9 @@ export function buildApp({
       euroRate: b.euro ? Number(b.euro_rate) : null,
       categories: categories.rows
         .filter((c) => products.rows.some((p) => p.category === c.name))
-        .map((c) => ({ name: c.name, i18n: c.i18n })),
+        .map((c) => ({ name: c.name, i18n: publicI18n(c.i18n) })),
       products: products.rows.map((p) => ({
-        id: p.id, name: p.name, description: p.description, i18n: p.i18n,
+        id: p.id, name: p.name, description: p.description, i18n: publicI18n(p.i18n),
         price: p.price, category: p.category, available: p.available,
         extras: (p.extras || []).map(({ name, price }) => ({ name, price })),
         photo: photoVersion(p.photo_at),
@@ -566,6 +606,8 @@ export function buildApp({
       ...(r.extras?.length && { extras: Object.fromEntries(r.extras.map((x, k) => [x, clip(byLang[l][at[n] + 2 + k], 60)])) }),
     }])));
   };
+  // What a manager's fix of a product's translation was made for: if this changes, the fix is stale.
+  const productSource = (p) => `${p.name}\n${p.description || ""}`;
   const translateSaved = async (db, type, payload, state) => {
     if (!translate || !state) return;
     try {
@@ -573,7 +615,10 @@ export function buildApp({
         const name = String(payload.name || "").trim().toLowerCase();
         const p = state.products.find((x) => x.name.toLowerCase() === name);
         if (!p) return;
-        const [i18n] = await translateRows([{ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) }]);
+        const [fresh] = await translateRows([{ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) }]);
+        const old = (await db.query("SELECT i18n FROM bluebar.products WHERE id=$1", [p.id])).rows[0]?.i18n || {};
+        const source = productSource(p);
+        const i18n = Object.fromEntries(LANGS.map((l) => [l, old[l]?.manual && old[l].source === source ? old[l] : fresh[l]]));
         await db.query("UPDATE bluebar.products SET i18n=$2 WHERE id=$1", [p.id, i18n]);
       } else {
         const category = String(payload.name || "").trim();
@@ -639,6 +684,54 @@ export function buildApp({
     } catch {
       throw new AppError("Shërbimi i përkthimit nuk u përgjigj. Provoni pas pak.", 502);
     }
+  });
+  // Cilësimet → Menuja online → "Korrigjo përkthimet": every name in every language, and a
+  // manager's fix for one. A fix stays through later saves while the Albanian it was made for
+  // is unchanged; an empty name drops the fix and the translator writes that language again.
+  app.get("/api/venue/menu/i18n", { preValidation: session("manager") }, async (request) => {
+    const [products, categories] = await Promise.all([
+      request.db.query("SELECT id, name, description, i18n FROM bluebar.products ORDER BY category, name"),
+      request.db.query("SELECT name, i18n FROM bluebar.categories ORDER BY name"),
+    ]);
+    const view = (i18n) => Object.fromEntries(Object.entries(i18n || {}).map(([l, x]) => [l, { name: x.name || "", description: x.description || "", manual: Boolean(x.manual) }]));
+    return {
+      languages: LANGS,
+      translation: Boolean(translate),
+      products: products.rows.map((p) => ({ id: p.id, name: p.name, description: p.description, i18n: view(p.i18n) })),
+      categories: categories.rows.map((c) => ({ name: c.name, i18n: view(c.i18n) })),
+    };
+  });
+  app.put("/api/venue/menu/i18n", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["kind", "key", "lang", "name"], properties: {
+      kind: { type: "string", enum: ["product", "category"] },
+      key: { type: ["string", "integer"], maxLength: 40 },
+      lang: { type: "string", enum: LANGS },
+      name: { type: "string", maxLength: 80 },
+      description: { type: "string", maxLength: 300 },
+    } } },
+  }, async (request) => {
+    const { kind, key, lang, description } = request.body;
+    const name = request.body.name.trim();
+    const row = kind === "product"
+      ? (await request.db.query("SELECT id, name, description, i18n FROM bluebar.products WHERE id = $1", [Number(key) || 0])).rows[0]
+      : (await request.db.query("SELECT name, i18n FROM bluebar.categories WHERE name = $1", [String(key)])).rows[0];
+    if (!row) throw new AppError(kind === "product" ? "Produkti nuk ekziston." : "Kategoria nuk ekziston.", 404);
+    const i18n = { ...(row.i18n || {}) };
+    if (!name) delete i18n[lang];
+    else i18n[lang] = {
+      ...i18n[lang],
+      name: clip(name, kind === "product" ? 80 : 40),
+      ...(kind === "product" && description !== undefined && { description: clip(description.trim(), 300) }),
+      manual: true,
+      source: kind === "product" ? productSource(row) : row.name,
+    };
+    if (kind === "product") await request.db.query("UPDATE bluebar.products SET i18n=$2 WHERE id=$1", [row.id, i18n]);
+    else await request.db.query("UPDATE bluebar.categories SET i18n=$2 WHERE name=$1", [row.name, i18n]);
+    // Dropped fix: the translator writes that language again (best effort).
+    if (!name && translate) await translateMissing(request.db).catch(() => {});
+    await bumpRevision(request.db);
+    return { ok: true };
   });
   // The menu's identity (Cilësimet → Menuja online): welcome line, brand colour, logo.
   const ACCENTS = ["blue", "terracotta", "olive", "plum", "teal", "amber"];

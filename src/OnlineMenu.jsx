@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { plural } from "./domain.js";
 import { createPortal } from "react-dom";
-import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo, translateMenu } from "./api.js";
+import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo, translateMenu, fetchMenuI18n, saveMenuI18n } from "./api.js";
 import { ACCENTS } from "./menu/accents.js";
 import { Icon } from "./components.jsx";
 
@@ -93,6 +93,102 @@ function Qr({ text }) {
     });
   }, [text]);
   return src ? <img className="qr" src={src} alt={`Kodi QR për ${text}`} /> : <span className="qr" />;
+}
+
+// Cilësimet → Menuja online → "Korrigjo përkthimet": when the translator gets one wrong ("Tost"
+// as a drinking toast), the manager writes the right one. It stays through later saves while
+// the Albanian it was written for is unchanged; "Automatike" hands it back to the translator.
+const LANG_NAMES = { en: "English", it: "Italiano", de: "Deutsch", fr: "Français", es: "Español" };
+function TranslationFixes() {
+  const [data, setData] = useState(null);
+  const [lang, setLang] = useState("en");
+  const [note, setNote] = useState({ text: "", error: false });
+  const [busy, setBusy] = useState("");
+  const load = () => fetchMenuI18n().then(setData).catch((e) => setNote({ text: e.message, error: true }));
+  useEffect(() => { load(); }, []);
+  if (!data) return note.text ? <section className="panel"><p className="warning-text">{note.text}</p></section> : null;
+  const save = async (kind, key, label, fields) => {
+    setBusy(`${kind}:${key}`);
+    setNote({ text: "", error: false });
+    try {
+      await saveMenuI18n({ kind, key, lang, ...fields });
+      await load();
+      setNote({ text: fields.name ? `“${label}” u korrigjua në ${LANG_NAMES[lang]}.` : `“${label}” u rikthye te përkthimi automatik.`, error: false });
+    } catch (e) {
+      setNote({ text: e.message, error: true });
+    } finally {
+      setBusy("");
+    }
+  };
+  // One row: the Albanian, then the translation to correct (saved when the field is left).
+  const row = (kind, key, item) => {
+    const t = item.i18n[lang] || { name: "", description: "", manual: false };
+    const id = `${kind}:${key}`;
+    return (
+      <li key={id} className={`fix-row ${t.manual ? "manual" : ""}`}>
+        <div className="fix-source">
+          <strong>{item.name}</strong>
+          {kind === "product" && item.description && <small>{item.description}</small>}
+        </div>
+        <div className="fix-target">
+          <input
+            key={`${lang}-${t.name}`}
+            defaultValue={t.name}
+            placeholder={data.translation ? "Pa përkthim ende" : "Shkruani përkthimin"}
+            aria-label={`${item.name} në ${LANG_NAMES[lang]}`}
+            maxLength={kind === "product" ? 80 : 40}
+            disabled={busy === id}
+            onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== t.name && save(kind, key, item.name, { name: e.target.value })}
+          />
+          {kind === "product" && (item.description || t.description) && (
+            <input
+              key={`${lang}-d-${t.description}`}
+              className="fix-description"
+              defaultValue={t.description}
+              placeholder="Përshkrimi"
+              aria-label={`Përshkrimi i ${item.name} në ${LANG_NAMES[lang]}`}
+              maxLength={300}
+              disabled={busy === id}
+              onBlur={(e) => e.target.value.trim() !== (t.description || "") && save(kind, key, item.name, { name: t.name || item.name, description: e.target.value })}
+            />
+          )}
+        </div>
+        <div className="fix-state">
+          {t.manual ? (
+            <>
+              <span className="fix-badge">me dorë</span>
+              {data.translation && (
+                <button type="button" className="text-button" disabled={busy === id} onClick={() => save(kind, key, item.name, { name: "" })}>
+                  Automatike
+                </button>
+              )}
+            </>
+          ) : null}
+        </div>
+      </li>
+    );
+  };
+  return (
+    <section className="panel translation-fixes">
+      <h2>Korrigjo përkthimet</h2>
+      <p className="helper">
+        Kur përkthimi automatik gabon, shkruani të saktin. Ruhet sapo dilni nga fusha dhe nuk ndryshon më vetë, derisa të ndryshoni
+        emrin ose përshkrimin shqip.
+      </p>
+      <div className="tabs" role="tablist" aria-label="Gjuha e përkthimit">
+        {data.languages.map((l) => (
+          <button key={l} role="tab" aria-selected={lang === l} aria-pressed={lang === l} onClick={() => setLang(l)}>
+            {LANG_NAMES[l]}
+          </button>
+        ))}
+      </div>
+      {note.text && <p className={note.error ? "warning-text" : "helper"} role="status">{note.text}</p>}
+      <h3>Kategoritë</h3>
+      <ul className="fix-list">{data.categories.map((c) => row("category", c.name, c))}</ul>
+      <h3>Produktet</h3>
+      <ul className="fix-list">{data.products.map((p) => row("product", p.id, p))}</ul>
+    </section>
+  );
 }
 
 // Cilësimet → Menuja online → the menu's identity: what a guest sees at the top.
@@ -315,6 +411,7 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
         </p>
       </section>
       <MenuIdentity venueName={venue?.name || "BlueBar"} />
+      <TranslationFixes />
       <section className="panel">
         <div className="online-menu-head">
           <div>
