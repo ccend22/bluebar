@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { plural } from "./domain.js";
 import { Icon } from "./components.jsx";
 import { blank, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
 
@@ -65,7 +66,7 @@ export function ProductImport({ state, update, onClose }) {
       ...(r.department.trim() ? { department: r.department.trim() } : {}),
       ...(r.stock !== "" ? { stock: Number(r.stock) } : {}),
     }));
-    const ok = await update("products.import", { products }, `U shtuan ${products.length} produkte.`);
+    const ok = await update("products.import", { products }, `U shtua${products.length === 1 ? "" : "n"} ${plural(products.length, "produkt", "produkte")}.`);
     setSaving(false);
     if (ok) onClose();
   };
@@ -162,7 +163,7 @@ export function ProductImport({ state, update, onClose }) {
         </button>
         <span className="helper">{filled.length > 200 ? "Ruani deri në 200 produkte njëherësh" : problems ? `${problems} rreshta për t'u rregulluar` : `${filled.length} produkte gati`}</span>
         <button type="button" className="primary" disabled={!filled.length || filled.length > 200 || problems > 0 || saving} onClick={save}>
-          {saving ? "Po ruhen…" : `Ruaj ${filled.length || ""} produkte`}
+          {saving ? "Po ruhen…" : (filled.length ? `Ruaj ${plural(filled.length, "produkt", "produkte")}` : "Ruaj produktet")}
         </button>
       </div>
     </section>
@@ -186,7 +187,7 @@ export function StockDelivery({ state, update, onClose }) {
   const save = async () => {
     if (saving || invalid || !items.length || items.length > 300) return;
     setSaving(true);
-    const ok = await update("stock.receiveMany", { items }, `Furnizimi u ruajt: ${units} copë për ${items.length} produkte.`);
+    const ok = await update("stock.receiveMany", { items }, `Furnizimi u ruajt: ${units} copë për ${plural(items.length, "produkt", "produkte")}.`);
     setSaving(false);
     if (ok) onClose();
   };

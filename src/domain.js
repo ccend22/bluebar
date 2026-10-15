@@ -1,6 +1,8 @@
 export const money = (n) =>
   new Intl.NumberFormat("sq-AL", { maximumFractionDigits: 0 }).format(n) +
   " Lek";
+// "1 produkt", "3 produkte": the number with the word that goes with it.
+export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 export const total = (lines) =>
   lines.reduce((sum, p) => sum + p.price * p.qty, 0);
 export function initialState() {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { money } from "./domain.js";
+import { money, plural } from "./domain.js";
 import { fetchReport } from "./api.js";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { Empty, Icon } from "./components.jsx";
@@ -329,7 +329,7 @@ export function Reports({ state }) {
             <div>
               <span>Cash i pritshëm në arkë</span>
               <strong>{money(drawer.expected)}</strong>
-              <small>{shifts.length ? `${shifts.length} turne · me fondin, hyrjet dhe daljet` : "Asnjë turn në këtë periudhë"}</small>
+              <small>{shifts.length ? `${plural(shifts.length, "turn", "turne")} · me fondin, hyrjet dhe daljet` : "Asnjë turn në këtë periudhë"}</small>
             </div>
           </div>
 
@@ -370,7 +370,7 @@ export function Reports({ state }) {
                   ["= Cash i pritshëm", money(drawer.expected)],
                   ...(drawer.closed
                     ? [
-                        ["E numëruar", money(drawer.counted), `${drawer.closed} turne të mbyllura`],
+                        ["E numëruar", money(drawer.counted), `${drawer.closed} ${drawer.closed === 1 ? "turn i mbyllur" : "turne të mbyllura"}`],
                         ["Diferenca e arkës", `${drawer.difference > 0 ? "+" : ""}${money(drawer.difference)}`],
                       ]
                     : []),

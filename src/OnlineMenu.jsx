@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { plural } from "./domain.js";
 import { createPortal } from "react-dom";
 import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo, translateMenu } from "./api.js";
 import { ACCENTS } from "./menu/accents.js";
@@ -194,7 +195,7 @@ function MenuIdentity({ venueName }) {
               disabled={busy}
               onClick={() => run(async () => {
                 const r = await translateMenu();
-                setNote({ text: r.products || r.categories ? `U përkthyen ${r.products} produkte dhe ${r.categories} kategori.` : "Gjithçka është e përkthyer.", error: false, at: "lang" });
+                setNote({ text: r.products || r.categories ? `U përkthyen ${plural(r.products, "produkt", "produkte")} dhe ${r.categories} kategori.` : "Gjithçka është e përkthyer.", error: false, at: "lang" });
               }, "", "lang")}
             >
               Përkthe menunë

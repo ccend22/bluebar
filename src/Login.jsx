@@ -217,7 +217,7 @@ export function Login({ onSignedIn }) {
     content = <form onSubmit={(e) => { e.preventDefault(); openBusiness(slug.trim().toLowerCase()); }}>
       <h1>Kodi i biznesit.</h1>
       <p className="onboard-lede">Kodi që ju dha menaxheri, p.sh. <strong>bluebar</strong>.</p>
-      <input className="onboard-input" aria-label="Kodi i biznesit" value={slug} onChange={(e) => setSlug(e.target.value)} required minLength={3} maxLength={40} pattern="[a-zA-Z0-9][a-zA-Z0-9-]{2,39}" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus placeholder="kodi-i-biznesit" />
+      <input className="onboard-input" aria-label="Kodi i biznesit" value={slug} onChange={(e) => setSlug(e.target.value)} required minLength={3} maxLength={40} pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{2,39}" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus placeholder="kodi-i-biznesit" />
       <div className="onboard-actions"><button className="onboard-primary">Vazhdo</button></div>
     </form>;
   else if (step === "name")
@@ -231,7 +231,7 @@ export function Login({ onSignedIn }) {
     content = <form onSubmit={(e) => { e.preventDefault(); go("pin"); }}>
       <h1>Kodi i lokalit.</h1>
       <p className="onboard-lede">Stafi e shkruan këtë kod për të hyrë. Shkronja të vogla, numra ose viza.</p>
-      <input className="onboard-input" aria-label="Kodi i biznesit" value={slug} onChange={(e) => { setSlug(e.target.value.toLowerCase()); setSlugEdited(true); }} required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9-]{2,39}" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus placeholder="bar-aurora" />
+      <input className="onboard-input" aria-label="Kodi i biznesit" value={slug} onChange={(e) => { setSlug(e.target.value.toLowerCase()); setSlugEdited(true); }} required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]{2,39}" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus placeholder="bar-aurora" />
       <div className="onboard-actions"><button className="onboard-primary">Vazhdo</button></div>
     </form>;
   else if (step === "pin" || step === "confirm")

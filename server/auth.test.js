@@ -1687,3 +1687,22 @@ test("a language DeepL is slow on once is tried again, so the other four aren't 
     await t.close();
   }
 });
+
+test("products added many at once are translated too, with the categories they bring", async () => {
+  const fake = async (texts, lang) => texts.map((t) => `${lang}:${t}`);
+  const t = await setup({ translate: fake });
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } });
+    const version = (await t.call("GET", "/api/state", { cookie })).json().version;
+    const r = await t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type: "products.import", payload: {
+      products: [{ name: "Tost", price: 250, category: "Sanduiçe" }, { name: "Limonadë", price: 200, category: "Pije" }],
+    } } });
+    assert.equal(r.statusCode, 200);
+    const menu = (await t.inject({ method: "GET", url: "/api/menu/bluebar", headers: { host: "localhost" } })).json();
+    assert.equal(menu.products.find((p) => p.name === "Tost").i18n.en.name, "en:Tost");
+    assert.equal(menu.categories.find((c) => c.name === "Sanduiçe").i18n.it.name, "it:Sanduiçe", "the new category too");
+  } finally {
+    await t.close();
+  }
+});

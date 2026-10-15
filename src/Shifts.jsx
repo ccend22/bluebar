@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { bill, DENOMINATIONS, drawer, money, posOf, shiftFor, total } from "./domain.js";
+import { bill, DENOMINATIONS, drawer, money, posOf, shiftFor, total, plural } from "./domain.js";
 import { fetchShiftReport } from "./api.js";
 import { Badge, Empty, Field, Icon, SectionHeading } from "./components.jsx";
 
@@ -154,6 +154,7 @@ function CashMovements({ state, update, d }) {
       <div className="drawer-lines">
         <div><span>Fondi fillestar</span><b>{money(d.opening)}</b></div>
         <div><span>+ Arkëtime cash</span><b>{money(d.cash)}</b></div>
+        {d.tipsCash > 0 && <div><span>+ Bakshish cash</span><b>{money(d.tipsCash)}</b></div>}
         {d.cashIn > 0 && <div><span>+ Hyrje</span><b>{money(d.cashIn)}</b></div>}
         {d.cashOut > 0 && <div><span>− Dalje</span><b>{money(d.cashOut)}</b></div>}
         {d.refundsCash > 0 && <div><span>− Rimbursime cash</span><b>{money(d.refundsCash)}</b></div>}
@@ -267,7 +268,7 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
                     <strong>{w.name}</strong>
                     <small>
                       {w.count} fatura · cash {money(w.cash)}
-                      {w.openTables ? ` · ${w.openTables} tavolina hapur` : ""}
+                      {w.openTables ? ` · ${plural(w.openTables, "tavolinë", "tavolina")} hapur` : ""}
                     </small>
                   </div>
                   <b>{money(w.total)}</b>
@@ -362,8 +363,10 @@ function CloseShift({ state, update, nav, onCancel, onClosed, d, shiftInvoices }
               <strong>Në arkë duhet të jenë {money(d.expected)}</strong>
               <small>
                 Fondi {money(d.opening)} + cash {money(d.cash)}
+                {d.tipsCash ? ` + bakshish ${money(d.tipsCash)}` : ""}
                 {d.cashIn ? ` + hyrje ${money(d.cashIn)}` : ""}
                 {d.cashOut ? ` − dalje ${money(d.cashOut)}` : ""}
+                {d.refundsCash ? ` − rimbursime ${money(d.refundsCash)}` : ""}
               </small>
             </div>
           </div>
@@ -462,7 +465,7 @@ function CloseShift({ state, update, nav, onCancel, onClosed, d, shiftInvoices }
 function History({ state, onReport }) {
   return (
     <section className="panel">
-      <SectionHeading title="Historiku i turneve" description={`${state.shifts.length} turne të mbyllura`} />
+      <SectionHeading title="Historiku i turneve" description={`${state.shifts.length} ${state.shifts.length === 1 ? "turn i mbyllur" : "turne të mbyllura"}`} />
       {state.shifts.length ? (
         <div className="table-scroll">
           <table className="responsive-table">

@@ -1,7 +1,7 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total } from "./domain.js";
+import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total, plural } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
@@ -450,6 +450,8 @@ function App({ user, onLogout, onUserChange }) {
     const { shape, seats, count } = newTable;
     // The whole batch at once; each card's entrance is staggered so the eye can count them.
     setTablesAdded((added) => [...added, ...Array.from({ length: count }, (_, i) => ({ key: crypto.randomUUID(), area, shape, seats, delay: i }))]);
+    // The next batch starts from one table again: a second zone shouldn't inherit "6".
+    setNewTable((t) => ({ ...t, count: 1 }));
     // New cards land after every saved table: bring them into view so the entrance is seen.
     setTimeout(() => [...document.querySelectorAll(".table-admin-card.new")].pop()?.scrollIntoView({ behavior: "smooth", block: "center" }));
   };
@@ -1046,7 +1048,9 @@ function App({ user, onLogout, onUserChange }) {
             )}
             {notice && (
               <div
-                className={`notice ${notice.tone}`}
+                // With a table's popup open the page is behind it: the notice floats above, or a
+                // refused add ("Pa stok", "Turni është i mbyllur"…) would look like nothing happened.
+                className={`notice ${notice.tone} ${page === "Tavolinat" && table ? "floating" : ""}`}
                 role={notice.tone === "error" ? "alert" : "status"}
               >
                 <Icon
@@ -1091,7 +1095,7 @@ function App({ user, onLogout, onUserChange }) {
                   <section className="panel table-management-panel">
                     <SectionHeading
                       title="Tavolinat e lokalit"
-                      description={`${state.tables.length} tavolina · ${activeTables.length} aktive`}
+                      description={`${plural(state.tables.length, "tavolinë", "tavolina")} · ${activeTables.length} aktive`}
                     >
                       <div className="floor-edit-actions">
                         {floorEditing ? (

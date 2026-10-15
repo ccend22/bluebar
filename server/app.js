@@ -617,24 +617,28 @@ export function buildApp({
     return { heard: String(out?.heard || "").slice(0, 500), items: [...items].map(([id, qty]) => ({ id, qty })) };
   });
   // Cilësimet → Menuja online → "Përkthe menunë": everything missing a language.
+  // Everything still missing a language: what "Përkthe menunë" does, and what follows a
+  // bulk import ("Shto shumë"), whose products and new categories aren't saved one by one.
+  const translateMissing = async (db) => {
+    const missing = `NOT (i18n ?& '{${LANGS.join(",")}}')`;
+    const products = (await db.query(`SELECT id, name, description, extras FROM bluebar.products WHERE ${missing} ORDER BY id LIMIT 200`)).rows;
+    const categories = (await db.query(`SELECT name FROM bluebar.categories WHERE ${missing}`)).rows;
+    if (!products.length && !categories.length) return { products: 0, categories: 0 };
+    const out = await translateRows([...products.map((p) => ({ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) })), ...categories.map((c) => ({ name: c.name }))]);
+    for (const [n, p] of products.entries())
+      await db.query("UPDATE bluebar.products SET i18n=$2 WHERE id=$1", [p.id, out[n]]);
+    for (const [n, c] of categories.entries())
+      await db.query("UPDATE bluebar.categories SET i18n=$2 WHERE name=$1", [c.name, out[products.length + n]]);
+    await bumpRevision(db);
+    return { products: products.length, categories: categories.length };
+  };
   app.post("/api/venue/menu/translate", { preValidation: session("manager") }, async (request) => {
     if (!translate) throw new AppError("Përkthimi automatik nuk është konfiguruar (DEEPL_API_KEY).", 503);
-    const missing = `NOT (i18n ?& '{${LANGS.join(",")}}')`;
-    const products = (await request.db.query(`SELECT id, name, description, extras FROM bluebar.products WHERE ${missing} ORDER BY id LIMIT 200`)).rows;
-    const categories = (await request.db.query(`SELECT name FROM bluebar.categories WHERE ${missing}`)).rows;
-    if (!products.length && !categories.length) return { products: 0, categories: 0 };
-    let out;
     try {
-      out = await translateRows([...products.map((p) => ({ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) })), ...categories.map((c) => ({ name: c.name }))]);
+      return await translateMissing(request.db);
     } catch {
       throw new AppError("Shërbimi i përkthimit nuk u përgjigj. Provoni pas pak.", 502);
     }
-    for (const [n, p] of products.entries())
-      await request.db.query("UPDATE bluebar.products SET i18n=$2 WHERE id=$1", [p.id, out[n]]);
-    for (const [n, c] of categories.entries())
-      await request.db.query("UPDATE bluebar.categories SET i18n=$2 WHERE name=$1", [c.name, out[products.length + n]]);
-    await bumpRevision(request.db);
-    return { products: products.length, categories: categories.length };
   });
   // The menu's identity (Cilësimet → Menuja online): welcome line, brand colour, logo.
   const ACCENTS = ["blue", "terracotta", "olive", "plum", "teal", "amber"];
@@ -1185,6 +1189,8 @@ export function buildApp({
         ? await executeOrderPatch(request.db, body, user)
         : await execute(request.db, body, user);
       if (["product.save", "category.create"].includes(body.type)) await translateSaved(request.db, body.type, body.payload, result.state);
+      // Best effort, like a single save: the menu keeps the Albanian until the next try.
+      if (body.type === "products.import" && translate) await translateMissing(request.db).catch(() => {});
       return present(result, request);
     },
   );
