@@ -6211,3 +6211,49 @@ body.order-open { overflow: hidden; }
 /* A "−" a waiter may not use (already at the station): looks unavailable, still explains on tap. */
 .quantity button[aria-disabled="true"] { opacity: 0.38; cursor: not-allowed; }
 .pin-shared { color: #a3322a; font-weight: 700; }
+
+/* Staff sign-in as a POS terminal: the brand and who on top, the PIN pad under it, all in the
+   middle of the screen. The app's own colours; scoped to .onboard.terminal. */
+.onboard.terminal .onboard-bar { max-width: 1040px; }
+.terminal-shell {
+  align-self: center; width: 100%; max-width: 480px; margin: 0 auto; padding: 0 0 4vh;
+  display: grid; justify-items: center; gap: 28px;
+  animation: onboard-in 520ms var(--ease-out) both;
+}
+.terminal-brand { display: grid; justify-items: center; text-align: center; }
+.terminal-logo { display: grid; margin-bottom: 18px; }
+.terminal-logo img { width: 64px; height: 64px; border-radius: 15px; box-shadow: 0 1px 2px rgba(23, 78, 101, 0.18), 0 10px 28px -6px rgba(23, 78, 101, 0.35); }
+.onboard.terminal h1 { font-size: clamp(28px, 4vw, 40px); margin-bottom: 6px; }
+.onboard.terminal .onboard-lede { font-size: 16px; }
+.terminal-pad { display: grid; justify-items: center; text-align: center; }
+.terminal-pad h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.terminal-who { margin: 0; color: var(--muted); font-size: 15px; }
+.onboard.terminal .onboard-pin { margin-top: 18px; }
+.onboard.terminal .onboard-error { margin: 14px auto 0; }
+.onboard.terminal .onboard-input { margin-top: 16px; height: 52px; font-size: 17px; }
+.pin-pad.terminal .pin-dots { gap: 16px; padding: 8px 0 4px; }
+.pin-pad.terminal .pin-dots span { width: 15px; height: 15px; border: 2px solid var(--line-strong); }
+.pin-pad.terminal .pin-dots span.filled { background: var(--blue); border-color: var(--blue); }
+.pin-pad.terminal .pin-keys { grid-template-columns: repeat(3, 76px); gap: 14px; margin-top: 22px; }
+.pin-pad.terminal .pin-keys button {
+  width: 76px; height: 64px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface); color: #202428; font-size: 24px; font-weight: 500;
+  box-shadow: 0 1px 2px rgba(23, 78, 101, 0.06);
+  transition: background 120ms ease-out, transform 100ms ease-out;
+}
+.pin-pad.terminal .pin-keys button:hover:not(:disabled) { background: var(--surface-subtle); }
+.pin-pad.terminal .pin-keys button:active:not(:disabled) { transform: scale(0.95); background: var(--blue-soft); }
+.pin-pad.terminal .pin-keys button:disabled { opacity: 1; color: #b4bcc4; }
+.pin-pad.terminal .pin-keys .pin-clear { background: #fdecea; border-color: #f5c9c4; color: #a43d34; font-size: 15px; font-weight: 600; }
+.pin-pad.terminal .pin-keys .pin-enter { background: var(--green-soft); border-color: #cfe5d9; color: var(--green); font-size: 15px; font-weight: 600; }
+.pin-pad.terminal .pin-keys .pin-enter:not(:disabled) { background: var(--green); border-color: var(--green); color: #fff; }
+.pin-pad.terminal .pin-keys .pin-enter:hover:not(:disabled) { background: #1f5240; }
+.pin-pad.terminal .pin-keys .pin-clear:disabled, .pin-pad.terminal .pin-keys .pin-enter:disabled { opacity: 0.55; }
+.pin-pad.terminal .pin-keys button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+@media (max-width: 760px) {
+}
+@media (max-height: 760px) { .terminal-logo { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .terminal-shell { animation: onboard-fade 200ms ease both; }
+  .pin-pad.terminal .pin-keys button { transition: none; transform: none; }
+}

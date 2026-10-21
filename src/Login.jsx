@@ -65,12 +65,15 @@ function PinLogin({ onSignedIn }) {
   const selectedWaiter = waiters?.waiters.find((w) => String(w.id) === waiterId);
   const showWaiterList = mode === "waiter" && waiterFlow !== "pin_only" && (waiters?.waiters.length ?? 0) > 0;
   return (
-    <main className="onboard">
+    <main className="onboard terminal">
       <header className="onboard-bar">
         <a className="onboard-back" href="/"><Icon name="back" size={18} /> Ndrysho biznesin</a>
       </header>
-      <section className="onboard-step onboard-signin">
-        <img className="onboard-icon small" src="/favicon.svg" alt="" width="56" height="56" />
+      <section className="terminal-shell">
+      <div className="terminal-brand">
+        <span className="terminal-logo" aria-hidden="true">
+          <img src="/favicon.svg" alt="" width="48" height="48" />
+        </span>
         <h1>{venue?.name || "Hyrje"}</h1>
         <p className="onboard-lede">Kodi i biznesit: <strong>{venueSlug}</strong></p>
         <div className="onboard-segmented" role="group" aria-label="Lloji i llogarisë">
@@ -80,6 +83,25 @@ function PinLogin({ onSignedIn }) {
             </button>
           ))}
         </div>
+        {showWaiterList && (
+          <div className="onboard-people" role="group" aria-label="Zgjidhni kamarierin">
+            {waiters.waiters.map((w) => (
+              <button
+                type="button"
+                key={w.id}
+                aria-pressed={waiterId === String(w.id)}
+                disabled={busy}
+                onClick={() => { setWaiterId(String(w.id)); setPin(""); setError(""); }}
+              >
+                {w.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="terminal-pad">
+        <h2>{mode === "waiter" && waiterFlow === "pattern" ? "Vizatoni pattern-in" : "Fut PIN-in"}</h2>
+        {mode === "waiter" && selectedWaiter && waiterFlow !== "pin_only" && <p className="terminal-who">{selectedWaiter.name}</p>}
         {error && <p className="onboard-error" role="alert">{error}</p>}
         {blocked ? (
           <p className="onboard-note">Kamarierët hyjnë vetëm nga rrjeti i lokalit. Menaxherët hyjnë nga skeda "Menaxher".</p>
@@ -89,21 +111,6 @@ function PinLogin({ onSignedIn }) {
           <p className="onboard-note">Asnjë kamarier nuk ka hyrje të konfiguruar. Menaxheri e vendos te Kamarierët.</p>
         ) : (
           <>
-            {showWaiterList && (
-              <div className="onboard-people" role="group" aria-label="Zgjidhni kamarierin">
-                {waiters.waiters.map((w) => (
-                  <button
-                    type="button"
-                    key={w.id}
-                    aria-pressed={waiterId === String(w.id)}
-                    disabled={busy}
-                    onClick={() => { setWaiterId(String(w.id)); setPin(""); setError(""); }}
-                  >
-                    {w.name}
-                  </button>
-                ))}
-              </div>
-            )}
             {mode === "waiter" && waiterFlow === "pattern" ? (
               selectedWaiter?.hasPattern ? (
                 <div className="onboard-pin">
@@ -134,13 +141,14 @@ function PinLogin({ onSignedIn }) {
                   <legend className="sr-only">
                     {mode === "waiter" && selectedWaiter && waiterFlow === "name_pin" ? `PIN-i për ${selectedWaiter.name}` : "PIN"}
                   </legend>
-                  <PinPad value={pin} onChange={setPin} onComplete={submit} disabled={busy} />
+                  <PinPad variant="terminal" value={pin} onChange={setPin} onComplete={submit} disabled={busy} />
                 </fieldset>
               </>
             )}
           </>
         )}
         {busy && <p className="onboard-note" role="status">Po hyhet…</p>}
+      </div>
       </section>
     </main>
   );

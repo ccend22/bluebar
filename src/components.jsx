@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 
 const paths = {
   tables: (
@@ -225,16 +225,53 @@ export function Field({ label, children, ...props }) {
   );
 }
 const PIN_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"];
-export function PinPad({ value, onChange, onComplete, length = 6, disabled }) {
+// variant "terminal" (staff sign-in): the POS terminal look, with "Pastro" and "Hyrje" in
+// the bottom row; the PIN goes when "Hyrje" is pressed (or Enter), not by itself at the last digit.
+const TERMINAL_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "enter"];
+export function PinPad({ value, onChange, onComplete, length = 6, disabled, variant }) {
+  const terminal = variant === "terminal";
   const press = (key) => {
     if (disabled) return;
     if (key === "clear") return onChange("");
     if (key === "back") return onChange(value.slice(0, -1));
+    if (key === "enter") return value.length === length && onComplete(value);
     if (value.length >= length) return;
     const next = value + key;
     onChange(next);
-    if (next.length === length) onComplete(next);
+    if (next.length === length && !terminal) onComplete(next);
   };
+  // On a computer the keyboard works too: digits, Backspace, Enter.
+  useEffect(() => {
+    if (!terminal || disabled) return;
+    const onKey = (e) => {
+      if (e.target.closest?.("input, textarea")) return;
+      if (/^[0-9]$/.test(e.key)) press(e.key);
+      else if (e.key === "Backspace") press("back");
+      else if (e.key === "Enter") press("enter");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  if (terminal)
+    return (
+      <div className="pin-pad terminal">
+        <div className="pin-dots" aria-hidden="true">
+          {Array.from({ length }, (_, i) => <span key={i} className={i < value.length ? "filled" : ""} />)}
+        </div>
+        <span className="sr-only" aria-live="polite">{value.length} nga {length} shifra</span>
+        <div className="pin-keys">
+          {TERMINAL_KEYS.map((key) =>
+            key === "clear" ? (
+              <button type="button" key={key} className="pin-clear" disabled={disabled || !value} onClick={() => press(key)}>Pastro</button>
+            ) : key === "enter" ? (
+              <button type="button" key={key} className="pin-enter" disabled={disabled || value.length < length} onClick={() => press(key)}>Hyrje</button>
+            ) : (
+              <button type="button" key={key} aria-label={`Shifra ${key}`} disabled={disabled || value.length >= length} onClick={() => press(key)}>{key}</button>
+            ),
+          )}
+        </div>
+      </div>
+    );
   return (
     <div className="pin-pad">
       <div className="pin-dots" aria-hidden="true">
