@@ -734,7 +734,7 @@ test("polling with the last revision gets a tiny 'unchanged' reply until somethi
     await t.send("category.create", { name: "Kokteje" });
     const afterCommand = await poll(revision);
     assert.ok(afterCommand.state && afterCommand.revision > revision);
-    await setWaiterPin(t.pool, 1, "739105");
+    await setWaiterPin(t.pool, 1, "593172");
     const afterPin = await poll(afterCommand.revision);
     assert.ok(afterPin.state && afterPin.revision > afterCommand.revision);
     await setWaiterPattern(t.pool, 1, [1, 5, 9, 6]);
@@ -1764,6 +1764,62 @@ test("the audit log records settings, PINs and translation fixes, never the secr
     assert.deepEqual(pin.payload, { waiterId: 1 }, "which waiter, never the PIN");
     assert.ok(pin.actor);
     assert.ok(!JSON.stringify(audit).includes("582913"));
+  } finally {
+    await t.close();
+  }
+});
+
+test("two people never share a PIN or a pattern, and a shared one never signs in the wrong person", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const pin = (id, value) => t.call("PUT", `/api/accounts/waiters/${id}/pin`, { cookie: boss, body: { pin: value } });
+    // Waiter 1 has 482913, waiter 2 has 739105 (setup).
+    assert.equal((await pin(2, "482913")).statusCode, 409, "another waiter's PIN");
+    assert.equal((await pin(2, t.manager.pin)).statusCode, 409, "the manager's PIN");
+    assert.match((await pin(2, "482913")).json().error, /përdoret tashmë/);
+    assert.equal((await pin(1, "482913")).statusCode, 200, "keeping one's own is fine");
+    // Patterns too.
+    const pattern = (id, p) => t.call("PUT", `/api/accounts/waiters/${id}/pattern`, { cookie: boss, body: { pattern: p } });
+    assert.equal((await pattern(1, [1, 2, 3, 6])).statusCode, 200);
+    assert.equal((await pattern(2, [1, 2, 3, 6])).statusCode, 409);
+    assert.equal((await pattern(2, [7, 8, 9, 6])).statusCode, 200);
+    // The manager can't take a waiter's PIN either.
+    assert.equal((await t.call("PUT", "/api/accounts/me", { cookie: boss, body: { currentPin: t.manager.pin, newPin: "739105" } })).statusCode, 409);
+
+    // A duplicate from before this rule (copied straight in the database) and PIN-only sign-in:
+    await t.pool.query("UPDATE bluebar.accounts SET secret_hash = (SELECT secret_hash FROM bluebar.accounts WHERE waiter_id = 1) WHERE waiter_id = 2");
+    await t.call("PUT", "/api/venue/login-mode", { cookie: boss, body: { loginMode: "pin_only" } });
+    const byPin = (value) => t.call("POST", "/api/auth/waiter-login", { body: { pin: value } });
+    const r = await byPin("482913");
+    assert.equal(r.statusCode, 409, "nobody signs in");
+    assert.match(r.json().error, /më shumë se një kamarieri/);
+    assert.ok(!r.headers["set-cookie"]);
+    const waiters = (await t.call("GET", "/api/state", { cookie: boss })).json().state.waiters;
+    assert.deepEqual(waiters.filter((w) => w.pinShared).map((w) => w.id), [1, 2], "the manager sees both");
+    // The manager gives waiter 2 a new PIN: each signs in as themselves, and the marks clear.
+    assert.equal((await pin(2, "739105")).statusCode, 200);
+    const one = await byPin("482913"), two = await byPin("739105");
+    assert.equal(one.statusCode, 200);
+    assert.equal(one.json().waiterId ?? one.json().user?.waiterId, 1);
+    assert.equal(two.json().waiterId ?? two.json().user?.waiterId, 2);
+    assert.deepEqual((await t.call("GET", "/api/state", { cookie: boss })).json().state.waiters.filter((w) => w.pinShared), []);
+  } finally {
+    await t.close();
+  }
+});
+
+test("two managers with one PIN: nobody signs in by PIN alone; by name each still can", async () => {
+  const t = await setup();
+  try {
+    const second = await createManager(t.pool, "assistant");
+    assert.notEqual(second.pin, t.manager.pin, "a generated PIN never repeats someone's");
+    await t.pool.query("UPDATE bluebar.accounts SET secret_hash = (SELECT secret_hash FROM bluebar.accounts WHERE username = 'boss') WHERE username = 'assistant'");
+    const r = await t.managerLogin();
+    assert.equal(r.statusCode, 409);
+    assert.match(r.json().error, /më shumë se një menaxheri/);
+    await t.pool.query("UPDATE bluebar_catalog.venues SET manager_login = 'name_pin'");
+    assert.equal((await t.managerLogin({ username: "assistant" })).statusCode, 200, "with a name there is no doubt who it is");
   } finally {
     await t.close();
   }

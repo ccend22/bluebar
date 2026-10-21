@@ -6210,3 +6210,4 @@ body.order-open { overflow: hidden; }
 @media (max-width: 640px) { .fix-row { grid-template-columns: 1fr; gap: 6px; } }
 /* A "−" a waiter may not use (already at the station): looks unavailable, still explains on tap. */
 .quantity button[aria-disabled="true"] { opacity: 0.38; cursor: not-allowed; }
+.pin-shared { color: #a3322a; font-weight: 700; }

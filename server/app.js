@@ -193,7 +193,7 @@ export function buildApp({
       const secrets = new Map(
         (
           await db.query(
-            `SELECT waiter_id, secret_hash IS NOT NULL AS pin, pattern_hash IS NOT NULL AS pattern
+            `SELECT waiter_id, secret_hash IS NOT NULL AS pin, pattern_hash IS NOT NULL AS pattern, shared_pin
              FROM bluebar.accounts WHERE role = 'waiter'`,
           )
         ).rows.map((r) => [r.waiter_id, r]),
@@ -202,6 +202,8 @@ export function buildApp({
         ...w,
         hasPin: Boolean(secrets.get(w.id)?.pin),
         hasPattern: Boolean(secrets.get(w.id)?.pattern),
+        // Found at sign-in to share its PIN with someone else: needs a new one.
+        pinShared: Boolean(secrets.get(w.id)?.shared_pin),
       }));
       return { ...data, state: { ...state, waiters }, provider };
     }

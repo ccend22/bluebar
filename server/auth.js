@@ -127,6 +127,36 @@ const reserve = async (pool, waiterId, username) =>
 const clear = (pool, id) =>
   pool.query("UPDATE bluebar.accounts SET failed_attempts = 0, locked_until = NULL WHERE id = $1", [id]);
 
+// Does this PIN (or pattern) already belong to someone else here? Hashes are salted, so the
+// only way to know is to try it against each one. A PIN is checked against every waiter and
+// manager (a waiter must never hold the manager's PIN), a pattern against every waiter.
+// ponytail: two managers setting the same new PIN at the same instant could both pass; the
+// sign-in check below still refuses the pair and marks them.
+async function taken(pool, secret, { except = null, field = "secret_hash" } = {}) {
+  const rows = (await pool.query(
+    `SELECT ${field === "pattern_hash" ? "pattern_hash" : "secret_hash"} AS h FROM bluebar.accounts
+     WHERE ${field === "pattern_hash" ? "pattern_hash" : "secret_hash"} IS NOT NULL AND id IS DISTINCT FROM $1`,
+    [except],
+  )).rows;
+  for (const r of rows) if (await verifySecret(secret, r.h)) return true;
+  return false;
+}
+const ownAccount = async (pool, waiterId) =>
+  (await pool.query("SELECT id FROM bluebar.accounts WHERE waiter_id = $1", [waiterId])).rows[0]?.id ?? null;
+const TAKEN_PIN = "Ky PIN përdoret tashmë nga dikush tjetër në lokal. Zgjidhni një PIN tjetër.";
+// The PIN alone matched more than one account: no way to know who this is, so nobody signs in.
+// Those accounts are marked (the manager sees it) and not charged a failed attempt.
+async function sharedPin(pool, ids, who) {
+  await pool.query("UPDATE bluebar.accounts SET shared_pin = true, failed_attempts = 0, locked_until = NULL WHERE id = ANY($1)", [ids]);
+  await pool.query("UPDATE bluebar.control SET revision = revision + 1 WHERE id = 1");
+  throw new AppError(
+    who === "waiter"
+      ? "Ky PIN u përket më shumë se një kamarieri, ndaj nuk dihet kush jeni. Menaxheri duhet t'i japë secilit PIN-in e vet."
+      : "Ky PIN u përket më shumë se një menaxheri. Hyni me emër dhe PIN, ose ndryshoni PIN-in te Llogaria ime.",
+    409,
+  );
+}
+
 export async function loginWaiterPattern(pool, { waiterId, pattern }) {
   const a = await reserve(pool, waiterId, null);
   const ok = await verifySecret(validPattern(pattern) ? patternSecret(pattern) : "invalid", a?.pattern_hash ?? (await decoyHash()));
@@ -136,6 +166,8 @@ export async function loginWaiterPattern(pool, { waiterId, pattern }) {
 }
 export async function setWaiterPattern(pool, waiterId, pattern) {
   if (!validPattern(pattern)) throw new AppError("Lidhni të paktën 4 pika të ndryshme.");
+  if (await taken(pool, patternSecret(pattern), { except: await ownAccount(pool, waiterId), field: "pattern_hash" }))
+    throw new AppError("Ky pattern përdoret tashmë nga një kamarier tjetër. Vizatoni një tjetër.", 409);
   const r = await pool.query(
     `INSERT INTO bluebar.accounts(role, waiter_id, pattern_hash)
      SELECT 'waiter', w.id, $2 FROM bluebar.waiters w WHERE w.id = $1
@@ -180,13 +212,13 @@ export async function loginManager(pool, { pin, username }) {
     return a.id;
   }
   const candidates = await reserveManagers(pool);
-  for (const c of candidates)
-    if (await verifySecret(pin, c.secret_hash)) {
-      await clear(pool, c.id);
-      return c.id;
-    }
+  const matches = [];
+  for (const c of candidates) if (await verifySecret(pin, c.secret_hash)) matches.push(c.id);
   if (!candidates.length) await verifySecret(pin, await decoyHash());
-  throw bad();
+  if (matches.length > 1) await sharedPin(pool, matches, "manager");
+  if (!matches.length) throw bad();
+  await clear(pool, matches[0]);
+  return matches[0];
 }
 
 // Same trick as loginManager, but scoped to waiters (pin_only login mode): every
@@ -208,21 +240,26 @@ const reserveWaitersByPin = async (pool) =>
   ).rows;
 export async function loginWaiterByPin(pool, pin) {
   const candidates = await reserveWaitersByPin(pool);
-  for (const c of candidates)
-    if (await verifySecret(pin, c.secret_hash ?? (await decoyHash()))) {
-      await clear(pool, c.id);
-      return c.id;
-    }
+  // Every account is checked, not just until the first match: two waiters with one PIN must
+  // not end up with one signed in as the other.
+  const matches = [];
+  for (const c of candidates) if (await verifySecret(pin, c.secret_hash ?? (await decoyHash()))) matches.push(c.id);
   if (!candidates.length) await verifySecret(pin, await decoyHash());
-  throw bad();
+  if (matches.length > 1) await sharedPin(pool, matches, "waiter");
+  if (!matches.length) throw bad();
+  await clear(pool, matches[0]);
+  // Every waiter was checked and only this one matched: the PIN is theirs alone now.
+  await pool.query("UPDATE bluebar.accounts SET shared_pin = false WHERE id = $1 AND shared_pin", [matches[0]]);
+  return matches[0];
 }
 
 export async function setWaiterPin(pool, waiterId, pin) {
   if (!validPin(pin)) throw new AppError("PIN-i është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.");
+  if (await taken(pool, pin, { except: await ownAccount(pool, waiterId) })) throw new AppError(TAKEN_PIN, 409);
   const r = await pool.query(
     `INSERT INTO bluebar.accounts(role, waiter_id, secret_hash)
      SELECT 'waiter', w.id, $2 FROM bluebar.waiters w WHERE w.id = $1
-     ON CONFLICT (waiter_id) DO UPDATE SET secret_hash = $2, failed_attempts = 0, locked_until = NULL
+     ON CONFLICT (waiter_id) DO UPDATE SET secret_hash = $2, shared_pin = false, failed_attempts = 0, locked_until = NULL
      RETURNING id`,
     [waiterId, await hashSecret(pin)],
   );
@@ -238,7 +275,8 @@ const genPin = () => {
 };
 // Creates or resets a manager. The generated PIN is returned once; only its hash is stored.
 export async function createManager(pool, username) {
-  const pin = genPin();
+  let pin = genPin();
+  while (await taken(pool, pin)) pin = genPin();
   const r = await pool.query(
     `INSERT INTO bluebar.accounts(role, username, secret_hash) VALUES('manager', $1, $2)
      ON CONFLICT (username) DO UPDATE SET secret_hash = $2, failed_attempts = 0, locked_until = NULL, active = true
@@ -265,9 +303,10 @@ export async function updateManagerAccount(pool, accountId, { currentPin, userna
     throw new AppError("Emri: 3–32 shkronja të vogla, numra, pikë ose vizë, pa hapësira.", 400);
   if (newPin !== undefined && !validPin(newPin))
     throw new AppError("PIN-i i ri është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.", 400);
+  if (newPin !== undefined && (await taken(pool, newPin, { except: a.id }))) throw new AppError(TAKEN_PIN, 409);
   try {
     await pool.query(
-      "UPDATE bluebar.accounts SET username = COALESCE($2, username), secret_hash = COALESCE($3, secret_hash) WHERE id = $1",
+      "UPDATE bluebar.accounts SET username = COALESCE($2, username), secret_hash = COALESCE($3, secret_hash), shared_pin = shared_pin AND $3 IS NULL WHERE id = $1",
       [a.id, username ?? null, newPin === undefined ? null : await hashSecret(newPin)],
     );
   } catch (e) {

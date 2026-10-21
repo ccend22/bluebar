@@ -114,6 +114,11 @@ export function configIssues(state, agent = null, now = Date.now()) {
   const stations = state.stations || [];
   const name = (s) => `"${s.name}"`;
 
+  // Waiters found to share a PIN: signing in with the PIN alone can't tell them apart.
+  const shared = state.waiters.filter((w) => w.active && w.pinShared);
+  if (shared.length)
+    error("Stafi", `${shared.map(name).join(", ")} kanë të njëjtin PIN. Jepini secilit një PIN të ri te Kamarierët.`);
+
   // Tills: each serves its zones; zones no till claims fall to the first one.
   if (tills.length > 1)
     for (const k of tills) {

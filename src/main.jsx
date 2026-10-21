@@ -2474,6 +2474,7 @@ function App({ user, onLogout, onUserChange }) {
                               <div>
                                 <strong>{w.name}</strong>
                                 <small>
+                                  {w.pinShared && <b className="pin-shared">PIN i njëjtë me një tjetër: vendosni një PIN të ri · </b>}
                                   {w.hasPin && w.hasPattern ? "PIN dhe pattern"
                                     : w.hasPin ? "Hyn me PIN"
                                     : w.hasPattern ? "Hyn me pattern"
