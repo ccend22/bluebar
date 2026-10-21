@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { bill, money } from "./domain.js";
+import { bill, money, tableName } from "./domain.js";
 import { Badge, DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
 
 export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, onSend, onReprintTicket, time }) {
@@ -65,7 +65,7 @@ export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, 
                 onClick={() => onSelect(t.id)}
               >
                 <div className="orders-list-item-head">
-                  <strong>Tavolina {String(t.id).padStart(2, "0")}</strong>
+                  <strong>{tableName(t)}</strong>
                   <Badge tone="green">E hapur</Badge>
                 </div>
                 <div className="orders-list-item-row">
@@ -92,8 +92,8 @@ export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, 
             <div className="orders-detail-head">
               <div className="orders-detail-title">
                 <div>
-                  <small>Tavolina</small>
-                  <h2>{String(table.id).padStart(2, "0")}</h2>
+                  <small>{table.label ? `Tavolina ${String(table.id).padStart(2, "0")}` : "Tavolina"}</small>
+                  <h2>{table.label || String(table.id).padStart(2, "0")}</h2>
                 </div>
                 <Badge tone="green">E hapur</Badge>
               </div>

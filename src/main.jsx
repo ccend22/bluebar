@@ -1,7 +1,7 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total, plural } from "./domain.js";
+import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
@@ -118,7 +118,7 @@ const time = (value) =>
 // customer's printed copy. When present, groups lines by the product's current
 // department (bar/kuzhinë/ëmbëltore/...) so staff can see who prepared what; a line
 // whose product has no department, or was deleted since, falls into "Tjetër".
-function Receipt({ invoice, venueName, waiterName, products }) {
+function Receipt({ invoice, venueName, waiterName, products, tables }) {
   // preBill: a still-open table's order, printed before payment exists — no invoice
   // number, no fiscal block, no payment method yet (see printOrder() in App).
   const preBill = invoice.preBill;
@@ -146,7 +146,7 @@ function Receipt({ invoice, venueName, waiterName, products }) {
       </p>
       <div className="receipt-meta">
         {!preBill && <span>Fatura D-{invoice.id}</span>}
-        <span>Tavolina {String(invoice.table).padStart(2, "0")}</span>
+        <span>{tableName(invoice.table, tables)}</span>
       </div>
       <p>
         {date(invoice.date)} · {time(invoice.date)}
@@ -231,7 +231,7 @@ function Receipt({ invoice, venueName, waiterName, products }) {
 // What one "Dërgo" round sent to one station: no prices, big quantities — it's a
 // work order for the bar/kitchen, not a bill. The full invoice comes at payment.
 // Exact amount, then the next 500 / 1,000 / 5,000 up — the notes a customer hands over.
-function StationTicket({ ticket, waiterName }) {
+function StationTicket({ ticket, waiterName, tables }) {
   return (
     <>
       <div className="receipt-brand">
@@ -249,7 +249,7 @@ function StationTicket({ ticket, waiterName }) {
         </span>
       </div>
       <div className="receipt-meta">
-        <span>Tavolina {String(ticket.table).padStart(2, "0")}</span>
+        <span>{tableName(ticket.table, tables)}</span>
         <span>Raundi {ticket.round}</span>
       </div>
       <p>
@@ -378,7 +378,7 @@ function App({ user, onLogout, onUserChange }) {
   // An order's messages name its table: with several tables open, "out of stock" alone
   // doesn't say where.
   const tableLabel = (payload) =>
-    payload?.tableId ? `Tavolina ${String(payload.tableId).padStart(2, "0")}: ` : "";
+    payload?.tableId ? `${tableName(payload.tableId, state.tables)}: ` : "";
   const update = async (type, payload, message) => {
     const where = type.startsWith("order.") ? tableLabel(payload) : "";
     try {
@@ -408,7 +408,7 @@ function App({ user, onLogout, onUserChange }) {
     setOrderMode("summary");
     setTimeout(() => heading.current?.focus(), 0);
   };
-  const tableFields = (t) => ({ area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats });
+  const tableFields = (t) => ({ label: t.label || "", area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats });
   const draftCount = {
     added: tablesAdded.length,
     edited: Object.keys(tableEdits).length,
@@ -1147,7 +1147,7 @@ function App({ user, onLogout, onUserChange }) {
                         />
                         {floorSelected && (
                           <div className="floor-selected-tools">
-                            <span>Tavolina {String(floorSelected).padStart(2, "0")} · {floorTables.find((t) => t.id === floorSelected)?.shape}</span>
+                            <span>{tableName(floorSelected, floorTables)} · {floorTables.find((t) => t.id === floorSelected)?.shape}</span>
                             <button onClick={() => setEditor({ id: floorSelected })}>
                               Ndrysho formën dhe vendet
                             </button>
@@ -1166,8 +1166,8 @@ function App({ user, onLogout, onUserChange }) {
                             >
                               <div className="table-admin-head">
                                 <div>
-                                  <small>Tavolina</small>
-                                  <strong>{String(t.id).padStart(2, "0")}</strong>
+                                  <small>{t.label ? `Tavolina ${String(t.id).padStart(2, "0")}` : "Tavolina"}</small>
+                                  <strong>{t.label || String(t.id).padStart(2, "0")}</strong>
                                 </div>
                                 {tableEdits[t.id] ? (
                                   <Badge tone="amber">E ndryshuar</Badge>
@@ -1373,6 +1373,16 @@ function App({ user, onLogout, onUserChange }) {
                               editing ? setEditor(null) : addDraftTable();
                             }}
                           >
+                            {editing && (
+                              <Field
+                                label="Emri (opsional)"
+                                name="label"
+                                value={values.label}
+                                onChange={(e) => change({ label: e.target.value })}
+                                placeholder={`p.sh. VIP · bosh = ${String(editing.id).padStart(2, "0")}`}
+                                maxLength={20}
+                              />
+                            )}
                             <Field
                               label="Zona"
                               name="area"
@@ -1731,7 +1741,7 @@ function App({ user, onLogout, onUserChange }) {
                                 )}
                               </td>
                               <td data-label="Tavolina">
-                                {String(i.table).padStart(2, "0")}
+                                {tableName(i.table, state.tables).replace(/^Tavolina /, "")}
                               </td>
                               <td data-label="Data / ora">
                                 {date(i.date)}
@@ -1811,7 +1821,7 @@ function App({ user, onLogout, onUserChange }) {
                       <h2>Detajet e faturës</h2>
                     </div>
                     <article className="receipt-paper">
-                      <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} products={state.products} />
+                      <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} products={state.products} tables={state.tables} />
                     </article>
                     <div className="receipt-actions">
                       {receipt.fiscalStatus === "fiskalizuar" ? (
@@ -2739,12 +2749,13 @@ function App({ user, onLogout, onUserChange }) {
             <StationTicket
               ticket={ticket}
               waiterName={state.waiters.find((w) => w.id === ticket.waiter)?.name}
+              tables={state.tables}
             />
           </article>
         ))}
       {receipt && !ticketPrint && (
         <article className="receipt print-only invoice-print">
-          <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} />
+          <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} tables={state.tables} />
         </article>
       )}
       {report && (

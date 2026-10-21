@@ -11,7 +11,7 @@ import {
   sizeFor,
   spanOf,
 } from "./floorGeometry.js";
-import { bill, money } from "./domain.js";
+import { bill, money, tableName } from "./domain.js";
 import { Icon } from "./components.jsx";
 
 // The floor tile itself should read as the same furniture shape a manager picked in
@@ -79,7 +79,7 @@ function FloorTable({ t, waiter, editing, isSelected, onSelect, onChange, onGhos
       })}
       role="button"
       tabIndex={0}
-      aria-label={`Tavolina ${t.id}, ${t.area}, ${occupied ? `e zënë${waiter ? ` nga ${waiter}` : ""}, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(bill(t).remaining)}${bill(t).paid ? ", paguar pjesërisht" : ""}` : "e lirë"}`}
+      aria-label={`${tableName(t)}, ${t.area}, ${occupied ? `e zënë${waiter ? ` nga ${waiter}` : ""}, ${itemCount} ${itemCount === 1 ? "artikull" : "artikuj"}, ${money(bill(t).remaining)}${bill(t).paid ? ", paguar pjesërisht" : ""}` : "e lirë"}`}
       aria-pressed={isSelected}
       onClick={(e) => {
         if (editing) e.stopPropagation();
@@ -89,7 +89,7 @@ function FloorTable({ t, waiter, editing, isSelected, onSelect, onChange, onGhos
     >
       <div className="fp-body" style={{ transform: `rotate(${-t.rotation}deg)` }}>
         {occupied && <span className="fp-live-dot" aria-hidden="true" />}
-        <strong>{String(t.id).padStart(2, "0")}</strong>
+        <strong className={t.label ? "fp-label" : ""}>{t.label || String(t.id).padStart(2, "0")}</strong>
         {occupied && (
           <span className="fp-info">
             {/* Whose table it is, when there's a waiter on it; otherwise how much is on it. */}

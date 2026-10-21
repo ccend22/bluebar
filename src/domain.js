@@ -3,6 +3,12 @@ export const money = (n) =>
   " Lek";
 // "1 produkt", "3 produkte": the number with the word that goes with it.
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+// A table's own name when the manager gave it one ("VIP"), else "Tavolina 03". Takes the
+// table, or its id plus the list of tables.
+export function tableName(t, tables) {
+  const row = typeof t === "object" ? t : tables?.find((x) => x.id === Number(t));
+  return row?.label || `Tavolina ${String(row?.id ?? t).padStart(2, "0")}`;
+}
 export const total = (lines) =>
   lines.reduce((sum, p) => sum + p.price * p.qty, 0);
 export function initialState() {

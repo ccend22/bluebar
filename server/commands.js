@@ -907,8 +907,14 @@ export function applyCommand(state, type, payload, actor = null) {
             state.tables.filter((t) => t.active),
             { shape: shapeValue, width: p.width ?? defaultWidth, height: p.height ?? defaultHeight, rotation: 0 },
           );
+      // Its own name (optional, short enough for the floor plan); undefined keeps the old one.
+      const label = p.label === undefined ? existing?.label || "" : p.label === null ? "" : p.label;
+      if (typeof label !== "string" || label.trim().length > 20) fail("Emri i tavolinës: deri 20 shkronja.");
+      const clash = label.trim() && state.tables.find((t) => t.id !== existing?.id && (t.label || "").toLowerCase() === label.trim().toLowerCase());
+      if (clash) fail(`Emri "${label.trim()}" e ka tashmë tavolina ${clash.id}.`);
       const row = {
         id: existing?.id || nextId(state.tables),
+        label: label.trim(),
         area,
         shape: shapeValue,
         active: existing?.active ?? true,

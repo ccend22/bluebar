@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { bill, money } from "./domain.js";
+import { bill, money, tableName } from "./domain.js";
 import { Field, Icon } from "./components.jsx";
 
 const amount = (n) => new Intl.NumberFormat("sq-AL", { maximumFractionDigits: 0 }).format(n);
@@ -47,7 +47,7 @@ export function PaymentForm({ table, initialMethod, fiscalEnabled, onCancel, onS
         </button>
       </div>
       <h2 id="payment-title">Paguaj</h2>
-      <p>Tavolina {String(table.id).padStart(2, "0")} · Zgjidhni mënyrën e pagesës</p>
+      <p>{tableName(table)} · Zgjidhni mënyrën e pagesës</p>
       <div className="payment-amount">
         <span>Për t’u paguar</span>
         {payment === "Cash" ? (

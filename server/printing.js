@@ -145,6 +145,9 @@ export async function enqueueReprint(db, kind, ref) {
   return true;
 }
 
+// A table's own name when it has one ("VIP"), else its number, as on screen.
+const tableTitle = async (db, id) =>
+  (await db.query("SELECT label FROM bluebar.dining_tables WHERE id = $1", [id])).rows[0]?.label || `Tavolina ${pad(id)}`;
 const waiterName = async (db, id) =>
   id ? (await db.query("SELECT name FROM bluebar.waiters WHERE id = $1", [id])).rows[0]?.name : null;
 
@@ -175,7 +178,7 @@ async function ticketDocument(db, id, kind) {
   return [
     { type: "title", text: (k.station_name && kind !== "moved" ? k.station_name : k.department).toUpperCase() },
     { type: "center", text: headline },
-    { type: "pair", left: `Tavolina ${pad(k.table_id)}`, right: `Raundi ${k.round}` },
+    { type: "pair", left: await tableTitle(db, k.table_id), right: `Raundi ${k.round}` },
     { type: "text", text: `${stamp(k.created_at)}${who ? ` · ${who}` : ""}` },
     ...(k.allergy ? [{ type: "big", text: `ALERGJI: ${k.allergy}` }] : []),
     ...(k.note && kindOf === "order" ? [{ type: "text", text: `Shënim: ${k.note}` }] : []),
@@ -206,7 +209,7 @@ async function invoiceDocument(db, id, venueName) {
   return [
     { type: "title", text: venueName || "BlueBar" },
     { type: "center", text: fiscal ? "FATURË E FISKALIZUAR" : "KOPJE · JO FATURË FISKALE" },
-    { type: "pair", left: `Fatura D-${i.id}`, right: `Tavolina ${pad(i.table_id)}` },
+    { type: "pair", left: `Fatura D-${i.id}`, right: await tableTitle(db, i.table_id) },
     { type: "text", text: `${stamp(i.created_at)}${who ? ` · ${who}` : ""}` },
     { type: "rule" },
     ...lines.flatMap((l) => [

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { plural } from "./domain.js";
+import { plural, tableName } from "./domain.js";
 import { createPortal } from "react-dom";
 import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo, translateMenu, fetchMenuI18n, saveMenuI18n } from "./api.js";
 import { ACCENTS } from "./menu/accents.js";
@@ -344,7 +344,7 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
     <figure className="qr-card" key={t.id}>
       <Qr text={menuUrl(t.id, keys[t.id])} />
       <figcaption>
-        <strong>Tavolina {String(t.id).padStart(2, "0")}</strong>
+        <strong>{tableName(t)}</strong>
         <span>Skanoni për menunë · Scan for the menu</span>
       </figcaption>
     </figure>
@@ -518,7 +518,7 @@ function GuestAlerts({ alerts, state, update, product }) {
     return (
       <article className="guest-order sent" key={`a${g.id}`}>
         <header>
-          <strong>Tavolina {String(g.table).padStart(2, "0")}</strong>
+          <strong>{tableName(g.table, state.tables)}</strong>
           <span>{ago(g.date)}</span>
         </header>
         <p className="guest-order-sent"><Icon name="check" size={15} /> Dërguar te repartet{owner ? ` · ${owner.name}` : ""}</p>
@@ -569,7 +569,7 @@ export function GuestOrders({ state, user, update }) {
           return (
             <article className="guest-order" key={g.id}>
               <header>
-                <strong>Tavolina {String(g.table).padStart(2, "0")}</strong>
+                <strong>{tableName(g.table, state.tables)}</strong>
                 <span>{ago(g.date)}</span>
               </header>
               <p className="guest-order-wait">Nuk kaloi vetë (p.sh. mbaroi stoku): pranojeni ose refuzojeni.</p>

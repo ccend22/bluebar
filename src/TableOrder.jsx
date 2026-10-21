@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { bill, COURSES, money, pendingUnits, posOf, shiftFor, tableShift } from "./domain.js";
+import { bill, COURSES, money, pendingUnits, posOf, shiftFor, tableName, tableShift } from "./domain.js";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { VoicePanel, useRecorder } from "./VoiceOrder.jsx";
 import { parseOrder } from "./voice.js";
@@ -337,7 +337,7 @@ export function TableOrder({
               // and the total at the foot, on a strip of receipt paper.
               <div className="order-bill">
                 <header className="order-bill-head">
-                  <strong>Tavolina {String(table.id).padStart(2, "0")}</strong>
+                  <strong>{tableName(table)}</strong>
                   <span>{table.area}{owner ? ` · ${owner.name}` : ""}</span>
                   <span>{billDate(table.occupiedSince)}</span>
                 </header>
@@ -443,11 +443,11 @@ export function TableOrder({
   );
 
   return (
-    <section className="order" aria-label={`Porosia e tavolinës ${table.id}`}>
+    <section className="order" aria-label={`Porosia: ${tableName(table)}`}>
       <div className="order-heading" ref={heading}>
         <div className="order-heading-text">
           <h2 ref={headingRef} tabIndex={-1}>
-            Tavolina {String(table.id).padStart(2, "0")}
+            {tableName(table)}
           </h2>
           <p>
             <span>{table.area}</span>
@@ -596,7 +596,7 @@ export function TableOrder({
               const data = await update(
                 "order.move",
                 { tableId: table.id, toTableId: to, merge },
-                merge ? `llogaria u bashkua me Tavolinën ${to}.` : `porosia kaloi te Tavolina ${to}.`,
+                merge ? `llogaria u bashkua me: ${tableName(to, state.tables)}.` : `porosia kaloi te: ${tableName(to, state.tables)}.`,
               );
               if (data) (setPanel(null), onClose());
             }}
@@ -671,7 +671,7 @@ function MovePanel({ state, table, here, tillName, onCancel, onMove }) {
     .filter((t) => t.active && t.id !== table.id)
     .map((t) => ({
       value: String(t.id),
-      label: `Tavolina ${String(t.id).padStart(2, "0")} · ${t.area}${t.lines.length ? " · ka porosi" : " · e lirë"}`,
+      label: `${tableName(t)} · ${t.area}${t.lines.length ? " · ka porosi" : " · e lirë"}`,
     }));
   return (
     <div className="stack-form order-panel">
@@ -679,10 +679,10 @@ function MovePanel({ state, table, here, tillName, onCancel, onMove }) {
       {target && (
         <p className="helper">
           {target.lines.length
-            ? `Tavolina ${target.id} ka porosinë e vet: dy llogaritë bashkohen në një.`
-            : `Porosia, pagesat dhe fletët e reparteve kalojnë te Tavolina ${target.id}.`}
+            ? `${tableName(target)} ka porosinë e vet: dy llogaritë bashkohen në një.`
+            : `Porosia, pagesat dhe fletët e reparteve kalojnë te: ${tableName(target)}.`}
           {otherTill &&
-            ` Tavolina ${target.id} i përket kasës "${tillName(posOf(state, target))}": llogaria do të paguhet atje.${
+            ` ${tableName(target)} i përket kasës "${tillName(posOf(state, target))}": llogaria do të paguhet atje.${
               table.payments?.length ? " Kjo llogari ka pagesa të pjesshme, prandaj nuk mund të kalojë në kasë tjetër." : ""
             }${!shiftFor(state, posOf(state, target)) ? " Ajo kasë nuk ka turn të hapur." : ""}`}
         </p>

@@ -6257,3 +6257,5 @@ body.order-open { overflow: hidden; }
   .terminal-shell { animation: onboard-fade 200ms ease both; }
   .pin-pad.terminal .pin-keys button { transition: none; transform: none; }
 }
+/* A table's own name on the floor plan: smaller than a number, cut short rather than overflowing. */
+.fp-body strong.fp-label { max-width: 100%; padding: 0 3px; font-size: 12px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

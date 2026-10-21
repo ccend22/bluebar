@@ -40,3 +40,17 @@ test("auto-arrange moves only the tables that clash, onto free cells", () => {
   assert.deepEqual(collisions(after), []);
   assert.deepEqual(cellsOf(after[0]), cellsOf(tables[0]));
 });
+
+test("a table can be renamed, back to its number, and two tables never share a name", () => {
+  let state = initialState();
+  const [a, b] = state.tables;
+  state = applyCommand(state, "table.save", { id: a.id, area: a.area, label: "  VIP " }).state;
+  assert.equal(state.tables.find((t) => t.id === a.id).label, "VIP");
+  // Saving without a label keeps it (moving a table on the plan must not drop its name).
+  state = applyCommand(state, "table.save", { id: a.id, area: a.area }).state;
+  assert.equal(state.tables.find((t) => t.id === a.id).label, "VIP");
+  assert.throws(() => applyCommand(state, "table.save", { id: b.id, area: b.area, label: "vip" }), /e ka tashmë/);
+  assert.throws(() => applyCommand(state, "table.save", { id: b.id, area: b.area, label: "x".repeat(21) }), /20 shkronja/);
+  state = applyCommand(state, "table.save", { id: a.id, area: a.area, label: "" }).state;
+  assert.equal(state.tables.find((t) => t.id === a.id).label, "");
+});

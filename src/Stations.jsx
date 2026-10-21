@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { reportStationsSeen, venueSlug } from "./api.js";
 import { DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
 import { ChoiceField } from "./ChoiceField.jsx";
-import { COURSES, printerFor } from "./domain.js";
+import { COURSES, printerFor, tableName } from "./domain.js";
 
 // What this device shows and prints is a property of the device (the bar's Mac has
 // the bar printer), not of the business — so it lives in localStorage.
@@ -135,7 +135,7 @@ export function Stations({ state, device, update, onPrint, time, tillOf }) {
     .filter((k) => open(k) && (current === "all" || keyOf(k) === current || k.transferTo === current))
     .sort((a, b) => a.date.localeCompare(b.date));
   const count = (key) => tickets.filter((k) => open(k) && keyOf(k) === key).length;
-  const done = (k) => update("ticket.done", { id: k.id }, k.void ? "Anulimi u pa." : `Tavolina ${k.table}: gati.`);
+  const done = (k) => update("ticket.done", { id: k.id }, k.void ? "Anulimi u pa." : `${tableName(k.table, state.tables)}: gati.`);
 
   return (
     <div className="management-layout">
@@ -178,7 +178,7 @@ export function Stations({ state, device, update, onPrint, time, tillOf }) {
                       : tills.length > 0 && here === "all" && (
                           <small className="station-till">{tills.find((t) => t.id === tillOf(k))?.name}</small>
                         )}
-                    <strong>Tavolina {String(k.table).padStart(2, "0")}</strong>
+                    <strong>{tableName(k.table, state.tables)}</strong>
                     <span>Raundi {k.round}</span>
                   </header>
                   <p className="station-meta">

@@ -51,6 +51,7 @@ export async function loadState(client) {
     .sort((a, b) => a.id - b.id)
     .map((t) => ({
       id: t.id,
+      label: t.label || "",
       area: t.area,
       shape: t.shape,
       active: t.active,
@@ -343,20 +344,20 @@ export async function persist(client, previous, next) {
       t.id, t.area, t.shape || null, t.active, t.waiter || null,
       t.posX, t.posY, t.width, t.height, t.rotation, t.seats, t.occupiedSince || null,
       t.guests || null, t.discount ? JSON.stringify(t.discount) : null,
-      t.note || "", t.allergy || "", t.course || 1,
+      t.note || "", t.allergy || "", t.course || 1, t.label || "",
     ];
     if (previous.tables.some((x) => x.id === t.id))
       await client.query(
         `UPDATE bluebar.dining_tables SET area=$2,shape=$3,active=$4,waiter_id=$5,
            pos_x=$6,pos_y=$7,width=$8,height=$9,rotation=$10,seats=$11,occupied_since=$12,guests=$13,discount=$14,
-           note=$15,allergy=$16,course=$17
+           note=$15,allergy=$16,course=$17,label=$18
          WHERE id=$1`,
         layout,
       );
     else
       await client.query(
-        `INSERT INTO bluebar.dining_tables(id,area,shape,active,waiter_id,pos_x,pos_y,width,height,rotation,seats,occupied_since,guests,discount,note,allergy,course)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        `INSERT INTO bluebar.dining_tables(id,area,shape,active,waiter_id,pos_x,pos_y,width,height,rotation,seats,occupied_since,guests,discount,note,allergy,course,label)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
         layout,
       );
     await client.query("DELETE FROM bluebar.order_lines WHERE table_id=$1", [
@@ -510,7 +511,7 @@ async function readOrderTable(client, tableId) {
     await client.query(
       `SELECT t.id, t.area, t.shape, t.active, t.waiter_id,
         t.pos_x, t.pos_y, t.width, t.height, t.rotation, t.seats, t.occupied_since, t.guests, t.discount,
-        t.note, t.allergy, t.course,
+        t.note, t.allergy, t.course, t.label,
         COALESCE(
           jsonb_agg(jsonb_build_object(
             'key', l.line_key, 'id', l.product_id, 'name', l.name, 'price', l.price, 'qty', l.qty, 'sent', l.sent,
@@ -532,6 +533,7 @@ async function readOrderTable(client, tableId) {
   if (!row) throw new AppError("Tavolina nuk ekziston.");
   return {
     id: row.id,
+    label: row.label || "",
     area: row.area,
     shape: row.shape,
     active: row.active,
