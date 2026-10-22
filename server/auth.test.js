@@ -1824,3 +1824,30 @@ test("two managers with one PIN: nobody signs in by PIN alone; by name each stil
     await t.close();
   }
 });
+
+test("LuxHotel: sign up links the new business; sign in opens it as its manager", async () => {
+  // Stand-in for Firebase: "token-<uid>" proves that uid.
+  const luxhotel = async (token) => {
+    if (!/^token-/.test(token)) throw Object.assign(new Error("Hyrja me LuxHotel nuk u pranua."), { statusCode: 401 });
+    return { uid: token.slice(6) };
+  };
+  const t = await setup({ luxhotel });
+  try {
+    const unknown = await t.call("POST", "/api/luxhotel/login", { body: { token: "token-hotel-1" } });
+    assert.equal(unknown.statusCode, 404);
+    const created = await t.call("POST", "/api/venues/register", { body: { slug: "hotel-bar", name: "Hotel Bar", pin: "482917", luxhotelToken: "token-hotel-1" } });
+    assert.equal(created.statusCode, 201);
+    // One business per LuxHotel account.
+    const again = await t.call("POST", "/api/venues/register", { body: { slug: "hotel-bar-2", name: "Hotel Bar 2", pin: "482917", luxhotelToken: "token-hotel-1" } });
+    assert.equal(again.statusCode, 409);
+    assert.match(again.json().error, /LuxHotel/);
+    const signedIn = await t.call("POST", "/api/luxhotel/login", { body: { token: "token-hotel-1" } });
+    assert.equal(signedIn.statusCode, 200);
+    assert.equal(signedIn.json().role, "manager");
+    assert.equal(signedIn.json().venue.slug, "hotel-bar");
+    assert.ok(signedIn.headers["set-cookie"]);
+    assert.notEqual((await t.call("POST", "/api/luxhotel/login", { body: { token: "forged" } })).statusCode, 200);
+  } finally {
+    await t.close();
+  }
+});

@@ -146,3 +146,39 @@ test("a product taken off the menu for now can't be ordered; its stock and histo
     await db.close();
   }
 });
+
+test("the manager corrects a closed bill: items, discount, payment and waiter, with stock and drawer following", async () => {
+  const { db, pool, run } = await venue();
+  try {
+    await run("waiter.create", { name: "Beni" });
+    await run("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    await run("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    await run("order.pay", { tableId: 1, method: "Cash", received: 200 });
+    let state = (await readSnapshot(pool)).state;
+    const key = state.invoices[0].lines[0].key;
+    assert.equal(state.products[0].stock, 8);
+    await assert.rejects(run("invoice.edit", { invoiceId: 1, reason: "x", waiterId: 2 }), /arsyen/);
+    await assert.rejects(run("invoice.edit", { invoiceId: 1, reason: "Asgjë" }), /asgjë për të ndryshuar/);
+    // One espresso was never served; it was paid by card; Beni served it; 10% off.
+    await run("invoice.edit", {
+      invoiceId: 1, reason: "Gabim në arkë", waiterId: 2,
+      lines: [{ key, qty: 1 }], payment: { method: "Kartë" }, discount: { kind: "percent", value: 10 },
+    });
+    state = (await readSnapshot(pool)).state;
+    const i = state.invoices[0];
+    assert.deepEqual([i.total, i.method, i.cash, i.card, i.waiter, i.discount, i.lines[0].qty], [90, "Kartë", 0, 90, 2, 10, 1]);
+    assert.equal(state.products[0].stock, 9, "the unserved espresso is back in stock");
+    // A new item at today's price; a mixed payment says how much was cash.
+    await run("invoice.edit", { invoiceId: 1, reason: "Shtova një", lines: [{ key, qty: 1 }, { id: 1, qty: 1 }], discount: null, payment: { method: "Përzier", cash: 50 } });
+    state = (await readSnapshot(pool)).state;
+    assert.deepEqual([state.invoices[0].total, state.invoices[0].cash, state.invoices[0].card, state.invoices[0].lines.length], [200, 50, 150, 2]);
+    assert.equal(state.products[0].stock, 8);
+    // Once the shift is closed only the waiter can change; money goes through a refund.
+    await run("shift.close", { counted: 1050 });
+    await assert.rejects(run("invoice.edit", { invoiceId: 1, reason: "Vonë", payment: { method: "Cash" } }), /mbyllur/);
+    await run("invoice.edit", { invoiceId: 1, reason: "Kamarieri", waiterId: 1 });
+    assert.equal((await readSnapshot(pool)).state.invoices[0].waiter, 1);
+  } finally {
+    await db.close();
+  }
+});

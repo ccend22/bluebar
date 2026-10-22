@@ -155,6 +155,11 @@ test("print agent: each department's ticket reaches its own network printer; the
     assert.equal(await runOnce(agent), 2);
     assert.ok(has(kitchen.jobs.at(-1), "PROVË PRINTIMI"));
     assert.equal(cashier.jobs.length, 2);
+
+    // A waiter's "Printo para-faturën" on an open table: straight to the cashier's printer.
+    assert.deepEqual(await (await call("POST", "/api/print/reprint", { cookie: ana, body: { kind: "bill", id: "2" } })).json(), { queued: true });
+    assert.equal(await runOnce(agent), 1);
+    assert.ok(has(cashier.jobs[2], "PARA-FATUR") && has(cashier.jobs[2], "1 x Ujë") && has(cashier.jobs[2], "200 Lek"));
   } finally {
     await app.close();
     await Promise.all([bar, kitchen, cashier].map((p) => p.close()));

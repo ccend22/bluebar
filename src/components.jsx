@@ -225,29 +225,27 @@ export function Field({ label, children, ...props }) {
   );
 }
 const PIN_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"];
-// variant "terminal" (staff sign-in): the POS terminal look, with "Pastro" and "Hyrje" in
-// the bottom row; the PIN goes when "Hyrje" is pressed (or Enter), not by itself at the last digit.
-const TERMINAL_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "enter"];
+// variant "terminal" (staff sign-in): the POS terminal look, "Pastro" and ⌫ in the bottom
+// row. Like every PIN pad, it signs in by itself at the last digit: no button to confirm.
+const TERMINAL_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"];
 export function PinPad({ value, onChange, onComplete, length = 6, disabled, variant }) {
   const terminal = variant === "terminal";
   const press = (key) => {
     if (disabled) return;
     if (key === "clear") return onChange("");
     if (key === "back") return onChange(value.slice(0, -1));
-    if (key === "enter") return value.length === length && onComplete(value);
     if (value.length >= length) return;
     const next = value + key;
     onChange(next);
-    if (next.length === length && !terminal) onComplete(next);
+    if (next.length === length) onComplete(next);
   };
-  // On a computer the keyboard works too: digits, Backspace, Enter.
+  // On a computer the keyboard works too: digits and Backspace.
   useEffect(() => {
     if (!terminal || disabled) return;
     const onKey = (e) => {
       if (e.target.closest?.("input, textarea")) return;
       if (/^[0-9]$/.test(e.key)) press(e.key);
       else if (e.key === "Backspace") press("back");
-      else if (e.key === "Enter") press("enter");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -263,8 +261,8 @@ export function PinPad({ value, onChange, onComplete, length = 6, disabled, vari
           {TERMINAL_KEYS.map((key) =>
             key === "clear" ? (
               <button type="button" key={key} className="pin-clear" disabled={disabled || !value} onClick={() => press(key)}>Pastro</button>
-            ) : key === "enter" ? (
-              <button type="button" key={key} className="pin-enter" disabled={disabled || value.length < length} onClick={() => press(key)}>Hyrje</button>
+            ) : key === "back" ? (
+              <button type="button" key={key} className="pin-back" aria-label="Fshi shifrën e fundit" disabled={disabled || !value} onClick={() => press(key)}><Icon name="back" size={22} /></button>
             ) : (
               <button type="button" key={key} aria-label={`Shifra ${key}`} disabled={disabled || value.length >= length} onClick={() => press(key)}>{key}</button>
             ),

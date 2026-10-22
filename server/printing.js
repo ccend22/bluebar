@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { shiftReport } from "./shiftReport.js";
+import { bill } from "../src/domain.js";
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 // The API runs in UTC; slips are read by staff in Tirana.
@@ -104,7 +105,19 @@ export async function enqueueTest(db, printerId) {
 // client to fall back to the browser's print dialog.
 export async function enqueueReprint(db, kind, ref) {
   let printer;
-  if (kind === "invoice" || kind === "shift") {
+  if (kind === "bill") {
+    // An open table's pre-bill: the receipt printer of the till its area belongs to.
+    printer = (
+      await db.query(
+        `SELECT p.id FROM bluebar.printers p
+         WHERE p.receipts AND (p.pos_id IS NULL OR p.pos_id = (
+           SELECT ps.id FROM bluebar.points_of_sale ps, bluebar.dining_tables t WHERE t.id = $1
+           ORDER BY (t.area = ANY(ps.areas)) DESC NULLS LAST, ps.id LIMIT 1))
+         ORDER BY p.pos_id IS NULL LIMIT 1`,
+        [Number(ref)],
+      )
+    ).rows[0];
+  } else if (kind === "invoice" || kind === "shift") {
     // The till's own receipt printer, else one not tied to any till.
     const id = Number(ref);
     const shiftId = !Number.isSafeInteger(id)
@@ -233,6 +246,30 @@ async function invoiceDocument(db, id, venueName) {
     { type: "center", text: "Faleminderit për vizitën!" },
   ];
 }
+// The pre-bill as the table stands when it prints: comps and discount off, part payments shown.
+async function billDocument(db, tableId, venueName) {
+  const t = (await db.query("SELECT * FROM bluebar.dining_tables WHERE id = $1", [Number(tableId)])).rows[0];
+  const lines = (await db.query("SELECT * FROM bluebar.order_lines WHERE table_id = $1 ORDER BY product_id, line_key", [Number(tableId)])).rows;
+  if (!t || !lines.length) return null;
+  const paid = (await db.query("SELECT COALESCE(sum(amount), 0) AS n FROM bluebar.order_payments WHERE table_id = $1", [t.id])).rows[0].n;
+  const b = bill({ lines, discount: t.discount, payments: [{ amount: Number(paid) }] });
+  const who = await waiterName(db, t.waiter_id);
+  return [
+    { type: "title", text: venueName || "BlueBar" },
+    { type: "center", text: "PARA-FATURË · JO PËR PAGESË" },
+    { type: "pair", left: await tableTitle(db, t.id), right: stamp(new Date()) },
+    ...(who ? [{ type: "text", text: who }] : []),
+    { type: "rule" },
+    ...lines.flatMap((l) => [
+      { type: "pair", left: `${l.qty} x ${[l.name, ...(l.extras || []).map((x) => x.name)].join(" + ")}`, right: lek(l.qty * l.price) },
+      ...(l.comp ? [{ type: "pair", left: `  qerasje ${l.comp} x`, right: `-${lek(l.comp * l.price)}` }] : []),
+    ]),
+    { type: "rule" },
+    ...(b.discount ? [{ type: "pair", left: `Ulje${t.discount?.reason ? ` (${t.discount.reason})` : ""}`, right: `-${lek(b.discount)}` }] : []),
+    { type: "total", left: "TOTALI", right: lek(b.due) },
+    ...(b.paid ? [{ type: "pair", left: "Paguar", right: lek(b.paid) }, { type: "pair", left: "Mbetet", right: lek(b.remaining) }] : []),
+  ];
+}
 async function shiftDocument(db, id, venueName) {
   const r = await shiftReport(db, Number(id));
   if (!r) return null;
@@ -325,6 +362,8 @@ export async function pendingJobs(db, venueName, usbPrinters = null) {
           ? await testDocument(db, j.ref)
           : j.kind === "shift"
             ? await shiftDocument(db, j.ref, venueName)
+          : j.kind === "bill"
+            ? await billDocument(db, j.ref, venueName)
           : await ticketDocument(db, j.ref, j.kind);
     if (!document) {
       // The ticket was finished and cleared before the agent got to it: nothing to print.

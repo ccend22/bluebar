@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createPrintPairing, fetchPrintStatus, testPrinter } from "./api.js";
+import { createPrintPairing, fetchPrintStatus, testPrinter, venueSlug } from "./api.js";
 import { Badge, DepartmentTag, Field, Icon, SectionHeading } from "./components.jsx";
 import { ChoiceField } from "./ChoiceField.jsx";
 
@@ -207,6 +207,7 @@ export function NetworkPrinters({ state, update, notify }) {
         )}
       </section>
       <PrintComputer status={status} notify={notify} />
+      <SilentPrinting notify={notify} />
     </>
   );
 }
@@ -324,6 +325,87 @@ function PrintComputer({ status, notify }) {
           </button>
         </>
       )}
+    </section>
+  );
+}
+
+// A "BlueBar" icon on the desktop that opens BlueBar as its own window with Chrome's
+// --kiosk-printing: every print goes straight to the computer's default printer, no
+// print window. Its own Chrome profile, so the flag holds even with Chrome already open.
+// Nothing runs in the background and nothing is paired: just a shortcut.
+function SilentPrinting({ notify }) {
+  const [system, setSystem] = useState(thisSystem);
+  const app = `${window.location.origin}/?business=${encodeURIComponent(venueSlug)}`;
+  const mac = `osacompile -o "$HOME/Desktop/BlueBar.app" -e 'do shell script "open -na \\"Google Chrome\\" --args --kiosk-printing --user-data-dir=$HOME/.bluebar-chrome --app=${app}"' && echo "Gati! Hapni BlueBar nga Desktop."`;
+  const linux = `printf '[Desktop Entry]\\nType=Application\\nName=BlueBar\\nExec=google-chrome --kiosk-printing --user-data-dir=%s/.bluebar-chrome --app=${app}\\n' "$HOME" > "$HOME/Desktop/BlueBar.desktop" && chmod +x "$HOME/Desktop/BlueBar.desktop" && echo "Gati!"`;
+  const windows = [
+    `$c = @("$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe", "\${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe", "$env:LOCALAPPDATA\\Google\\Chrome\\Application\\chrome.exe", "\${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1`,
+    `if (-not $c) { Write-Host "Nuk u gjet Chrome ose Edge."; exit 1 }`,
+    `$s = (New-Object -ComObject WScript.Shell).CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\\BlueBar.lnk")`,
+    `$s.TargetPath = $c`,
+    `$s.Arguments = "--kiosk-printing --user-data-dir=\`"$env:LOCALAPPDATA\\BlueBar\\Chrome\`" --app=${app}"`,
+    `$s.Save()`,
+    `Write-Host "Gati! Hapni BlueBar nga Desktop."`,
+  ].join("; ");
+  const line = system === "mac" ? mac : system === "linux" ? linux : windows;
+  const copy = () => navigator.clipboard?.writeText(line).then(() => notify("U kopjua."));
+  // Windows: a file to double-click. PowerShell takes the script base64-encoded (UTF-16LE),
+  // so no quoting survives cmd's own rules.
+  const download = () => {
+    const bytes = new Uint8Array(windows.length * 2);
+    for (let i = 0; i < windows.length; i++) (bytes[i * 2] = windows.charCodeAt(i) & 255), (bytes[i * 2 + 1] = windows.charCodeAt(i) >> 8);
+    let bin = "";
+    bytes.forEach((b) => (bin += String.fromCharCode(b)));
+    const cmd = `@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${btoa(bin)}\r\npause\r\n`;
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([cmd], { type: "application/octet-stream" })), download: "BlueBar ne Desktop.cmd" });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  return (
+    <section className="panel">
+      <SectionHeading
+        title="Printim pa dritare"
+        description="Një ikonë BlueBar në desktop: faturat dhe fletët dalin direkt te printeri i kompjuterit, pa dritaren e printimit."
+      />
+      <div className="pair-setup">
+        <div className="tabs" aria-label="Sistemi i kompjuterit">
+          {SYSTEMS.map(([id, label]) => (
+            <button key={id} aria-pressed={system === id} onClick={() => setSystem(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <ol className="pair-steps">
+          <li>Vendosni printerin e faturave si <strong>printer kryesor (default)</strong> të kompjuterit.</li>
+          {system === "windows" ? (
+            <li>
+              Shkarkoni dhe hapni skedarin (nëse Windows pyet, <strong>Run / Ekzekuto</strong>):
+              <button className="button-link primary-link" onClick={download}>
+                <Icon name="print" size={16} /> Shkarko ikonën BlueBar
+              </button>
+            </li>
+          ) : (
+            <li>
+              Hapni <strong>Terminal</strong>, ngjitni këtë rresht dhe shtypni Enter:
+              <span className="pair-line">
+                <code>{line}</code>
+                <button onClick={copy}>Kopjo</button>
+              </span>
+            </li>
+          )}
+          <li>Hapni BlueBar gjithmonë nga ikona e re në desktop. Herën e parë hyni një herë me PIN.</li>
+        </ol>
+        {system === "windows" && (
+          <details className="pair-alt">
+            <summary>Ose me PowerShell</summary>
+            <span className="pair-line">
+              <code>{line}</code>
+              <button onClick={copy}>Kopjo</button>
+            </span>
+          </details>
+        )}
+        <p className="helper">Kërkon Google Chrome (në Windows edhe Edge). Nëse kompjuteri ka “BlueBar Print” të lidhur, ai ka përparësi për printerët e rrjetit.</p>
+      </div>
     </section>
   );
 }

@@ -393,6 +393,24 @@ export async function persist(client, previous, next) {
         [i.id, l.key || `p${l.id}`, l.id, l.name, l.price, l.qty, l.comp || 0, JSON.stringify(l.extras || [])],
       );
   }
+  // A manager's correction (invoice.edit) of a bill already closed. Never a fiscalized one:
+  // that is with the tax office as it was.
+  for (const i of next.invoices) {
+    const before = previous.invoices.find((x) => x.id === i.id);
+    if (!before || !changed({ ...before, refunds: 0 }, { ...i, refunds: 0 })) continue;
+    const updated = await client.query(
+      `UPDATE bluebar.invoices SET waiter_id=$2,total=$3,method=$4,subtotal=$5,comps=$6,discount=$7,discount_reason=$8,
+         cash_amount=$9,card_amount=$10 WHERE id=$1 AND fiscal_status <> 'fiskalizuar'`,
+      [i.id, i.waiter, i.total, i.method, i.subtotal, i.comps || 0, i.discount || 0, i.discountReason || null, i.cash, i.card],
+    );
+    if (!updated.rowCount) continue;
+    await client.query("DELETE FROM bluebar.invoice_lines WHERE invoice_id=$1", [i.id]);
+    for (const l of i.lines)
+      await client.query(
+        "INSERT INTO bluebar.invoice_lines(invoice_id,line_key,product_id,name,price,qty,comp,extras) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        [i.id, l.key || `p${l.id}`, l.id, l.name, l.price, l.qty, l.comp || 0, JSON.stringify(l.extras || [])],
+      );
+  }
   for (const k of previous.tickets.filter((k) => !next.tickets.some((x) => x.id === k.id)))
     await client.query("DELETE FROM bluebar.station_tickets WHERE id=$1", [k.id]);
   for (const k of next.tickets.filter((k) =>

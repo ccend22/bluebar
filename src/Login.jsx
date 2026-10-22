@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchLoginWaiters, loginWaiter, loginWaiterPattern, loginManager, venueSlug, fetchVenue, registerVenue, openBusiness } from "./api.js";
+import { fetchLoginWaiters, loginWaiter, loginWaiterPattern, loginManager, venueSlug, fetchVenue, registerVenue, openBusiness, luxhotelLogin } from "./api.js";
+import { LuxHotelButton } from "./LuxHotel.jsx";
+
+// "Hyr me LuxHotel": the LuxHotel account's business opens with its manager signed in.
+const luxhotelSignIn = async (token) => openBusiness((await luxhotelLogin(token)).venue.slug);
 import { PinPad, Icon } from "./components.jsx";
 import { PatternPad } from "./PatternPad.jsx";
 
@@ -148,6 +152,16 @@ function PinLogin({ onSignedIn }) {
           </>
         )}
         {busy && <p className="onboard-note" role="status">Po hyhet…</p>}
+        {mode === "manager" && (
+          <div className="lux-actions">
+            <div className="lux-or" aria-hidden="true"><span>ose</span></div>
+            <LuxHotelButton label="Hyr me LuxHotel" onToken={async (token) => {
+              try { await luxhotelSignIn(token); } catch (e) {
+                throw e.status === 404 ? new Error("Kjo llogari LuxHotel nuk është e lidhur me asnjë biznes BlueBar.") : e;
+              }
+            }} />
+          </div>
+        )}
       </div>
       </section>
     </main>
@@ -173,6 +187,7 @@ export function Login({ onSignedIn }) {
   const [firstPin, setFirstPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [luxhotelToken, setLuxhotelToken] = useState("");
   const website = useRef("");
   if (new URLSearchParams(window.location.search).has("business"))
     return <PinLogin onSignedIn={onSignedIn} />;
@@ -193,7 +208,7 @@ export function Login({ onSignedIn }) {
     }
     setBusy(true);
     try {
-      await registerVenue({ slug, name: name.trim(), pin: confirmed, website: website.current });
+      await registerVenue({ slug, name: name.trim(), pin: confirmed, website: website.current, ...(luxhotelToken && { luxhotelToken }) });
       go("ready");
     } catch (err) {
       setPin("");
@@ -216,9 +231,27 @@ export function Login({ onSignedIn }) {
         <li><Icon name="receipt" size={22} /><span><strong>Pagesa dhe fatura</strong>Cash, kartë dhe fiskalizim, pa letra.</span></li>
         <li><Icon name="chart" size={22} /><span><strong>Raporte të qarta</strong>Shitjet, arka dhe stoku i çdo turni.</span></li>
       </ul>
-      <div className="onboard-actions">
+      {/* Two ways in, same weight and width; starting a business is the quieter line below. */}
+      <div className="onboard-actions welcome-actions">
         <button className="onboard-primary" onClick={() => go("open")}>Hyr në lokal</button>
-        <button className="onboard-link" onClick={() => go("name")}>Krijo një biznes të ri</button>
+        <LuxHotelButton label="Hyr me LuxHotel" onToken={async (token) => {
+          try { await luxhotelSignIn(token); } catch (e) {
+            throw e.status === 404 ? new Error("Kjo llogari LuxHotel nuk ka ende biznes në BlueBar. Zgjidhni \"Regjistrohu me LuxHotel\".") : e;
+          }
+        }} />
+      </div>
+      <div className="welcome-new">
+        <span>Biznes i ri?</span>
+        <button className="onboard-link" onClick={() => go("name")}>Krijo një biznes</button>
+        <span aria-hidden="true">·</span>
+        {/* Already has a business: just open it. Otherwise the usual steps, linked to LuxHotel. */}
+        <LuxHotelButton variant="link" label="Regjistrohu me LuxHotel" onToken={async (token) => {
+          try { await luxhotelSignIn(token); } catch (e) {
+            if (e.status !== 404) throw e;
+            setLuxhotelToken(token);
+            go("name");
+          }
+        }} />
       </div>
     </>;
   else if (step === "open")
@@ -231,7 +264,7 @@ export function Login({ onSignedIn }) {
   else if (step === "name")
     content = <form onSubmit={(e) => { e.preventDefault(); if (!slugEdited) setSlug(toSlug(name)); go("slug"); }}>
       <h1>Si quhet lokali juaj?</h1>
-      <p className="onboard-lede">Emri shfaqet në hyrje dhe në fatura.</p>
+      <p className="onboard-lede">{luxhotelToken ? "I lidhur me LuxHotel: herës tjetër hyni me një prekje. " : ""}Emri shfaqet në hyrje dhe në fatura.</p>
       <input className="onboard-input" aria-label="Emri i biznesit" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={80} autoComplete="organization" autoFocus placeholder="Bar Aurora" />
       <div className="onboard-actions"><button className="onboard-primary">Vazhdo</button></div>
     </form>;

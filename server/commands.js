@@ -860,6 +860,104 @@ export function applyCommand(state, type, payload, actor = null) {
       next = log(next, to.id, "move", `${what} nga Tavolina ${from.id} (${bill(from).due} Lek)`);
       break;
     }
+    case "invoice.edit": {
+      // The manager corrects a closed bill: whose it was, how it was paid, what was on it,
+      // its discount. Money (items, discount, payment) only while its shift is still open:
+      // a counted drawer is never rewritten; after that it's a refund. A fiscalized invoice
+      // is already with the tax office and one with a refund has paid money back: neither
+      // changes here.
+      integer(p.invoiceId);
+      const invoice = state.invoices.find((i) => i.id === p.invoiceId);
+      if (!invoice) fail("Fatura nuk ekziston.");
+      if (invoice.fiscalStatus === "fiskalizuar") fail("Fatura është fiskalizuar dhe nuk ndryshohet. Për të kthyer para përdorni rimbursimin.");
+      if (invoice.refunds?.length) fail("Kjo faturë ka rimbursim dhe nuk ndryshohet më.");
+      const reason = name(p.reason, 200);
+      if (reason.length < 3) fail("Shkruani arsyen e ndryshimit.");
+      let edited = { ...invoice };
+      const changes = [];
+      if (p.waiterId !== undefined && p.waiterId !== invoice.waiter) {
+        integer(p.waiterId);
+        const w = state.waiters.find((x) => x.id === p.waiterId);
+        if (!w) fail("Zgjidhni një kamarier.");
+        edited.waiter = w.id;
+        changes.push(`kamarieri: ${w.name}`);
+      }
+      let products = state.products, movements = state.movements;
+      if (p.lines !== undefined || p.discount !== undefined || p.payment !== undefined) {
+        const shift = state.openShifts.find((x) => x.id === invoice.shiftId);
+        if (!shift) fail("Turni i kësaj fature është mbyllur: mund të ndryshoni vetëm kamarierin. Për para, përdorni rimbursimin.");
+        // Items: an existing line (by key) keeps the price it was sold at; a new one is
+        // added at today's price.
+        let lines = invoice.lines;
+        if (p.lines !== undefined) {
+          if (!Array.isArray(p.lines) || !p.lines.length || p.lines.length > 200) fail("Fatura duhet të ketë të paktën një artikull.");
+          const keys = new Set(invoice.lines.map((l) => l.key));
+          lines = p.lines.map((x) => {
+            const qty = integer(x.qty, 1, 999);
+            if (x.key !== undefined) {
+              const old = invoice.lines.find((l) => l.key === x.key);
+              if (!old) fail("Artikulli nuk është në faturë.");
+              return { ...old, qty, comp: Math.min(old.comp || 0, qty) };
+            }
+            integer(x.id);
+            const product = state.products.find((pr) => pr.id === x.id);
+            if (!product) fail("Produkti nuk ekziston.");
+            let key = `p${product.id}`;
+            for (let n = 2; keys.has(key); n++) key = `p${product.id}-${n}`;
+            keys.add(key);
+            return { key, id: product.id, name: product.name, price: product.price, qty, comp: 0, extras: [] };
+          });
+          if (new Set(lines.map((l) => l.key)).size !== lines.length) fail("Një artikull është dy herë në faturë.");
+          if (JSON.stringify(lines) !== JSON.stringify(invoice.lines)) changes.push("artikujt");
+        }
+        // Discount: as it was (its amount), removed (null), or new {kind, value}.
+        let discount = invoice.discount ? { kind: "amount", value: invoice.discount } : null;
+        let discountReason = invoice.discountReason || null;
+        if (p.discount !== undefined) {
+          if (p.discount === null) discount = null;
+          else {
+            if (!["percent", "amount"].includes(p.discount?.kind)) fail("Zbritja është e pavlefshme.");
+            discount = { kind: p.discount.kind, value: integer(p.discount.value, 1, p.discount.kind === "percent" ? 100 : 100000000) };
+            discountReason = reason;
+          }
+        }
+        const b = bill({ lines, discount });
+        if (b.discount !== invoice.discount) changes.push(b.discount ? `zbritja: ${b.discount} Lek` : "pa zbritje");
+        // Payment: as before for a single method; a mixed bill says how much was cash.
+        const how = p.payment?.method ?? invoice.method;
+        if (!["Cash", "Kartë", "Përzier"].includes(how)) fail("Zgjidhni mënyrën e pagesës.");
+        let cash = how === "Cash" ? b.due : how === "Kartë" ? 0 : null;
+        if (cash === null) {
+          if (p.payment?.cash === undefined && b.due === invoice.total) cash = invoice.cash;
+          else if (p.payment?.cash === undefined) fail("Fatura u pagua cash dhe kartë: shkruani sa u pagua cash.");
+          else cash = integer(p.payment.cash, 1, Math.max(1, b.due - 1));
+        }
+        const card = b.due - cash;
+        const method = b.due === 0 ? "Cash" : !card ? "Cash" : !cash ? "Kartë" : "Përzier";
+        if (method !== invoice.method || cash !== invoice.cash) changes.push(`pagesa: ${method === "Përzier" ? `${cash} cash + ${card} kartë` : method}`);
+        // Cash given back to the guest comes out of this shift's drawer.
+        if (cash < invoice.cash && invoice.cash - cash > drawer(state, shift).expected) fail("Në arkë nuk ka aq cash sa duhet kthyer.");
+        // Stock follows the items: more sold takes stock, fewer puts it back.
+        const sold = (ls, id) => ls.filter((l) => l.id === id).reduce((n, l) => n + l.qty, 0);
+        for (const pr of state.products) {
+          if (pr.trackStock === false) continue;
+          const more = sold(lines, pr.id) - sold(invoice.lines, pr.id);
+          if (more > pr.stock) fail(`Stok i pamjaftueshëm për ${pr.name}.`);
+          if (!more) continue;
+          products = products.map((x) => (x.id === pr.id ? { ...x, stock: x.stock - more } : x));
+          movements = [...movements, { product: pr.name, qty: -more, reason: `Ndryshim D-${invoice.id}`, kind: "sale", actor: actor?.name || null, date: now }];
+        }
+        if (b.due !== invoice.total) changes.push(`totali: ${invoice.total} → ${b.due} Lek`);
+        edited = {
+          ...edited, lines, subtotal: b.subtotal, comps: b.comps, discount: b.discount,
+          discountReason: b.discount ? discountReason : null, total: b.due, method, cash, card,
+        };
+      }
+      if (!changes.length) fail("Nuk ka asgjë për të ndryshuar.");
+      next = { ...state, invoices: state.invoices.map((i) => (i.id === invoice.id ? edited : i)), products, movements };
+      result = { invoiceId: invoice.id, changes };
+      break;
+    }
     case "invoice.refund": {
       // Money back on a paid invoice: manager, reason, never more than it took. A cash
       // refund comes out of the drawer of its till's open shift. Stock isn't put back.

@@ -44,3 +44,6 @@ ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS menu_enabled boolean
 -- table's QR code so an order can only come from someone holding that table's code.
 ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS menu_ordering boolean NOT NULL DEFAULT false;
 ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS menu_secret text;
+-- The LuxHotel account (Firebase uid of the LuxHotel PMS) whose owner signs in as this
+-- business's manager with "Hyr me LuxHotel". One business per LuxHotel account.
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS luxhotel_uid text UNIQUE;

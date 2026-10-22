@@ -54,6 +54,7 @@ export const setWaiterPattern = (id, pattern) => send("PUT", `/accounts/waiters/
 
 export const fetchVenue = () => request("/venue");
 export const registerVenue = (body) => send("POST", "/venues/register", body);
+export const luxhotelLogin = (token) => send("POST", "/luxhotel/login", { token });
 export const fetchNetwork = () => request("/venue/network");
 export const saveNetwork = (allowedIps) => send("PUT", "/venue/network", { allowedIps });
 export const saveLoginMode = (loginMode) => send("PUT", "/venue/login-mode", { loginMode });

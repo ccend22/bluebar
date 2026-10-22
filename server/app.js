@@ -11,6 +11,7 @@ import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
 import { deeplTranslator, LANGS } from "./translate.js";
 import { geminiVoice } from "./voice.js";
+import { verifyLuxHotelToken } from "./luxhotel.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
   agentKeyValid,
@@ -75,6 +76,8 @@ export function buildApp({
   translate = deeplTranslator(process.env.DEEPL_API_KEY),
   // A waiter's spoken order → menu products (null: no voice ordering).
   voice = geminiVoice(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
+  // A LuxHotel (Firebase) ID token → the LuxHotel account it proves; throws when it doesn't.
+  luxhotel = (token) => verifyLuxHotelToken(token, process.env.LUXHOTEL_PROJECT_ID || process.env.VITE_LUXHOTEL_PROJECT_ID),
 }) {
   const app = Fastify({
     logger: false,
@@ -156,7 +159,7 @@ export function buildApp({
     // No CORS: cross-site browser requests cannot add this non-simple header.
     if (request.headers["x-bluebar-client"] !== "1")
       return reply.code(403).send({ error: "Kërkesë e palejuar." });
-    if (path === "/api/venues/register" || path === "/api/print/pair" || path.startsWith("/api/menu/")) return;
+    if (path === "/api/venues/register" || path === "/api/luxhotel/login" || path === "/api/print/pair" || path.startsWith("/api/menu/")) return;
     requireDb();
     request.venue = await resolveVenue(pool, request.headers["x-bluebar-venue"] || "bluebar");
     request.db = tenantPool(pool, request.venue.schema_name);
@@ -320,19 +323,41 @@ export function buildApp({
   app.post("/api/venues/register", {
     schema: { body: { type: "object", additionalProperties: false, required: ["slug", "name", "pin"],
       properties: { slug: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{2,39}$" }, name: { type: "string", minLength: 2, maxLength: 80 }, pin,
-        website: { type: "string", maxLength: 200 } } } },
+        website: { type: "string", maxLength: 200 }, luxhotelToken: { type: "string", maxLength: 4096 } } } },
   }, async (request, reply) => {
     requireDb();
     await attempt(request);
     // Honeypot: the form hides this field from people; anything that fills it is a bot.
     if (request.body.website) throw new AppError("Regjistrimi nuk u pranua.", 400);
-    const { venue, accountId } = await registerVenue(pool, request.body, request.ip).catch((error) => {
-      throw error.code === "23505" ? new AppError("Ky kod biznesi është i zënë. Zgjidhni një tjetër.", 409) : error;
+    // "Regjistrohu me LuxHotel": the new business belongs to that LuxHotel account.
+    const luxhotelUid = request.body.luxhotelToken ? (await luxhotel(request.body.luxhotelToken)).uid : null;
+    const { venue, accountId } = await registerVenue(pool, { ...request.body, luxhotelUid }, request.ip).catch((error) => {
+      if (error.code !== "23505") throw error;
+      throw /luxhotel/.test(error.constraint || error.message)
+        ? new AppError("Kjo llogari LuxHotel ka tashmë një biznes BlueBar. Hyni me LuxHotel.", 409)
+        : new AppError("Ky kod biznesi është i zënë. Zgjidhni një tjetër.", 409);
     });
     request.venue = venue;
     request.db = tenantPool(pool, venue.schema_name);
     reply.code(201);
     return start(request, reply, accountId);
+  });
+  // "Hyr me LuxHotel": the LuxHotel account's own business, its manager signed in. No
+  // business yet: 404, and the screen offers to create one with LuxHotel.
+  app.post("/api/luxhotel/login", {
+    schema: { body: { type: "object", additionalProperties: false, required: ["token"],
+      properties: { token: { type: "string", maxLength: 4096 } } } },
+  }, async (request, reply) => {
+    requireDb();
+    await attempt(request);
+    const { uid } = await luxhotel(request.body.token);
+    const venue = (await pool.query("SELECT * FROM bluebar_catalog.venues WHERE luxhotel_uid = $1", [uid])).rows[0];
+    if (!venue) throw new AppError("Kjo llogari LuxHotel nuk ka ende biznes në BlueBar.", 404);
+    request.venue = venue;
+    request.db = tenantPool(pool, venue.schema_name);
+    const manager = (await request.db.query("SELECT id FROM bluebar.accounts WHERE role = 'manager' AND active ORDER BY id LIMIT 1")).rows[0];
+    if (!manager) throw new AppError("Biznesi nuk ka menaxher aktiv.", 409);
+    return start(request, reply, manager.id);
   });
   app.get("/api/venue", async request => publicVenue(request.venue));
 
@@ -914,7 +939,7 @@ export function buildApp({
   app.post("/api/print/reprint", {
     preValidation: session(),
     schema: { body: { type: "object", additionalProperties: false, required: ["kind", "id"],
-      properties: { kind: { type: "string", enum: ["ticket", "invoice", "shift"] }, id: { type: "string", maxLength: 64 } } } },
+      properties: { kind: { type: "string", enum: ["ticket", "invoice", "shift", "bill"] }, id: { type: "string", maxLength: 64 } } } },
   }, async (request) => {
     // Shift reports hold the cash count: managers only.
     if (request.body.kind === "shift" && request.user.role !== "manager")
@@ -1227,6 +1252,7 @@ export function buildApp({
                 "order.fire",
                 "order.remake",
                 "invoice.refund",
+                "invoice.edit",
                 "ticket.done",
                 "ticket.transfer",
                 "ticket.accept",

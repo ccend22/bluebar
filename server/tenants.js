@@ -39,7 +39,7 @@ export async function spendBudget(pool, key) {
       reset_at = CASE WHEN bluebar_catalog.registration_limits.reset_at < now() THEN now() + interval '1 hour' ELSE bluebar_catalog.registration_limits.reset_at END
     RETURNING attempts`, [createHmac("sha256", process.env.BLUEBAR_SECRET_KEY || "bluebar-rate-limit").update(key).digest("hex")])).rows[0].attempts;
 }
-export async function registerVenue(pool, { slug, name, pin }, ip) {
+export async function registerVenue(pool, { slug, name, pin, luxhotelUid = null }, ip) {
   if (!validSlug(slug) || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 80)
     throw new AppError("Vendosni emrin dhe kodin e vlefshëm të biznesit.");
   if (!validPin(pin)) throw new AppError("PIN-i është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.");
@@ -51,8 +51,8 @@ export async function registerVenue(pool, { slug, name, pin }, ip) {
     await client.query("BEGIN");
     // Serialize provisioning with migrations, never with normal order entry.
     await client.query("SELECT pg_advisory_xact_lock(70483201)");
-    const venue = (await client.query(`INSERT INTO bluebar_catalog.venues(slug, name, schema_name)
-      VALUES($1,$2,$3) RETURNING *`, [slug, name.trim(), schema])).rows[0];
+    const venue = (await client.query(`INSERT INTO bluebar_catalog.venues(slug, name, schema_name, luxhotel_uid)
+      VALUES($1,$2,$3,$4) RETURNING *`, [slug, name.trim(), schema, luxhotelUid])).rows[0];
     await migrateTenant(client, schema);
     const query = (sql, params) => client.query(tenantSQL(sql, schema), params);
     // Configuration seeds are for the legacy installation; new businesses start empty.

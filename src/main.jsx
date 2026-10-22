@@ -1,7 +1,7 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { bill, COURSES, invoicePos, money, printerFor, ticketPos, total, plural, tableName } from "./domain.js";
+import { bill, COURSES, invoicePos, money, posOf, printerFor, ticketPos, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
@@ -10,6 +10,7 @@ import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
 import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js";
+import { InvoiceEditForm } from "./InvoiceEdit.jsx";
 import { NetworkPrinters } from "./NetworkPrinters.jsx";
 import { PointsOfSale } from "./PointsOfSale.jsx";
 import { ConfigCheck, StationSetup } from "./StationSetup.jsx";
@@ -319,6 +320,12 @@ function App({ user, onLogout, onUserChange }) {
       () => user.waiterId ?? state.waiters.find((w) => w.active)?.id,
     );
   const role = user.role === "manager" ? "Menaxher" : "Kamarier";
+  const [printDoc, setPrintDoc] = useState(null);
+  useEffect(() => {
+    const done = () => setPrintDoc(null);
+    window.addEventListener("afterprint", done);
+    return () => window.removeEventListener("afterprint", done);
+  }, []);
   const [receipt, setReceipt] = useState(null),
     [payment, setPayment] = useState(null),
     [editor, setEditor] = useState(null),
@@ -562,9 +569,10 @@ function App({ user, onLogout, onUserChange }) {
   );
   const lowStock = state.products.filter(isLow).length;
   const pendingUnits = (t) => t.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0);
+  // Printing from this browser never opens the invoice preview: only the printed copy changes.
   const print = (invoice) => {
     setTicketPrint(null);
-    setReceipt(invoice);
+    setPrintDoc(invoice);
     setTimeout(printFitted, 100);
   };
   // One print job, one page per station — on a thermal printer each ticket is cut
@@ -633,7 +641,15 @@ function App({ user, onLogout, onUserChange }) {
   }, [page]);
   // Porositë's "Printo faturën": a pre-bill for a still-open table, before any
   // payment/invoice exists — see Receipt's preBill handling above.
-  const printOrder = (t) => {
+  // The pre-bill goes straight to the till's receipt printer when there is one.
+  const printOrder = async (t) => {
+    const cashier = printerFor(state.printers, posOf(state, t));
+    if (cashier)
+      try {
+        if ((await reprintDocument("bill", t.id)).queued) return notify(`Para-fatura u dërgua te ${cashier.name}.`);
+      } catch (e) {
+        return notify(e.message, "error");
+      }
     print({
       preBill: true,
       id: t.id,
@@ -1873,6 +1889,15 @@ function App({ user, onLogout, onUserChange }) {
                         Printo
                       </button>
                       {role === "Menaxher" && (
+                        <InvoiceEditForm
+                          key={`edit-${receipt.id}`}
+                          invoice={receipt}
+                          state={state}
+                          update={update}
+                          onDone={(data) => setReceipt(data.state.invoices.find((i) => i.id === receipt.id))}
+                        />
+                      )}
+                      {role === "Menaxher" && (
                         <RefundForm
                           key={receipt.id}
                           invoice={receipt}
@@ -2753,9 +2778,9 @@ function App({ user, onLogout, onUserChange }) {
             />
           </article>
         ))}
-      {receipt && !ticketPrint && (
+      {(printDoc || receipt) && !ticketPrint && (
         <article className="receipt print-only invoice-print">
-          <Receipt invoice={receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === receipt.waiter)?.name} tables={state.tables} />
+          <Receipt invoice={printDoc || receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === (printDoc || receipt).waiter)?.name} tables={state.tables} />
         </article>
       )}
       {report && (
