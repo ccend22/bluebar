@@ -207,7 +207,13 @@ export function NetworkPrinters({ state, update, notify }) {
         )}
       </section>
       <PrintComputer status={status} notify={notify} />
-      <SilentPrinting notify={notify} />
+      <section className="panel">
+        <SectionHeading
+          title="Printim pa dritare"
+          description="Një ikonë BlueBar në desktop: faturat dhe fletët dalin direkt te printeri i kompjuterit, pa dritaren e printimit."
+        />
+        <DesktopInstall notify={notify} />
+      </section>
     </>
   );
 }
@@ -333,11 +339,13 @@ function PrintComputer({ status, notify }) {
 // --kiosk-printing: every print goes straight to the computer's default printer, no
 // print window. Its own Chrome profile, so the flag holds even with Chrome already open.
 // Nothing runs in the background and nothing is paired: just a shortcut.
-function SilentPrinting({ notify }) {
+// The same steps open from the "Instalo" offer on a computer (main.jsx).
+export function DesktopInstall({ notify }) {
   const [system, setSystem] = useState(thisSystem);
-  const app = `${window.location.origin}/?business=${encodeURIComponent(venueSlug)}`;
-  const mac = `osacompile -o "$HOME/Desktop/BlueBar.app" -e 'do shell script "open -na \\"Google Chrome\\" --args --kiosk-printing --user-data-dir=$HOME/.bluebar-chrome --app=${app}"' && echo "Gati! Hapni BlueBar nga Desktop."`;
-  const linux = `printf '[Desktop Entry]\\nType=Application\\nName=BlueBar\\nExec=google-chrome --kiosk-printing --user-data-dir=%s/.bluebar-chrome --app=${app}\\n' "$HOME" > "$HOME/Desktop/BlueBar.desktop" && chmod +x "$HOME/Desktop/BlueBar.desktop" && echo "Gati!"`;
+  // desktop=1: opened from this icon (pwa.js remembers it and stops offering to install).
+  const app = `${window.location.origin}/?business=${encodeURIComponent(venueSlug)}&desktop=1`;
+  const mac = `osacompile -o "$HOME/Desktop/BlueBar.app" -e 'do shell script "open -na \\"Google Chrome\\" --args --kiosk-printing --user-data-dir=$HOME/.bluebar-chrome --app=${app.replaceAll("&", "\\\\&")}"' && open "$HOME/Desktop/BlueBar.app" && echo "Gati! BlueBar u hap."`;
+  const linux = `printf '[Desktop Entry]\\nType=Application\\nName=BlueBar\\nExec=google-chrome --kiosk-printing --user-data-dir=%s/.bluebar-chrome "--app=${app}"\\n' "$HOME" > "$HOME/Desktop/BlueBar.desktop" && chmod +x "$HOME/Desktop/BlueBar.desktop" && echo "Gati!"`;
   const windows = [
     `$c = @("$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe", "\${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe", "$env:LOCALAPPDATA\\Google\\Chrome\\Application\\chrome.exe", "\${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1`,
     `if (-not $c) { Write-Host "Nuk u gjet Chrome ose Edge."; exit 1 }`,
@@ -362,11 +370,6 @@ function SilentPrinting({ notify }) {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   return (
-    <section className="panel">
-      <SectionHeading
-        title="Printim pa dritare"
-        description="Një ikonë BlueBar në desktop: faturat dhe fletët dalin direkt te printeri i kompjuterit, pa dritaren e printimit."
-      />
       <div className="pair-setup">
         <div className="tabs" aria-label="Sistemi i kompjuterit">
           {SYSTEMS.map(([id, label]) => (
@@ -406,6 +409,5 @@ function SilentPrinting({ notify }) {
         )}
         <p className="helper">Kërkon Google Chrome (në Windows edhe Edge). Nëse kompjuteri ka “BlueBar Print” të lidhur, ai ka përparësi për printerët e rrjetit.</p>
       </div>
-    </section>
   );
 }

@@ -11,7 +11,7 @@ import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./Logi
 import { Fiscalization } from "./Fiscalization.jsx";
 import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js";
 import { InvoiceEditForm } from "./InvoiceEdit.jsx";
-import { NetworkPrinters } from "./NetworkPrinters.jsx";
+import { DesktopInstall, NetworkPrinters } from "./NetworkPrinters.jsx";
 import { PointsOfSale } from "./PointsOfSale.jsx";
 import { ConfigCheck, StationSetup } from "./StationSetup.jsx";
 import { OrderHistory } from "./OrderHistory.jsx";
@@ -306,6 +306,7 @@ function App({ user, onLogout, onUserChange }) {
   const database = useDatabase();
   const online = useOnline();
   const installOffer = useInstall();
+  const desktopDialog = useRef(null);
   const { state } = database;
   const [page, setPage] = useState("Tavolinat"),
     [selected, setSelected] = useState(null),
@@ -1041,10 +1042,17 @@ function App({ user, onLogout, onUserChange }) {
               <div className="notice install-offer">
                 <img src="/icons/icon-192.png" alt="" width="32" height="32" />
                 <span>
-                  {installOffer.kind === "prompt"
-                    ? "Instaloni BlueBar si aplikacion: hapet me një prekje, në ekran të plotë."
-                    : "Instaloni BlueBar: prekni Shpërndaj, pastaj “Shto në ekranin bazë”."}
+                  {installOffer.kind === "desktop"
+                    ? "Instaloni BlueBar në këtë kompjuter: faturat dhe fletët printohen direkt, pa dritare."
+                    : installOffer.kind === "prompt"
+                      ? "Instaloni BlueBar si aplikacion: hapet me një prekje, në ekran të plotë."
+                      : "Instaloni BlueBar: prekni Shpërndaj, pastaj “Shto në ekranin bazë”."}
                 </span>
+                {installOffer.kind === "desktop" && (
+                  <button className="primary" onClick={() => desktopDialog.current?.showModal()}>
+                    Instalo
+                  </button>
+                )}
                 {installOffer.kind === "prompt" && (
                   <button className="primary" onClick={installOffer.install}>
                     Instalo
@@ -1055,6 +1063,17 @@ function App({ user, onLogout, onUserChange }) {
                 </button>
               </div>
             )}
+            <dialog ref={desktopDialog} className="lux-dialog desktop-dialog" aria-labelledby="desktop-title">
+              <button type="button" className="icon-button lux-close" aria-label="Mbyll" onClick={() => desktopDialog.current?.close()}>
+                <Icon name="close" size={18} />
+              </button>
+              <header>
+                <img src="/icons/icon-192.png" alt="" width="48" height="48" />
+                <h2 id="desktop-title">BlueBar në këtë kompjuter</h2>
+                <p>Një ikonë BlueBar në desktop. Prej saj faturat dhe fletët dalin direkt te printeri, pa dritare.</p>
+              </header>
+              <DesktopInstall notify={notify} />
+            </dialog>
             {database.error && !database.pending && (
               <div className="notice error" role="alert">
                 <Icon name="info" />

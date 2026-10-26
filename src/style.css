@@ -6365,3 +6365,5 @@ body.order-open { overflow: hidden; }
   .ie-head, .ie-body, .ie-foot { padding-left: 16px; padding-right: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .ie-dialog[open] { animation: none; } .ie-row > button svg { transition: none; } }
+.desktop-dialog { width: min(560px, calc(100vw - 32px)); }
+.desktop-dialog header img { border-radius: 12px; }

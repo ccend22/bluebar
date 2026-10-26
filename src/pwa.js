@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 const LAST_BUSINESS = "bluebar-last-business";
 const INSTALL_DISMISSED = "bluebar-install-dismissed";
+// Set when BlueBar was opened from its desktop icon (printing without the print window).
+const DESKTOP = "bluebar-desktop";
 const read = (key) => {
   try {
     return localStorage.getItem(key);
@@ -23,6 +25,7 @@ const write = (key, value) => {
 // Returns false when it's navigating away (nothing to render).
 export function launch() {
   const params = new URLSearchParams(window.location.search);
+  if (params.has("desktop")) write(DESKTOP, "1");
   if (params.has("business")) write(LAST_BUSINESS, params.get("business"));
   else if (params.has("source")) {
     const last = read(LAST_BUSINESS);
@@ -58,11 +61,15 @@ const standalone = () =>
 const apple = () =>
   /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
-// Chrome/Edge/Android offer a real install prompt; iPhone/iPad only install from the
-// Share menu, so there the offer is a short how-to instead.
+// A computer (mouse, not a phone or tablet): there "install" means the desktop icon that
+// prints without the print window, not the browser's own app install.
+const computer = () =>
+  !apple() && !/Android|Mobile/i.test(navigator.userAgent) && window.matchMedia("(pointer: fine)").matches;
+// Computers get the desktop icon; Chrome/Edge/Android offer a real install prompt;
+// iPhone/iPad only install from the Share menu, so there the offer is a short how-to.
 export function useInstall() {
   const [prompt, setPrompt] = useState(null);
-  const [hidden, setHidden] = useState(() => standalone() || read(INSTALL_DISMISSED) === "1");
+  const [hidden, setHidden] = useState(() => read(DESKTOP) === "1" || read(INSTALL_DISMISSED) === "1" || (standalone() && !computer()));
   useEffect(() => {
     const offer = (e) => {
       e.preventDefault();
@@ -81,6 +88,7 @@ export function useInstall() {
     setHidden(true);
   };
   if (hidden) return null;
+  if (computer()) return { kind: "desktop", dismiss };
   if (prompt)
     return {
       kind: "prompt",
