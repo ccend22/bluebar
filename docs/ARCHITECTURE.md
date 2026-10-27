@@ -1,6 +1,6 @@
 # BlueBar — arkitektura
 
-Implementimi aktual: React/Vite, Fastify në Vercel dhe Neon PostgreSQL. Hyrja me PIN, sesionet HttpOnly, autorizimi, IP restriction dhe multi-tenancy janë implementuar. Ndarja aktuale përdor një skemë për biznes (`bluebar_<uuid>`), me katalog qendror `bluebar_catalog.venues`; shih [README](../README.md#multi-tenant). Skema `bluebar` ruan instalimin ekzistues.
+Implementimi aktual: React/Vite, Fastify në Google Cloud Run dhe Neon PostgreSQL. Hyrja me PIN, sesionet HttpOnly, autorizimi, IP restriction dhe multi-tenancy janë implementuar. Ndarja aktuale përdor një skemë për biznes (`bluebar_<uuid>`), me katalog qendror `bluebar_catalog.venues`; shih [README](../README.md#multi-tenant). Skema `bluebar` ruan instalimin ekzistues.
 
 Pjesët më poshtë për modelin me `venue_id`, reçetat, fiskalizimin, pagination dhe print queue janë propozime për faza të ardhshme, jo përshkrim i funksionalitetit të publikuar.
 

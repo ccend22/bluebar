@@ -1357,7 +1357,7 @@ test("a manager changes their own name and PIN: current PIN required, other devi
 });
 
 test("a client-written X-Forwarded-For can't fake the venue network", async () => {
-  // Behind one trusted proxy (Vercel), only the address that proxy saw counts.
+  // Behind one trusted proxy (Cloud Run's front end), only the address that proxy saw counts.
   const t = await setup({ trustProxy: (_address, hop) => hop === 0, allowedIps: ["203.0.113.50"] });
   try {
     // The proxy (10.0.0.1) reports the real client 198.51.100.7 after a spoofed entry.

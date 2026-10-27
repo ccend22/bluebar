@@ -3,7 +3,6 @@ dist/
 .env*
 !.env.example
 .neon
-.vercel
 # Local review helpers (they hold demo PINs) and review screenshots
 .demo-local-review.mjs
 .pwa-preview.mjs

@@ -13,7 +13,7 @@ npm run db:migrate
 npm run dev
 ```
 
-`npm run dev` nis API-në në `127.0.0.1:3001` dhe Vite në `127.0.0.1:5173` (ose portin pasues nëse është i zënë). `npm run api` dhe `npm run dev:web` i nisin veçmas. Serveri lokal refuzon NODE_ENV=production; publikimi në Vercel përdor `api/index.js` me HTTPS, cookies Secure dhe host/origin të lejuar.
+`npm run dev` nis API-në në `127.0.0.1:3001` dhe Vite në `127.0.0.1:5173` (ose portin pasues nëse është i zënë). `npm run api` dhe `npm run dev:web` i nisin veçmas. Serveri lokal refuzon NODE_ENV=production; publikimi në Google Cloud Run përdor `server/cloudrun.js` (shih `Dockerfile`) me HTTPS, cookies Secure dhe host/origin të lejuar.
 
 ## Neon
 

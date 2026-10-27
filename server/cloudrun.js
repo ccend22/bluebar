@@ -1,5 +1,5 @@
-// Cloud Run entry: one container serves the built app (dist/) and the API, like Vercel did
-// with its static hosting + api/index.js. /api/* goes to the same buildApp(); everything
+// Cloud Run entry: one container serves the built app (dist/) and the API.
+// /api/* goes to buildApp(); everything
 // else is a file from dist/, with the menu's and the app's HTML as the fallbacks.
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
@@ -29,7 +29,7 @@ const TYPES = {
   ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon",
   ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
 };
-// The same headers vercel.json set on every page.
+// Security headers on every page.
 const SECURITY = {
   "Content-Security-Policy": "default-src 'self'; script-src 'self' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com; frame-src https://*.firebaseapp.com; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains",

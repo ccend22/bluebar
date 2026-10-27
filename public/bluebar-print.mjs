@@ -4,7 +4,7 @@
 // straight to its network printer as ESC/POS over TCP (port 9100): no drivers, no print
 // dialogs, and every department's ticket lands on its own printer.
 //
-//   node bluebar-print.mjs --url https://bluebar.vercel.app --venue bluebar --key <çelësi>
+//   node bluebar-print.mjs --url https://bluebar-745501573999.europe-west1.run.app --venue bluebar --key <çelësi>
 //
 // Options can also come from BLUEBAR_URL, BLUEBAR_VENUE, BLUEBAR_PRINT_KEY. Add --ascii
 // for printers without code page 850 (prints ë as e).
@@ -204,7 +204,7 @@ function options(argv) {
     return i >= 0 ? argv[i + 1] : undefined;
   };
   return {
-    url: (get("--url") || process.env.BLUEBAR_URL || "https://bluebar.vercel.app").replace(/\/+$/, ""),
+    url: (get("--url") || process.env.BLUEBAR_URL || "https://bluebar-745501573999.europe-west1.run.app").replace(/\/+$/, ""),
     venue: get("--venue") || process.env.BLUEBAR_VENUE || "bluebar",
     key: get("--key") || process.env.BLUEBAR_PRINT_KEY,
     ascii: argv.includes("--ascii"),
@@ -215,7 +215,7 @@ async function main() {
   const config = options(process.argv.slice(2));
   if (!config.key) {
     console.error("Mungon çelësi. Krijojeni te BlueBar → Repartet → Agjenti i printimit, pastaj:");
-    console.error("  node bluebar-print.mjs --url https://bluebar.vercel.app --venue bluebar --key <çelësi>");
+    console.error("  node bluebar-print.mjs --url https://bluebar-745501573999.europe-west1.run.app --venue bluebar --key <çelësi>");
     process.exit(1);
   }
   const time = () => new Date().toLocaleTimeString();

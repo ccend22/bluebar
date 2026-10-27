@@ -384,7 +384,7 @@ export function buildApp({
       db.query("SELECT tagline, accent, logo_at, euro, euro_rate FROM bluebar.menu_branding WHERE id = 1"),
     ]);
     const b = brand.rows[0] || {};
-    // The edge (Vercel) answers most guests for up to a minute; a phone always asks again,
+    // A shared cache in front answers most guests for up to a minute; a phone always asks again,
     // so turning the menu off or changing a price never sticks on a guest's phone.
     reply.header("Cache-Control", "public, max-age=0, s-maxage=60");
     return {
