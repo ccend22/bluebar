@@ -20,7 +20,7 @@ colors:
   lp-seam: "#23262a"
   lp-steel: "#2a2d31"
   lp-clip: "#4a4f56"
-  lp-screen-hairline: "#2c3035"
+  lp-close-muted: "#57534c"
   lp-paper: "#f4f1ea"
   lp-paper-ink: "#16130f"
   lp-muted: "#a9a49b"
@@ -46,13 +46,14 @@ typography:
     fontSize: "14px"
   lp-display:
     fontFamily: "Archivo, Arial Narrow, system-ui, sans-serif"
-    fontSize: "clamp(46px, 5.6vw, 88px)"
+    fontSize: "clamp(64px, 6.6vw, 96px)"
     fontWeight: 850
-    lineHeight: 1.02
+    lineHeight: 1
+    letterSpacing: "-0.025em"
     fontVariation: "\"wdth\" 72"
   lp-headline:
     fontFamily: "Archivo, Arial Narrow, system-ui, sans-serif"
-    fontSize: "clamp(36px, 4.4vw, 64px)"
+    fontSize: "clamp(40px, 4.6vw, 66px)"
     fontWeight: 850
     lineHeight: 1.02
     fontVariation: "\"wdth\" 72"
@@ -123,7 +124,7 @@ rounded:
   lp-cta: "6px"
   lp-rail: "2px"
   lp-clip: "3px"
-  lp-screen-phone: "16px"
+  lp-screen-phone: "12px"
   lp-screen-wide: "12px"
   menu-photo: "3px"
   menu-box: "6px"
@@ -133,7 +134,8 @@ rounded:
   menu-logo: "14px"
 spacing:
   lp-gutter: "clamp(16px, 5vw, 72px)"
-  lp-section: "clamp(64px, 8vw, 120px)"
+  lp-section: "110px"
+  lp-section-compact: "72px"
   menu-gutter: "18px"
   menu-qty-column: "62px"
   menu-column: "560px"
@@ -158,7 +160,7 @@ components:
     textColor: "{colors.lp-night}"
     rounded: "{rounded.lp-cta}"
     padding: "0 16px"
-    height: "40px"
+    height: "44px"
   lp-rail:
     backgroundColor: "{colors.lp-steel}"
     rounded: "{rounded.lp-rail}"
@@ -263,129 +265,82 @@ The Shared system prose above predates the build and is not repaired here; the f
 
 # Landing (Persuade): "Shina e kuzhinës"
 
-Source: src/Landing.jsx, src/landing.css. Everything below applies to the landing only.
+Source: src/Landing.jsx, src/landing.css. Everything below applies to the landing only. Documentation reflects source inspection; the current revision has not received a visual pass because browser captures were blank.
 
 ## Overview
 
 **Creative North Star: "The Kitchen Pass at Night"**
 
-The landing is the pass of a working kitchen after dark: a near-black room under one warm heat-lamp glow, a steel rail running across the page, and BlueBar's own thermal printouts clipped to it. The rail is the page's spine; each section gets its own full-width rail with a printout hanging from it. Proof is BlueBar's real printed formats (department tickets, the fiscal invoice, the shift report, the printer test slip) and real app screenshots, never drawn devices or invented numbers.
+A near-black kitchen under warm lamp light, with thermal tickets clipped to a steel rail. The service story moves from the order to the floor, the waiter and the closing report. Real app screenshots and clearly labelled sample printouts provide proof. A paper-coloured closing section carries the final registration action.
 
-Dark, heavy, warm, literal. The one bright colour is the order-bell orange, and it only ever means "act". The display voice is a heavy condensed grotesque in uppercase, loud the way a kitchen order is loud; body copy stays in the system sans so reading is easy.
-
-**Key Characteristics:**
-- Near-black ground with warm radial lamp-light at the top of each section
-- Steel rail as the spine; printouts hang from it on clips
-- Thermal paper in monospace with dashed rules and a torn bottom edge
-- Order-bell orange for actions, focus and selection only
-- Archivo condensed uppercase display; system sans body
-- Real app screenshots, flat, with a hairline
-- Sheets drop onto the rail and swing on their clip
+**Key Characteristics:** condensed Archivo headlines, quiet system-sans copy, thermal-paper monospace, orange actions, flat screenshots, and hanging sheets that settle on their clips. Layout and text stay separate from the light operating app and guest menu.
 
 ## Colors
 
-A dark, warm-neutral room with one hot accent.
-
 ### Primary
-- **Order-Bell Orange** (lp-bell): the Regjistro CTA, the CTA stripe on the closing "POROSI E RE" sheet, the 3px focus outline (4px offset) and text selection. Hover warms to **Bell Hot** (lp-bell-hot). Text on orange is Kitchen Night, never white.
+- **Order-Bell Orange** (lp-bell): registration actions, focus and selection; Bell Hot on hover. Text on orange uses Kitchen Night.
 
 ### Neutral
-- **Kitchen Night** (lp-night): page ground, also set on `html` so overscroll and the scrollbar track match.
-- **Raised Night** (lp-night-raised): the backing behind screenshots.
-- **Seam** (lp-seam): 1px hairline under the sticky bar and above the footer.
-- **Rail Steel** (lp-steel): the rail. **Clip Steel** (lp-clip): the clip that grips rail and paper.
-- **Screen Hairline** (lp-screen-hairline): the 1px border around screenshots.
-- **Thermal Paper** (lp-paper): paper and, at the same value, headline and link ink on night. Paper carries a warm vertical gradient (#fbf5e9 → paper at 45% → #e9e2d3), the lamp falling on it.
-- **Paper Ink** (lp-paper-ink): print on paper; dashed rules at 70% of it.
-- **Ash** (lp-muted): body copy and the point-list dashes on night. Hero subline is a lighter #cfcac0.
-- **Lamp Warmth** (rgba(255,150,70,0.2) in the hero; 0.12–0.14 on later sections): radial glow at the top of each rail section.
+- **Kitchen Night** (lp-night): page, sticky bar, overscroll and scrollbar track. Raised Night backs screenshots.
+- **Seam** (lp-seam): section and navigation dividers. Rail Steel (lp-steel) draws rails and screenshot borders; Clip Steel grips the paper.
+- **Thermal Paper** (lp-paper): headline/link ink, tickets and closing section. Tickets use a warm vertical gradient from #fbf5e9 through paper to #e9e2d3.
+- **Paper Ink** (lp-paper-ink): print and closing-section text. Closing body copy is lp-close-muted.
+- **Ash** (lp-muted): secondary copy, navigation and the final hero line. Warm brown radial light, rgba(181,112,62,.15) in the hero and .14 around the report, belongs to the hanging-paper scenes.
 
-### Named Rules
-**The Bell Rule.** Orange means act: CTAs, focus, selection. Never decoration, never a heading, never a background band.
-
-**The One Blue Rule.** BlueBar's navy (brand-navy) appears on the landing only as the 30px "b." mark (8px radius) in the bar and footer. App Action Blue never appears here.
+**The Bell Rule.** Orange means act, focus or selection. **The One Blue Rule.** Brand navy appears only in the small b. mark, not as an alternate landing action colour.
 
 ## Typography
 
-**Display Font:** Archivo (self-hosted variable woff2, OFL, weights 100–900, widths 62–125%), fallback Arial Narrow, system-ui
-**Body Font:** system sans (-apple-system, SF Pro Text, Segoe UI)
-**Print Font:** system monospace (ui-monospace, SF Mono, Menlo, Consolas)
+**Display:** self-hosted Archivo variable WOFF2, 850 weight, 72% stretch, uppercase, balanced headings, with 0.06em top padding for Albanian diacritics. Hero uses clamp(64px, 6.6vw, 96px), line-height 1, tracking −0.025em; section headings use clamp(40px, 4.6vw, 66px), line-height 1.02, tracking −0.02em. Closing heading uses clamp(48px, 6vw, 88px).
 
-**Character:** A condensed, heavy kitchen-order shout over a calm, legible system sans; the printouts speak in the same monospace BlueBar actually prints.
+**Body:** system sans, 18px hero and 17px section copy, line-height 1.6, generally 47–50ch. Supporting notes and walkthrough text are 14–15px. **Actions:** Archivo, 85% stretch, 800 weight, uppercase, 18px; small header CTA 15px and 13px on phones. **Print:** system monospace, 12–14px body, 25px department headings (22px at intermediate widths, 20px on phones). Report totals are 16px, 14px on phones. Captions remain at least 12px.
 
-### Hierarchy
-- **Display** (lp-display; 850, font-stretch 72%, line-height 1.02, uppercase, balanced): hero h1. Below 981px it uses clamp(46px, 6vw, 96px). Closing h2 is clamp(40px, 6vw, 88px).
-- **Headline** (lp-headline; same face and treatment): section h2s.
-- **Label** (lp-label; 800, font-stretch 85%, 0.02em, uppercase): CTAs; 15px in the bar's small CTA, 17px in the sheet stripe.
-- **Body** (lp-body; capped at 46–50ch, text-wrap pretty): section copy. Point lists are 15px/550 in thermal-paper colour with a 10×2px ash dash.
-- **Print** (lp-print): everything on paper. Department name 22px with 0.04em tracking, item 16px bold, totals 16px/800. The receipt brand "BlueBar" stays in the sans at 26px, as on the real printout.
-
-### Named Rules
-**The Diacritic Room Rule.** Display and headline carry 0.06em top padding so Ç, Ë and cedillas never touch the line above at line-height 1.02.
-
-**The Legible Print Rule.** Print never goes below 12px where it carries content; on phones the hero tickets print less (optional lines hidden) instead of printing smaller.
+**The Legible Print Rule.** Hide optional ticket lines where space is constrained rather than shrink meaningful print below 12px.
 
 ## Layout
 
-A full-bleed dark page, gutter lp-gutter. Sticky bar: brand left, "Hyr" link and small orange CTA right, rgba(11,12,13,0.85) with saturate(140%) blur(14px), seam bottom, safe-area aware.
+Full-width night ground, gutter clamp(16px, 5vw, 72px). The opaque sticky bar has brand, section navigation and account actions. Header/footer spacing respects safe-area insets. The hero has a 1512px maximum width, copy left and a two-ticket scene right, columns 1.05fr / 1fr. Tickets hang at −3° and 4°, with the second 24px lower.
 
-**Hero:** two-column grid (1.3fr / 1fr above 980px, 1.1fr / 1fr otherwise) with the rail spanning both columns; three department tickets hang in the left column, copy on the right. On desktop the tickets are fixed width (clamp(210px, 17.4vw, 250px)), never shrink, and overlap 26px on the rail like a real pass; the middle ticket hangs 34px lower, the third 10px.
+A capabilities strip leads into a floor section with split heading/copy, wide screenshot and three notes. The service section pairs a 300px phone screenshot with three numbered steps. Management pairs copy and a ledger with a hanging shift report. Native FAQ disclosures precede the paper closing section. Content sections cap at 1400px with 110px vertical spacing; close and footer span the page.
 
-**Pass sections:** each has its own full-width rail with one wide printout hanging in the left column (0.8fr) and copy on the right (1fr), copy vertically centred. **Screenshot rows:** 1200px max, copy plus a flat screenshot (phone 320px max, floor 980px max centred under centred copy). Section padding lp-section; pass sections close with clamp(80px, 10vw, 130px). **Close:** a rail, the "POROSI E RE" sheet as the CTA link, then centred h2, line and sign-in link.
-
-**Responsive:** at ≤980px everything stacks to one column; in pass sections the copy comes first, then rail, then sheet. At ≤560px the three hero tickets stay side by side at a third of the width each (8px gap, 32px clip), and the hero actions stack full width.
+At ≤1100px gaps and ticket padding tighten. At ≤850px section navigation hides, hero and management stack, capabilities wrap into two columns, FAQ and closing action stack, and section spacing becomes 72px. At ≤580px service and floor introductions stack, service copy appears before the screenshot, floor notes become one column, and hero actions span the width. Hero type uses clamp(60px, 11vw, 88px) at ≤850px and clamp(54px, 12.8vw, 72px) at ≤580px. Two tickets remain side by side with optional lines removed. At ≥1600px outer bar/strip/footer/close gutters align to a 1368px inner span.
 
 ## Elevation & Depth
 
-Depth is physical: things hang, so they cast shadows downward onto a dark room. Flat surfaces (bar, copy) have none.
+Depth belongs to hanging objects. CTA and screenshot surfaces have no shadow. Screenshots use a single steel border; the bar is opaque.
 
-### Shadow Vocabulary
-- **Hanging paper** (`filter: drop-shadow(0 18px 22px rgba(0,0,0,0.75)) drop-shadow(0 2px 2px rgba(0,0,0,0.4))`): on the sheet wrapper, so it follows the torn edge.
-- **Rail** (`box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.6), 0 12px 26px -10px rgba(0,0,0,0.9)`): one top highlight, one bottom shade, a soft drop.
-- **Clip** (`box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.35), 0 2px 3px rgba(0,0,0,0.5)`).
-- **Screenshot** (`box-shadow: 0 30px 60px -30px rgba(0,0,0,0.9)`).
-- **Bell glow** (`box-shadow: 0 12px 30px -12px rgba(255,90,31,0.6)`): full-size CTA only; the small bar CTA has none.
+- **Paper:** filter drop-shadow(0 18px 22px rgba(0,0,0,.75)) drop-shadow(0 2px 2px rgba(0,0,0,.4)).
+- **Rail:** inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.6), 0 12px 26px -10px rgba(0,0,0,.9).
+- **Clip:** inset 0 1px 0 rgba(255,255,255,.35), inset 0 -2px 0 rgba(0,0,0,.35), 0 2px 3px rgba(0,0,0,.5).
 
-### Named Rules
-**The Wrapper Rule.** The torn-edge mask lives on the paper; the clip, the drop shadow, the tilt and the motion live on the wrapper around it, because a mask would cut them off.
-
-**The Honest Steel Rule.** The rail is a flat steel bar with one highlight, not a chrome gradient.
+**The Wrapper Rule.** Mask the paper only; clip, shadow, tilt and motion stay on its wrapper. **The Honest Steel Rule.** A flat steel bar gets one highlight, not a chrome gradient.
 
 ## Shapes
 
-Nearly square. CTAs 6px, rail 2px, clip 3px. Paper has square top corners and a torn zig-zag bottom (CSS mask, 14px × 7px teeth). Screenshots are the only rounded objects (16px phone, 12px wide). Sheets tilt by a per-sheet `--tilt` between −2° and 1.5°, rotating from their top centre (the clip).
+CTAs have 6px corners; rails 2px; clips 3px; screenshots 12px. Paper has square upper corners and a 14×7px torn-edge mask. The report tilts 2°. The brand mark has 8px corners.
 
 ## Components
 
-### Buttons
-- **Primary (lp-cta):** order-bell fill, night text, Archivo label uppercase, 56px tall, 6px radius, bell glow. Hover to bell-hot (160ms); press translateY(1px) scale(0.98).
-- **Small (lp-cta-small):** 40px, 15px label, no glow; only in the sticky bar.
-- **Link:** paper-coloured 15px/600 text, underline on hover (4px offset). Used for "Hyr" and "Kam një biznes · Hyr".
+### Actions and navigation
+Primary links are 56px tall; header CTA and navigation links have 44px minimum height. Hover warms orange; press translates 1px and scales .98. Links underline on hover. Links and FAQ summaries receive a 3px orange focus outline with 5px offset. The skip link exposes the main content target; anchored sections reserve 96px above them for the sticky header.
 
-### Rail
-A 14px steel bar spanning the section width; decorative (aria-hidden). Sheets hang 4px into it.
+### Rail and sheet
+A 14px rail supports the clip of each printout. Tickets and the report are static content, not tab stops. The paper uses monospace, dashed separators, and visible sample labels. On entering view, sheets drop 26px and settle over 900ms with a 150ms stagger; hovering swings them. Sheets remain visible by default and reduced-motion preferences disable their animations and CTA transitions.
 
-### Sheet (signature)
-Wrapper with a 46×26px clip centred over its top edge, overlapping the rail; inside, thermal paper in print type with 1.5px dashed rules and a torn bottom. Department tickets (lp-sheet) are narrow; invoice, shift report and printer test are wide (lp-sheet-wide). Content-bearing sheets are focusable (tabIndex 0, aria-label). The closing sheet is itself the register link, ending in a full-width orange stripe with an SVG arrow.
+### Screenshots
+Real assets in public/landing/*.webp with provenance files alongside them; explicit dimensions and lazy loading. Display flat, never inside drawn devices. The floor screenshot has a sample-data caption; the waiter screenshot has a figcaption.
 
-**Motion.** When a sheet scrolls into view (IntersectionObserver, threshold 0.25) it drops 26px onto the rail and settles with a swing (`lp-drop`, 900ms, cubic-bezier(0.16, 1, 0.3, 1), 150ms stagger by index). Hover or focus swings it on its clip (`lp-swing`, 900ms). Sheets are visible without JS; all motion and CTA transitions are off under reduced motion.
-
-### Screenshot
-Real BlueBar screens (public/landing/*.webp, provenance JSON beside each) in a figure with a 1px screen-hairline border and raised-night backing, flat, never inside a drawn device frame.
+### FAQ and closing action
+Native details/summary provides keyboard disclosure with a drawn plus/minus. The closing section uses Thermal Paper with Paper Ink, plain supporting copy and registration/sign-in actions.
 
 ## Do's and Don'ts
 
-### Do:
-- **Do** hang every printout from a rail by its clip, with the shadow on the wrapper.
-- **Do** use BlueBar's real printed formats and real screenshots; label sample data ("Fletët dhe ekranet në këtë faqe janë shembull.", "shembull-" NIVF/NSLF codes).
-- **Do** keep orange to CTAs, focus and selection.
-- **Do** set display and headlines in Archivo at font-stretch 72%, weight 850, uppercase, line-height 1.02 with diacritic room.
-
-### Don't:
-- **Don't** draw devices in CSS; show screenshots flat with a hairline.
-- **Don't** use app Action Blue, pills or the light parchment ground on the landing, or landing tokens in the app.
-- **Don't** shrink hero tickets below legible print; print less instead.
-- **Don't** add neon tubes, glowing text or other nightlife effects; the only light is the warm lamp (the CTA's bell glow is the one sanctioned glow).
+- **Do** preserve the kitchen-pass identity and keep orange for actions, focus and selection.
+- **Do** label sample data beside screenshots and printouts; qualify printer compatibility, connectivity and fiscalization requirements.
+- **Do** use Archivo for display and preserve Albanian diacritic room.
+- **Don't** draw devices, invent customer evidence or imply every printer works without configuration.
+- **Don't** introduce app Action Blue, app parchment or guest-menu tokens into landing components. The closing paper surface uses the landing's own Thermal Paper.
+- **Don't** add neon tubes, glowing text, CTA halos or screenshot shadows.
 
 # Guest menu (Operate, public): "The venue's guest-check pad"
 

@@ -197,6 +197,14 @@ export function Login({ onSignedIn }) {
     setError("");
     setStep(next);
   };
+  // Already has a business: just open it. Otherwise the usual steps, linked to LuxHotel.
+  const registerWithLuxhotel = async (token) => {
+    try { await luxhotelSignIn(token); } catch (e) {
+      if (e.status !== 404) throw e;
+      setLuxhotelToken(token);
+      go("name");
+    }
+  };
   const back = { open: "hello", name: "hello", slug: "name", pin: "slug", confirm: "pin" }[step];
   const at = SIGNUP.indexOf(step);
 
@@ -244,14 +252,7 @@ export function Login({ onSignedIn }) {
         <span>Biznes i ri?</span>
         <button className="onboard-link" onClick={() => go("name")}>Krijo një biznes</button>
         <span aria-hidden="true">·</span>
-        {/* Already has a business: just open it. Otherwise the usual steps, linked to LuxHotel. */}
-        <LuxHotelButton variant="link" label="Regjistrohu me LuxHotel" onToken={async (token) => {
-          try { await luxhotelSignIn(token); } catch (e) {
-            if (e.status !== 404) throw e;
-            setLuxhotelToken(token);
-            go("name");
-          }
-        }} />
+        <LuxHotelButton variant="link" label="Regjistrohu me LuxHotel" onToken={registerWithLuxhotel} />
       </div>
     </>;
   else if (step === "open")
@@ -267,6 +268,7 @@ export function Login({ onSignedIn }) {
       <p className="onboard-lede">{luxhotelToken ? "I lidhur me LuxHotel: herës tjetër hyni me një prekje. " : ""}Emri shfaqet në hyrje dhe në fatura.</p>
       <input className="onboard-input" aria-label="Emri i biznesit" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={80} autoComplete="organization" autoFocus placeholder="Bar Aurora" />
       <div className="onboard-actions"><button className="onboard-primary">Vazhdo</button></div>
+      {!luxhotelToken && <div className="welcome-new"><span>Keni llogari LuxHotel?</span><LuxHotelButton variant="link" label="Regjistrohu me LuxHotel" onToken={registerWithLuxhotel} /></div>}
     </form>;
   else if (step === "slug")
     content = <form onSubmit={(e) => { e.preventDefault(); go("pin"); }}>
@@ -297,7 +299,7 @@ export function Login({ onSignedIn }) {
     <header className="onboard-bar">
       {back && step !== "ready" ? (
         <button className="onboard-back" disabled={busy} onClick={() => go(back, "back")}><Icon name="back" size={18} /> Kthehu</button>
-      ) : <span />}
+      ) : <a className="onboard-back" href="/"><Icon name="back" size={18} /> BlueBar</a>}
       {at < 0 ? <span /> : (
         <span className="onboard-progress" aria-label={`Hapi ${at + 1} nga ${SIGNUP.length}`}>
           {SIGNUP.map((s, i) => <i key={s} className={i <= at ? "on" : ""} />)}

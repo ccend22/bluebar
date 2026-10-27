@@ -1,6 +1,5 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
-import { createRoot } from "react-dom/client";
 import { bill, COURSES, invoicePos, money, posOf, printerFor, ticketPos, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
@@ -25,7 +24,7 @@ import { Orders } from "./Orders.jsx";
 import { Stations, useStationPrinting } from "./Stations.jsx";
 import { TableOrder } from "./TableOrder.jsx";
 import { ShiftReport, Shifts } from "./Shifts.jsx";
-import { launch, useInstall, useOnline } from "./pwa.js";
+import { useInstall, useOnline } from "./pwa.js";
 import { fetchSession, fiscalizeInvoice, logout, reprintDocument, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
   Icon,
@@ -2810,7 +2809,7 @@ function App({ user, onLogout, onUserChange }) {
     </>
   );
 }
-function Root() {
+export function Root() {
   // undefined = checking the session, null = signed out, "offline" = couldn't reach
   // the server (not the same as signed out — don't send staff to the login screen).
   const [user, setUser] = useState(undefined);
@@ -2856,5 +2855,3 @@ function Root() {
     );
   return user ? <App user={user} onLogout={leave} onUserChange={(u) => setUser((prev) => ({ ...prev, ...u }))} /> : <Login onSignedIn={enter} />;
 }
-// Open the application directly; Login handles business selection and registration.
-if (launch()) createRoot(document.getElementById("root")).render(<Root />);
