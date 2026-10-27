@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { bill, DENOMINATIONS, drawer, money, posOf, shiftFor, total, plural } from "./domain.js";
 import { fetchShiftReport } from "./api.js";
-import { Badge, Empty, Field, Icon, SectionHeading } from "./components.jsx";
+import { Badge, Field, Icon, SectionHeading } from "./components.jsx";
 
 // Same dd.mm.yyyy as the rest of the app (the browser's "sq-AL" date format varies).
 const date = (v) => {
@@ -142,25 +142,28 @@ function OpenShift({ state, update }) {
   );
 }
 
-function CashMovements({ state, update, d }) {
+// The till first: what should be in the drawer now, big, with how it adds up beside it.
+function TillHero({ state, update, d }) {
   const [kind, setKind] = useState(null);
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
   const moves = state.shift.cashMovements || [];
   const reset = () => (setKind(null), setValue(""), setReason(""));
+  // Fund, cash sales, in and out always; tips and refunds only when there are any.
+  const lines = [
+    ["Fondi fillestar", d.opening, true],
+    ["+ Arkëtime cash", d.cash, true],
+    ["+ Bakshish cash", d.tipsCash, false],
+    ["+ Hyrje", d.cashIn, true],
+    ["− Dalje", d.cashOut, true],
+    ["− Rimbursime cash", d.refundsCash, false],
+  ].filter(([, v, always]) => always || v > 0);
   return (
-    <section className="panel drawer-card">
-      <SectionHeading title="Arka" description="Sa cash duhet të ketë në arkë tani." />
-      <div className="drawer-lines">
-        <div><span>Fondi fillestar</span><b>{money(d.opening)}</b></div>
-        <div><span>+ Arkëtime cash</span><b>{money(d.cash)}</b></div>
-        {d.tipsCash > 0 && <div><span>+ Bakshish cash</span><b>{money(d.tipsCash)}</b></div>}
-        {d.cashIn > 0 && <div><span>+ Hyrje</span><b>{money(d.cashIn)}</b></div>}
-        {d.cashOut > 0 && <div><span>− Dalje</span><b>{money(d.cashOut)}</b></div>}
-        {d.refundsCash > 0 && <div><span>− Rimbursime cash</span><b>{money(d.refundsCash)}</b></div>}
-        <div className="drawer-expected"><span>Cash i pritshëm</span><strong>{money(d.expected)}</strong></div>
-        <div className="drawer-card-sales"><span>Bankë · kartë (jashtë arkës)</span><b>{money(d.card)}</b></div>
-      </div>
+    <section className="panel till-hero" aria-label="Arka">
+      <div className="till-hero-main">
+        <span className="till-hero-label">Në arkë duhet të ketë</span>
+        <strong className="till-hero-amount">{money(d.expected)}</strong>
+        <small>Kartë {money(d.card)} · pagesat me kartë nuk hyjnë në arkë</small>
       {kind ? (
         <form
           className="stack-form cash-move-form"
@@ -190,13 +193,20 @@ function CashMovements({ state, update, d }) {
           </div>
         </form>
       ) : (
-        <div className="drawer-actions">
+        <div className="till-hero-actions">
           <button onClick={() => setKind("in")}><Icon name="plus" size={16} /> Hyrje</button>
           <button onClick={() => setKind("out")}>− Dalje</button>
         </div>
       )}
+      </div>
+      <dl className="till-hero-lines">
+        {lines.map(([label, v]) => (
+          <div key={label}><dt>{label}</dt><dd>{money(v)}</dd></div>
+        ))}
+        <div className="till-hero-total"><dt>Cash i pritshëm</dt><dd>{money(d.expected)}</dd></div>
+      </dl>
       {moves.length > 0 && (
-        <ul className="cash-move-list">
+        <ul className="cash-move-list till-hero-moves">
           {moves.map((m) => (
             <li key={m.id}>
               <span className={m.kind === "in" ? "positive" : "warning-text"}>{m.kind === "in" ? "+" : "−"}{money(m.amount)}</span>
@@ -210,7 +220,7 @@ function CashMovements({ state, update, d }) {
   );
 }
 
-function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
+function LiveShift({ state, update, nav, onClose, d, shiftInvoices, history }) {
   const open = state.tables.filter((t) => t.lines.length);
   const openValue = open.reduce((s, t) => s + bill(t).remaining, 0);
   const waiters = state.waiters
@@ -231,7 +241,7 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
   const usesFiscal = state.invoices.some((i) => i.fiscalStatus === "fiskalizuar" || i.fiscalStatus === "dështoi");
   return (
     <>
-      <section className="panel shift-live-head">
+      <header className="shift-head">
         <div>
           <span className="shift-live-dot" aria-hidden="true" />
           <h2>Turni #{state.shift.id}</h2>
@@ -240,30 +250,38 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
             {state.shift.openedBy ? ` nga ${state.shift.openedBy}` : ""} · {elapsed(state.shift.opened)}
           </p>
         </div>
-        <button className="primary" onClick={onClose}>
+        {/* Closing is blocked while orders are open, so it only leads when nothing is. */}
+        <button className={open.length ? "" : "primary"} onClick={onClose}>
           <Icon name="check" size={18} />
           Mbyll turnin
         </button>
-      </section>
-      <div className="shift-kpis">
-        <div><span>Shitje</span><strong>{money(d.sales)}</strong></div>
-        <div><span>Fatura</span><strong>{d.count}</strong></div>
-        <div><span>Mesatarja</span><strong>{money(d.count ? Math.round(d.sales / d.count) : 0)}</strong></div>
-        <button className={open.length ? "has-open" : ""} onClick={() => nav("Porositë")}>
-          <span>Porosi të hapura</span>
-          <strong>{open.length}</strong>
-          {open.length > 0 && <small>{money(openValue)}</small>}
-        </button>
+      </header>
+      <TillHero state={state} update={update} d={d} />
+      <div className="shift-strip">
+        <span><b>{money(d.sales)}</b> shitje</span>
+        <span><b>{d.count}</b> {d.count === 1 ? "faturë" : "fatura"}</span>
+        <span>mesatarja <b>{money(d.count ? Math.round(d.sales / d.count) : 0)}</b></span>
+        {open.length > 0 && (
+          <button className="shift-strip-open" onClick={() => nav("Porositë")}>
+            {plural(open.length, "porosi e hapur", "porosi të hapura")} · {money(openValue)}
+            <Icon name="arrow" size={16} />
+          </button>
+        )}
       </div>
-      <div className="shift-grid">
-        <CashMovements state={state} update={update} d={d} />
+      {usesFiscal && unfiscalized > 0 && (
+        <div className="notice warning">
+          <Icon name="info" size={16} />
+          <span>{unfiscalized} fatura të këtij turni nuk janë fiskalizuar.</span>
+          <button onClick={() => nav("Faturat")}>Faturat</button>
+        </div>
+      )}
+      <div className="shift-bottom">
         <section className="panel">
-          <SectionHeading title="Sipas kamarierit" description="Shitjet e këtij turni." />
+          <SectionHeading title="Kamarierët" description="Shitjet e këtij turni." />
           {waiters.length ? (
             <ul className="shift-waiters">
               {waiters.map((w) => (
                 <li key={w.id}>
-                  <span className="avatar">{w.name[0]}</span>
                   <div>
                     <strong>{w.name}</strong>
                     <small>
@@ -278,14 +296,8 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices }) {
           ) : (
             <p className="helper">Ende pa shitje në këtë turn.</p>
           )}
-          {usesFiscal && unfiscalized > 0 && (
-            <div className="notice warning shift-fiscal">
-              <Icon name="info" size={16} />
-              <span>{unfiscalized} fatura të këtij turni nuk janë fiskalizuar.</span>
-              <button onClick={() => nav("Faturat")}>Faturat</button>
-            </div>
-          )}
         </section>
+        {history}
       </div>
     </>
   );
@@ -506,9 +518,7 @@ function History({ state, onReport }) {
           </table>
         </div>
       ) : (
-        <Empty icon="clock" title="Çdo turn, i dokumentuar">
-          Pas mbylljes së turnit të parë, shitjet, numërimi dhe diferenca shfaqen këtu.
-        </Empty>
+        <p className="helper">Pas mbylljes së turnit të parë, shitjet, numërimi dhe diferenca shfaqen këtu.</p>
       )}
     </section>
   );
@@ -540,7 +550,8 @@ export function Shifts({ state: all, user, update: send, notify, nav, report, se
     }
   };
   return (
-    <div className="management-layout shifts-layout">
+    // The side column exists only for an open shift report; otherwise the shift has the page.
+    <div className={report ? "management-layout" : undefined}>
       <div className="shifts-main">
         {all.pointsOfSale.length > 1 && (
           <div className="tabs shift-tills" aria-label="Kasa">
@@ -570,12 +581,20 @@ export function Shifts({ state: all, user, update: send, notify, nav, report, se
             onClosed={(shift) => openReport(shift.id)}
           />
         ) : (
-          <LiveShift state={state} update={update} nav={nav} d={d} shiftInvoices={shiftInvoices} onClose={() => setClosing(true)} />
+          <LiveShift
+            state={state}
+            update={update}
+            nav={nav}
+            d={d}
+            shiftInvoices={shiftInvoices}
+            onClose={() => setClosing(true)}
+            history={<History state={state} onReport={openReport} />}
+          />
         )}
-        <History state={state} onReport={openReport} />
+        {(!state.shift || closing) && <History state={state} onReport={openReport} />}
       </div>
-      <aside className="management-aside">
-        {report ? (
+      {report && (
+        <aside className="management-aside">
           <div className="receipt-preview">
             <div className="preview-heading">
               <h2>Raporti i turnit #{report.shift.id}</h2>
@@ -591,20 +610,8 @@ export function Shifts({ state: all, user, update: send, notify, nav, report, se
               Printo raportin
             </button>
           </div>
-        ) : (
-          <div className="info-note">
-            <Icon name="cash" />
-            <div>
-              <strong>Si funksionon turni</strong>
-              <p>
-                Hapni turnin me fondin e arkës. Çdo para që hyn ose del nga arka gjatë turnit
-                regjistrohet te "Arka", që numërimi në fund të dalë i saktë. Pagesat me kartë
-                nuk hyjnë në arkë.
-              </p>
-            </div>
-          </div>
-        )}
-      </aside>
+        </aside>
+      )}
     </div>
   );
 }

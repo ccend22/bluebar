@@ -4012,28 +4012,6 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
 .shift-open-form .field {
   flex: 1 1 220px;
 }
-.shift-live-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.shift-live-head > div {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  column-gap: 10px;
-}
-.shift-live-head h2 {
-  margin: 0;
-  font-size: 22px;
-}
-.shift-live-head p {
-  grid-column: 2;
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
 .shift-live-dot {
   width: 10px;
   height: 10px;
@@ -4072,46 +4050,6 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
 .shift-kpis small {
   color: var(--muted);
   font-size: 12px;
-}
-.shift-kpis .has-open {
-  border-color: #e3c592;
-  background: #fffaf1;
-}
-.shift-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  align-items: start;
-}
-.drawer-lines > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 0;
-  font-size: 14px;
-}
-.drawer-lines b,
-.drawer-lines strong {
-  font-variant-numeric: tabular-nums;
-}
-.drawer-expected {
-  margin-top: 4px;
-  padding-top: 12px !important;
-  border-top: 1px solid var(--line);
-}
-.drawer-expected strong {
-  font-size: 22px;
-  color: var(--green);
-}
-.drawer-card-sales {
-  color: var(--muted);
-  font-size: 13px !important;
-}
-.drawer-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 14px;
 }
 .cash-move-form {
   margin-top: 14px;
@@ -4163,9 +4101,6 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
 }
 .shift-waiters b {
   font-variant-numeric: tabular-nums;
-}
-.shift-fiscal {
-  margin-top: 14px;
 }
 .close-steps {
   display: flex;
@@ -4337,18 +4272,11 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
   .shift-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .shift-grid,
   .denominations {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
-  .shift-live-head {
-    flex-wrap: wrap;
-  }
-  .shift-live-head .primary {
-    width: 100%;
-  }
   .close-steps li {
     padding: 8px;
     font-size: 11px;
@@ -6315,4 +6243,41 @@ body.order-open { overflow: hidden; }
   .orders-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "table total" "status time"; row-gap: 6px; padding: 12px 4px; }
   .orders-row-table { grid-area: table; } .orders-row-total { grid-area: total; }
   .orders-row-status { grid-area: status; } .orders-row-time { grid-area: time; justify-self: end; }
+}
+
+/* Turnet, till first: the shift line, the drawer as one block, a summary strip, then
+   waiters and history side by side. */
+.shifts-main .panel { margin-bottom: 0; }
+.shift-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.shift-head > div { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 10px; }
+.shift-head h2 { margin: 0; font-size: 22px; }
+.shift-head p { grid-column: 2; margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.till-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 24px 40px; align-items: start; }
+.till-hero-main { display: grid; gap: 6px; align-content: start; }
+.till-hero-label { color: var(--muted); font-size: 14px; }
+.till-hero-amount { font-size: clamp(40px, 5vw, 56px); font-weight: 650; letter-spacing: -0.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.till-hero-main > small { color: var(--muted); font-size: 13px; }
+.till-hero-actions { display: flex; gap: 10px; margin-top: 14px; }
+.till-hero-actions button { min-width: 120px; }
+.till-hero-main .cash-move-form { margin-top: 14px; max-width: 420px; }
+.till-hero-lines { display: grid; margin: 0; padding-left: 24px; border-left: 1px solid var(--line); }
+.till-hero-lines div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 14px; }
+.till-hero-lines dt { color: var(--muted); }
+.till-hero-lines dd { margin: 0; font-variant-numeric: tabular-nums; }
+.till-hero-lines .till-hero-total { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); font-weight: 650; }
+.till-hero-lines .till-hero-total dt { color: inherit; }
+.till-hero-moves { grid-column: 1 / -1; margin: 0; }
+.shift-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; padding: 0 4px; color: var(--muted); font-size: 14px; }
+.shift-strip b { color: var(--ink-app, #202428); font-variant-numeric: tabular-nums; }
+.shift-strip-open { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; min-height: 36px; padding: 0 14px; border-radius: 9999px; border-color: #e3c592; background: #fffaf1; color: #865516; font-size: 13px; }
+.shift-bottom { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+@media (max-width: 900px) {
+  .till-hero, .shift-bottom { grid-template-columns: minmax(0, 1fr); }
+  .till-hero-lines { padding-left: 0; padding-top: 12px; border-left: 0; border-top: 1px solid var(--line); }
+  .shift-strip-open { margin-left: 0; }
+}
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .shift-head { flex-wrap: wrap; }
+  .shift-head button { width: 100%; }
+  .till-hero-actions button { flex: 1; }
 }
