@@ -50,7 +50,7 @@ const features = (t) => [
       ["Search the menu, change quantities, add notes like “no sugar”", "Or just say it: “two macchiatos and a water”", "On the second round only the new items are sent"],
       ["Kërkon në menu, ndryshon sasinë, shton shënime si “pa sheqer”", "Ose e thotë me zë: “dy makiato dhe një ujë”", "Në raundin e dytë dërgohen vetëm artikujt e rinj"],
     ),
-    img: ["/landing/page-porosia.webp", 2476, 1700, t("Table 10's order: menu on the left, order on the right, ready to send to the stations.", "Porosia e Tavolinës 10: menuja majtas, porosia djathtas, gati për t’u dërguar në repartet.")],
+    img: ["/landing/page-porosia.webp", 2464, 1664, t("Table 07's order: the menu with photos on the left, the order on the right, ready to send to the stations.", "Porosia e Tavolinës 07: menuja me foto majtas, porosia djathtas, gati për t’u dërguar në repartet.")],
   },
   {
     id: "repartet", tab: t("Bar and kitchen", "Bari dhe kuzhina"),
@@ -59,7 +59,7 @@ const features = (t) => [
       ["Every item goes straight to its own station", "The kitchen taps “Ready” and the waiter sees it on their phone", "Prints directly, without the browser's print window"],
       ["Çdo artikull shkon vetë te reparti i vet", "Kuzhina shtyp “Gati” dhe kamarieri e sheh në telefon", "Printon direkt, pa dritaren e printimit të shfletuesit"],
     ),
-    img: ["/landing/page-repartet.webp", 2354, 1109, t("Slips waiting for the Bar and the Kitchen.", "Fletët në pritje për Barin dhe Kuzhinën.")],
+    img: ["/landing/page-repartet.webp", 2338, 1038, t("Slips waiting at the bar, the kitchen and the pizza oven.", "Fletët në pritje te bari, kuzhina dhe furra e picave.")],
   },
   {
     id: "faturat", tab: t("Payments", "Pagesat"),
@@ -68,7 +68,7 @@ const features = (t) => [
       ["BlueBar works out the change, not the waiter in their head", "Fiscalization through BlueBill", "A manager can correct a closed bill, but has to write down why"],
       ["Kusurin e llogarit BlueBar, jo kamarieri me mend", "Fiskalizim përmes BlueBill", "Menaxheri mund ta korrigjojë një faturë të mbyllur, por duhet të shkruajë arsyen"],
     ),
-    img: ["/landing/page-faturat.webp", 2354, 1267, t("The bill register with bill D-8 open.", "Regjistri i faturave me faturën D-8 të hapur.")],
+    img: ["/landing/page-faturat.webp", 2338, 1482, t("The bill register with the day's paid bills, cash and card.", "Regjistri i faturave me faturat e paguara të ditës, cash dhe kartë.")],
   },
   {
     id: "raportet", tab: t("Reports", "Raportet"),
@@ -77,7 +77,7 @@ const features = (t) => [
       ["Sales by hour, by waiter and by product", "Cash and card kept apart", "One CSV for your accountant, in one click"],
       ["Shitjet sipas orës, kamarierit dhe produktit", "Cash dhe kartë veç e veç", "Një CSV për kontabilistin, me një klik"],
     ),
-    img: ["/landing/page-raportet.webp", 2354, 921, t("The day's report: sales, cash, card and best sellers.", "Raporti i ditës: shitjet, cash, kartë dhe produktet më të shitura.")],
+    img: ["/landing/page-raportet.webp", 2338, 1532, t("The day's report: sales, cash, card and best sellers.", "Raporti i ditës: shitjet, cash, kartë dhe produktet më të shitura.")],
   },
   {
     id: "menuja", tab: t("Online menu", "Menuja online"),
@@ -231,8 +231,8 @@ export function Landing() {
               </div>
             </div>
             <div className="lp-hero-media">
-              <div className="lp-browser"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1520" alt={t("BlueBar: Bar Aurora's floor, 7 occupied tables with their waiter and amount.", "BlueBar: salla e Bar Aurora, 7 tavolina të zëna me kamarierin dhe shumën.")} fetchPriority="high" /></div>
-              <img className="lp-phone lp-hero-phone" src="/landing/phone-porosia.webp" width="1170" height="2100" alt={t("BlueBar on the waiter's phone: Table 11's order.", "BlueBar në telefonin e kamarierit: porosia e Tavolinës 11.")} />
+              <div className="lp-browser"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1520" alt={t("BlueBar: Bar Aurora's floor, 4 occupied tables with their waiter and amount.", "BlueBar: salla e Bar Aurora, 4 tavolina të zëna me kamarierin dhe shumën.")} fetchPriority="high" /></div>
+              <img className="lp-phone lp-hero-phone" src="/landing/phone-porosia.webp" width="1170" height="2100" alt={t("BlueBar on the waiter's phone: Table 01's order.", "BlueBar në telefonin e kamarierit: porosia e Tavolinës 01.")} />
             </div>
           </div>
           <dl className="lp-wrap lp-facts">{facts(t).map(([big, small]) => <div key={big}><dt>{big}</dt><dd>{small}</dd></div>)}</dl>
