@@ -52,7 +52,7 @@ const pages = [
   {
     name: "Porositë",
     icon: "list",
-    description: "Porositë e hapura, si listë, gati për t'u mbyllur.",
+    description: "Porositë e hapura: zgjidhni një për ta dërguar, paguar ose ndryshuar.",
   },
   {
     name: "Repartet",
@@ -500,6 +500,9 @@ function App({ user, onLogout, onUserChange }) {
     }
     setFloorSaving(false);
   }
+  // Porositë opens the full order window only when asked ("Ndrysho porosinë"); paying from
+  // its receipt selects the table without it.
+  const [orderWindow, setOrderWindow] = useState(false);
   const selectTable = (t) => {
     setCancelling(false);
     setSelected(t.id);
@@ -507,16 +510,6 @@ function App({ user, onLogout, onUserChange }) {
     setQuery("");
     setCategory("Të gjitha");
     setNotice(null);
-  };
-  // The Porositë (Orders) list is a second entry point into the same order/payment
-  // flow the floor plan already has — jump to it instead of rebuilding it.
-  const openOrderTable = (t) => {
-    setPage("Tavolinat");
-    selectTable(t);
-  };
-  const closeOrderTable = (t, method) => {
-    setSelected(t.id);
-    startPayment(method);
   };
   // The tills this user works (a waiter assigned to one till: just that one), and those not open.
   const myPos = user.role === "waiter" ? state.waiters.find((w) => w.id === user.waiterId)?.posId : null;
@@ -797,6 +790,41 @@ function App({ user, onLogout, onUserChange }) {
         )}
       </main>
     );
+  // The order window, opened from the floor plan or from a card on Porositë.
+  const orderModal = table && (
+                    <div className="order-modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
+                      <div className="order-modal" role="dialog" aria-modal="true" aria-label={`Porosia e tavolinës ${table.id}`}>
+                    <TableOrder
+                      table={table}
+                      state={state}
+                      notify={notify}
+                      role={role}
+                      user={user}
+                      waiter={waiter}
+                      onWaiterChange={(next) => {
+                        setWaiter(next);
+                        update("order.assign", { tableId: selected, waiterId: next });
+                      }}
+                      mode={orderMode}
+                      setMode={setOrderMode}
+                      query={query}
+                      setQuery={setQuery}
+                      category={category}
+                      setCategory={setCategory}
+                      products={filteredProducts}
+                      available={available}
+                      update={update}
+                      onClose={() => setSelected(null)}
+                      onSend={sendOrder}
+                      onPay={() => startPayment("Zgjidh")}
+                      onPrintBill={printOrder}
+                      cancelling={cancelling}
+                      setCancelling={setCancelling}
+                      headingRef={orderHeading}
+                    />
+                      </div>
+                    </div>
+                  );
   return (
     <>
       {database.pending && !database.busy && !database.syncingOrders && (
@@ -1084,7 +1112,7 @@ function App({ user, onLogout, onUserChange }) {
               <div
                 // With a table's popup open the page is behind it: the notice floats above, or a
                 // refused add ("Pa stok", "Turni është i mbyllur"…) would look like nothing happened.
-                className={`notice ${notice.tone} ${page === "Tavolinat" && table ? "floating" : ""}`}
+                className={`notice ${notice.tone} ${(page === "Tavolinat" || page === "Porositë") && table ? "floating" : ""}`}
                 role={notice.tone === "error" ? "alert" : "status"}
               >
                 <Icon
@@ -1616,40 +1644,7 @@ function App({ user, onLogout, onUserChange }) {
                       );
                     })()}
                   </section>
-                  {table && (
-                    <div className="order-modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
-                      <div className="order-modal" role="dialog" aria-modal="true" aria-label={`Porosia e tavolinës ${table.id}`}>
-                    <TableOrder
-                      table={table}
-                      state={state}
-                      notify={notify}
-                      role={role}
-                      user={user}
-                      waiter={waiter}
-                      onWaiterChange={(next) => {
-                        setWaiter(next);
-                        update("order.assign", { tableId: selected, waiterId: next });
-                      }}
-                      mode={orderMode}
-                      setMode={setOrderMode}
-                      query={query}
-                      setQuery={setQuery}
-                      category={category}
-                      setCategory={setCategory}
-                      products={filteredProducts}
-                      available={available}
-                      update={update}
-                      onClose={() => setSelected(null)}
-                      onSend={sendOrder}
-                      onPay={() => startPayment("Zgjidh")}
-                      onPrintBill={printOrder}
-                      cancelling={cancelling}
-                      setCancelling={setCancelling}
-                      headingRef={orderHeading}
-                    />
-                      </div>
-                    </div>
-                  )}
+                  {orderModal}
                   {(
                     <aside className="floor-guide">
                       <div className="guide-symbol">
@@ -1695,17 +1690,16 @@ function App({ user, onLogout, onUserChange }) {
               ))}
 
             {page === "Porositë" && (
-              <Orders
-                state={state}
-                selected={selected}
-                onSelect={setSelected}
-                onModify={openOrderTable}
-                onClose={closeOrderTable}
-                onPrint={printOrder}
-                onSend={sendOrder}
-                onReprintTicket={(ticket) => reprintTickets([ticket])}
-                time={time}
-              />
+              <>
+                <Orders
+                  state={state}
+                  onEdit={(t) => (selectTable(t), setOrderWindow(true))}
+                  onSend={sendOrder}
+                  onPrint={printOrder}
+                  onPay={(t) => (setOrderWindow(false), setSelected(t.id), startPayment("Zgjidh"))}
+                />
+                {orderWindow && orderModal}
+              </>
             )}
 
             {page === "Repartet" && (

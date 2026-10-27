@@ -1,231 +1,134 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { bill, money, tableName } from "./domain.js";
-import { Badge, DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
+import React, { useState } from "react";
+import { bill, money, pendingUnits, tableName } from "./domain.js";
+import { Badge, Empty, Icon, SectionHeading } from "./components.jsx";
 
-export function Orders({ state, selected, onSelect, onModify, onClose, onPrint, onSend, onReprintTicket, time }) {
+// Porositë: open orders as a compact list, and the chosen one beside it as the receipt it will
+// become, with what to do next under it. On a phone a row opens the full order window instead.
+export function Orders({ state, onEdit, onSend, onPay, onPrint }) {
   const [area, setArea] = useState("Të gjitha");
-  const [fiscalizeChoice, setFiscalizeChoice] = useState(false);
+  const [chosen, setChosen] = useState(null);
   const waiterName = (id) => state.waiters.find((w) => w.id === id)?.name;
-  useEffect(() => setFiscalizeChoice(false), [selected]);
+  const open = state.tables.filter((t) => t.lines.length > 0);
+  const areas = ["Të gjitha", ...[...new Set(open.map((t) => t.area))].sort((a, b) => a.localeCompare(b, "sq"))];
+  const shown = open.filter((t) => area === "Të gjitha" || t.area === area).sort((a, b) => a.id - b.id);
+  const total = shown.reduce((s, t) => s + bill(t).remaining, 0);
+  // Nothing chosen (or it was just paid): the first order is open, never an empty panel.
+  const table = shown.find((t) => t.id === chosen) || shown[0];
 
-  const openTables = useMemo(
-    () =>
-      state.tables
-        .filter((t) => t.lines.length > 0)
-        .filter((t) => area === "Të gjitha" || t.area === area)
-        .sort((a, b) => a.id - b.id),
-    [state.tables, area],
-  );
-  const areas = useMemo(
-    () => [
-      "Të gjitha",
-      ...[...new Set(state.tables.filter((t) => t.lines.length > 0).map((t) => t.area))].sort((a, b) =>
-        a.localeCompare(b, "sq"),
-      ),
-    ],
-    [state.tables],
-  );
-  const table = state.tables.find((t) => t.id === selected && t.lines.length > 0);
-  const pending = table ? table.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0) : 0;
-  const tickets = table
-    ? state.tickets.filter((k) => k.table === table.id && !k.invoice && !k.cancelledAt)
-    : [];
-  const ticketGroups = useMemo(() => {
-    if (!table) return [];
-    const byDept = new Map();
-    for (const l of table.lines) {
-      const dept = state.products.find((p) => p.id === l.id)?.department || "Tjetër";
-      if (!byDept.has(dept)) byDept.set(dept, []);
-      byDept.get(dept).push(l);
-    }
-    return [...byDept.entries()];
-  }, [table, state.products]);
+  const unsentOf = (t) => t.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0);
+  // Where the table's order is, the same way the order window reads it: something still to
+  // send, slips still at a station, or everything ready.
+  const status = (t) => {
+    const unsent = unsentOf(t);
+    if (unsent > 0) return <Badge tone="amber">{unsent} pa dërguar</Badge>;
+    const slips = state.tickets.filter((k) => k.table === t.id && !k.invoice && !k.cancelledAt && !k.void);
+    if (slips.some((k) => !k.doneAt)) return <Badge>Në përgatitje</Badge>;
+    return <Badge tone="green">{slips.length ? "Gati" : "Dërguar"}</Badge>;
+  };
+  const minutes = (t) =>
+    t.occupiedSince ? `${Math.max(0, Math.round((Date.now() - new Date(t.occupiedSince)) / 60000))} min` : "";
+  const choose = (t) => (matchMedia("(max-width: 900px)").matches ? onEdit(t) : setChosen(t.id));
 
+  if (!open.length)
+    return (
+      <section className="panel">
+        <Empty icon="menu" title="Asnjë porosi aktive">
+          Porositë e hapura shfaqen këtu sapo një tavolinë të marrë porosinë e parë.
+        </Empty>
+      </section>
+    );
+
+  const b = table && bill(table);
+  // What "Dërgo" would send now (held items and later courses wait), as the order window counts it.
+  const sendable = table ? pendingUnits(table).reduce((s, l) => s + l.qty - (l.sent || 0), 0) : 0;
   return (
-    <div className="orders-layout">
-      <section className={`panel orders-list-panel ${table ? "mobile-hidden" : ""}`}>
-        <SectionHeading title="Porositë" description={`${openTables.length} porosi aktive`} />
-        {areas.length > 1 && (
+    <div className="orders-desk">
+      <section className="panel orders-desk-list">
+        <SectionHeading title="Të hapura" description={`${shown.length} porosi · ${money(total)}`} />
+        {areas.length > 2 && (
           <div className="tabs" aria-label="Filtro zonën">
             {areas.map((a) => (
               <button key={a} aria-pressed={area === a} onClick={() => setArea(a)}>
                 {a}
+                {a !== "Të gjitha" && <span>{open.filter((t) => t.area === a).length}</span>}
               </button>
             ))}
           </div>
         )}
-        {openTables.length ? (
-          <div className="orders-list">
-            {openTables.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`orders-list-item ${selected === t.id ? "selected" : ""}`}
-                aria-pressed={selected === t.id}
-                onClick={() => onSelect(t.id)}
-              >
-                <div className="orders-list-item-head">
-                  <strong>{tableName(t)}</strong>
-                  <Badge tone="green">E hapur</Badge>
-                </div>
-                <div className="orders-list-item-row">
-                  <div className="orders-list-item-meta">
-                    <span>{waiterName(t.waiter) || "Pa kamarier"}</span>
-                    <span>
-                      {t.lines.reduce((s, l) => s + l.qty, 0)} artikuj · Nisi {time(t.occupiedSince)}
-                    </span>
-                  </div>
-                  <strong className="orders-list-item-total">{money(bill(t).remaining)}</strong>
-                </div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <Empty icon="menu" title="Asnjë porosi aktive">
-            Porositë e hapura shfaqen këtu sapo një tavolinë të marrë porosinë e parë.
-          </Empty>
-        )}
+        <div className="orders-rows" role="list">
+          {shown.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="listitem"
+              className="orders-row"
+              aria-current={t.id === table?.id ? "true" : undefined}
+              onClick={() => choose(t)}
+            >
+              <span className="orders-row-table">
+                <strong>{tableName(t)}</strong>
+                <small>{waiterName(t.waiter) || "Pa kamarier"} · {t.area}</small>
+              </span>
+              <span className="orders-row-time">{minutes(t)}</span>
+              <span className="orders-row-status">{status(t)}</span>
+              <strong className="orders-row-total">{money(bill(t).remaining)}</strong>
+            </button>
+          ))}
+        </div>
       </section>
-      <section className="panel orders-detail-panel">
-        {table ? (
-          <>
-            <div className="orders-detail-head">
-              <div className="orders-detail-title">
-                <div>
-                  <small>{table.label ? `Tavolina ${String(table.id).padStart(2, "0")}` : "Tavolina"}</small>
-                  <h2>{table.label || String(table.id).padStart(2, "0")}</h2>
-                </div>
-                <Badge tone="green">E hapur</Badge>
-              </div>
-              <div className="orders-detail-actions">
-                <button onClick={() => onModify(table)}>Ndrysho porosinë</button>
-                <button className="icon-button orders-detail-close" onClick={() => onSelect(null)} aria-label="Kthehu te lista">
-                  <Icon name="close" />
-                </button>
-              </div>
+
+      {table && (
+        <aside className="panel orders-desk-receipt" aria-label={`Porosia e ${tableName(table)}`}>
+          <header className="orders-receipt-head">
+            <div>
+              <h2>{tableName(table)}</h2>
+              <p>
+                {waiterName(table.waiter) || "Pa kamarier"} · {table.area} · {minutes(table)}
+              </p>
             </div>
-            <p className="orders-detail-meta">
-              {waiterName(table.waiter) || "Pa kamarier"} · {table.seats} vende · Nisi {time(table.occupiedSince)}
-            </p>
-            <div className="receipt-paper order-ticket">
-              {ticketGroups.map(([dept, lines]) => (
-                <div className="receipt-department" key={dept}>
-                  <div className="receipt-department-head">
-                    <DepartmentTag name={dept} />
-                  </div>
-                  {lines.map((l) => (
-                    <div className="receipt-line" key={l.key || l.id}>
-                      <span>
-                        {l.qty} × {l.name}
-                        <small>
-                          {money(l.price)} / copë
-                          {l.qty > (l.sent || 0) && (
-                            <span className="pending-mark"> · {l.qty - (l.sent || 0)} pa dërguar</span>
-                          )}
-                        </small>
-                      </span>
-                      <b>{money(l.qty * l.price)}</b>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-            {tickets.length > 0 && (
-              <div className="sent-tickets">
-                <h3>Dërguar në repartet</h3>
-                {tickets.map((k) => (
-                  <div className="sent-ticket" key={k.id}>
-                    <DepartmentTag name={k.department} />
-                    <span>
-                      {(state.stations || []).find((x) => x.id === k.station)?.name
-                        ? `${state.stations.find((x) => x.id === k.station).name} · `
-                        : ""}
-                      {k.void ? "Anulim" : `Raundi ${k.round}`} · {time(k.date)} ·{" "}
-                      {k.lines.map((l) => `${k.void ? "−" : ""}${l.qty}× ${l.name}`).join(", ")}
-                    </span>
-                    {k.void ? (
-                      <span className="pending-mark">{k.doneAt ? "Pa nga reparti" : "Te reparti"}</span>
-                    ) : k.doneAt ? (
-                      <span className="sent-mark">
-                        <Icon name="check" size={12} /> Gati
-                      </span>
-                    ) : (
-                      <span className="pending-mark">Në përgatitje</span>
-                    )}
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={`Riprinto ${k.department}, raundi ${k.round}`}
-                      onClick={() => onReprintTicket(k)}
-                    >
-                      <Icon name="print" size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+            {status(table)}
+          </header>
+          <ul className="orders-receipt-lines">
+            {table.lines.map((l) => {
+              const fresh = l.qty - (l.sent || 0);
+              return (
+                <li key={l.key || l.id}>
+                  <span>
+                    <span><b>{l.qty} ×</b> {l.name}</span>
+                    {fresh > 0 && <small className="pending-mark">{fresh} pa dërguar</small>}
+                  </span>
+                  <span>{money(l.qty * l.price)}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <dl className="orders-receipt-sum">
+            {b.paid > 0 && (
+              <>
+                <div><dt>Totali</dt><dd>{money(b.due)}</dd></div>
+                <div><dt>Paguar</dt><dd>−{money(b.paid)}</dd></div>
+              </>
             )}
-            <div className="orders-detail-total">
-              <span>Totali</span>
-              <strong>{money(bill(table).remaining)}</strong>
-            </div>
-            <div className="receipt-actions">
-              {pending > 0 && (
-                <button className="primary full-width" onClick={() => onSend(table)}>
-                  <Icon name="arrow" size={18} />
-                  Dërgo në repartet ({pending})
-                </button>
-              )}
-              <button className="full-width" onClick={() => onPrint(table)}>
-                <Icon name="print" size={18} />
-                Printo faturën
+            <div className="orders-receipt-due"><dt>Për t'u paguar</dt><dd>{money(b.remaining)}</dd></div>
+          </dl>
+          <div className="orders-receipt-actions">
+            {sendable > 0 && (
+              <button className="primary" onClick={() => onSend(table)}>
+                <Icon name="arrow" size={18} /> Dërgo në repartet · {sendable}
               </button>
-              {fiscalizeChoice ? (
-                <div className="fiscalize-choice">
-                  <span>Si po paguhet?</span>
-                  <div className="payment-methods">
-                    <button
-                      onClick={() => {
-                        setFiscalizeChoice(false);
-                        onClose(table, "Cash");
-                      }}
-                    >
-                      <Icon name="cash" size={16} />
-                      Cash
-                    </button>
-                    <button
-                      onClick={() => {
-                        setFiscalizeChoice(false);
-                        onClose(table, "Kartë");
-                      }}
-                    >
-                      <Icon name="card" size={16} />
-                      Kartë
-                    </button>
-                  </div>
-                  <button className="text-button full-width" onClick={() => setFiscalizeChoice(false)}>
-                    Anulo
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className={`full-width ${pending ? "" : "primary"}`}
-                  onClick={() => setFiscalizeChoice(true)}
-                >
-                  <Icon name="receipt" size={18} />
-                  {state.fiscal?.enabled ? "Fiskalizo Faturën" : "Paguaj"}
-                </button>
-              )}
-              <button className="full-width" onClick={() => onSelect(null)}>
-                Mbyll
+            )}
+            <button className={sendable > 0 ? "" : "primary"} onClick={() => onPay(table)}>
+              <Icon name="receipt" size={18} /> Paguaj · {money(b.remaining)}
+            </button>
+            <div className="orders-receipt-more">
+              <button onClick={() => onEdit(table)}>Ndrysho porosinë</button>
+              <button onClick={() => onPrint(table)}>
+                <Icon name="print" size={16} /> Para-fatura
               </button>
             </div>
-          </>
-        ) : (
-          <Empty icon="menu" title="Zgjidhni një porosi">
-            Klikoni një tavolinë nga lista për t'i parë detajet dhe për ta mbyllur.
-          </Empty>
-        )}
-      </section>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

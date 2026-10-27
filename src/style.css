@@ -1391,118 +1391,6 @@ td small {
     grid-template-columns: 1fr;
   }
 }
-.orders-layout {
-  display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-.orders-list {
-  display: grid;
-  gap: 10px;
-  max-height: 70vh;
-  overflow: auto;
-}
-.orders-list-item {
-  display: grid;
-  gap: 6px;
-  text-align: left;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface-subtle);
-}
-.orders-list-item.selected {
-  border-color: var(--blue);
-  background: var(--blue-soft);
-}
-.orders-list-item-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-.orders-list-item-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-.orders-list-item-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.orders-list-item-total {
-  font-size: 15px;
-  white-space: nowrap;
-}
-.orders-detail-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.orders-detail-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.orders-detail-head h2 {
-  margin: 2px 0 0;
-  font-size: 27px;
-  font-variant-numeric: tabular-nums;
-}
-.orders-detail-meta {
-  margin: 6px 0 20px;
-  color: var(--muted);
-  font-size: 13px;
-}
-.orders-detail-actions {
-  display: flex;
-  gap: 10px;
-}
-.order-ticket {
-  max-width: 380px;
-  margin: 0 0 18px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-.orders-detail-total {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-  font-size: 15px;
-}
-.orders-detail-total strong {
-  font-size: 20px;
-}
-.orders-detail-panel .receipt-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 20px;
-}
-/* An odd last button (nothing left to send) takes the full row. */
-.orders-detail-panel .receipt-actions > :last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-/* While choosing Cash/Kartë, one column: the choice is the only thing that matters. */
-.orders-detail-panel .receipt-actions:has(> .fiscalize-choice) {
-  grid-template-columns: minmax(0, 1fr);
-}
-@media (max-width: 900px) {
-  .orders-layout {
-    grid-template-columns: 1fr;
-  }
-  .orders-list {
-    max-height: none;
-  }
-}
 .empty {
   text-align: center;
   padding: 46px 20px;
@@ -2042,34 +1930,6 @@ td .dept-tag {
   letter-spacing: 0.05em;
   text-align: left !important;
   margin: 0 0 8px !important;
-}
-.receipt-department-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 8px;
-}
-.sent-tickets {
-  margin: 0 0 4px;
-}
-.sent-tickets h3 {
-  margin: 0 0 8px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.sent-ticket {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-}
-.sent-ticket > span:nth-child(2) {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .receipt-fiscal {
   font-weight: 600;
@@ -5135,10 +4995,6 @@ textarea {
   color: var(--muted);
   font-size: 11px;
 }
-/* Order cards are buttons: keep their grid left-aligned, not centered like a button label. */
-.orders-list-item {
-  justify-content: stretch;
-}
 /* Ranked names read from the left, next to their number. */
 .report-rank-list li span {
   flex: 1;
@@ -6422,3 +6278,41 @@ body.order-open { overflow: hidden; }
 .payment-dialog .dialog-actions button { border-radius: 9999px; border-color: var(--paper-line); background: #fff; }
 .payment-dialog .dialog-actions button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
 .payment-dialog .dialog-actions button.primary:hover { background: var(--blue-strong); }
+
+/* Porositë: a compact list of open orders, and the chosen one beside it as its receipt. */
+.orders-desk { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 24px; align-items: start; }
+.orders-rows { display: grid; margin-top: 14px; border-top: 1px solid var(--line); }
+.orders-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 132px 110px; align-items: center; gap: 12px; min-height: 64px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; text-align: left; font: inherit; }
+.orders-row[aria-current="true"] { background: var(--blue-soft); box-shadow: inset 3px 0 0 var(--blue); }
+@media (hover: hover) and (pointer: fine) { .orders-row:not([aria-current="true"]):hover { background: var(--surface-subtle); } }
+.orders-row-table { display: grid; gap: 2px; min-width: 0; }
+.orders-row-table strong { font-size: 15px; }
+.orders-row-table small, .orders-row-time { color: var(--muted); font-size: 12.5px; }
+.orders-row-time { font-variant-numeric: tabular-nums; }
+.orders-row-total { justify-self: end; font-size: 15px; font-variant-numeric: tabular-nums; }
+.orders-desk-receipt { position: sticky; top: 88px; display: grid; gap: 18px; }
+.orders-receipt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.orders-receipt-head h2 { margin: 0; font-size: 22px; }
+.orders-receipt-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.orders-receipt-lines { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px dashed var(--line); }
+.orders-receipt-lines li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.orders-receipt-lines li > span:first-child { display: grid; gap: 2px; }
+.orders-receipt-lines li > span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.orders-receipt-lines b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.orders-receipt-lines small { font-size: 12px; }
+.orders-receipt-sum { display: grid; gap: 6px; margin: 0; }
+.orders-receipt-sum div { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
+.orders-receipt-sum dd { margin: 0; font-variant-numeric: tabular-nums; }
+.orders-receipt-sum .orders-receipt-due { align-items: baseline; color: var(--ink-app, #202428); font-size: 14px; }
+.orders-receipt-sum .orders-receipt-due dd { font-size: 24px; font-weight: 650; }
+.orders-receipt-actions { display: grid; gap: 10px; }
+.orders-receipt-actions > button { width: 100%; min-height: 48px; }
+.orders-receipt-more { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 900px) {
+  .orders-desk { grid-template-columns: 1fr; }
+  .orders-desk-receipt { display: none; }
+  .orders-row[aria-current="true"] { background: transparent; box-shadow: none; }
+  .orders-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "table total" "status time"; row-gap: 6px; padding: 12px 4px; }
+  .orders-row-table { grid-area: table; } .orders-row-total { grid-area: total; }
+  .orders-row-status { grid-area: status; } .orders-row-time { grid-area: time; justify-self: end; }
+}
