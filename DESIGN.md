@@ -263,7 +263,9 @@ The Shared system prose above predates the build and is not repaired here; the f
 
 # Landing (Persuade): "The bar at night"
 
-Source: src/Landing.jsx, src/LandingCounter.jsx, src/landing.css. Everything below applies to the landing only and is written in Stitch's semantic structure, so the same text can prompt new landing screens. Derived from the shipped CSS and checked in the browser at 1440px and 390px.
+**Current look: "Salla" (2026-10-28).** The page ships with `.lp-salla`: src/landing-salla.css re-inks landing.css through its variables. Light paper (#f6f7f9) with white bands, or night navy (#0d1c26 / #132836) in dark, following the visitor's light / dark / system choice from one cycling button in the bar (kept in this browser). A corner of a floor plan, tables in outline with a few occupied in green, sits behind the hero and in white on the blue closing block. Section labels are blue chips in sentence case; buttons are solid blue with 12px corners; screenshots sit in a frame whose bar reads "● Bar Aurora". Only the bar blurs. The demo screens and the voice card stay light in both themes. The night description below is the base those variables override.
+
+Source: src/Landing.jsx, src/LandingCounter.jsx, src/landing.css, src/landing-salla.css. Everything below applies to the landing only and is written in Stitch's semantic structure, so the same text can prompt new landing screens. Derived from the shipped CSS and checked in the browser at 1440px and 390px.
 
 ## 1. Visual Theme & Atmosphere
 

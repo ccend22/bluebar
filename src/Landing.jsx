@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import "./landing.css";
+import "./landing-salla.css";
 import { Counter, Mic, Wave, heard, phrases, useTyping } from "./LandingCounter.jsx";
 
 const REGISTER = "/?regjistro";
@@ -8,6 +9,44 @@ const SIGN_IN = "/?hyr";
 
 // English by default; the visitor's choice is kept in this browser.
 const LANG_KEY = "bluebar-landing-lang";
+// The page's look is "salla" (landing-salla.css re-inks landing.css): light, a floor plan
+// behind the hero, night navy for dark, following the visitor's light / dark / system choice.
+const THEME_KEY = "bluebar-landing-theme";
+function savedTheme() {
+  try { return ["light", "dark"].includes(localStorage.getItem(THEME_KEY)) ? localStorage.getItem(THEME_KEY) : "system"; } catch { return "system"; }
+}
+// A corner of a floor plan, drawn behind the hero and the closing block:
+// tables in outline, a few occupied. Decoration only.
+const MOTIF = [
+  ["r", 40, 40, 64, 64, 1], ["r", 140, 40, 64, 64], ["c", 272, 72, 34], ["r", 340, 40, 64, 64, 1], ["r", 440, 40, 120, 64],
+  ["c", 72, 186, 34], ["r", 140, 154, 64, 64, 1], ["r", 240, 154, 64, 64], ["c", 372, 186, 34], ["r", 440, 154, 64, 64, 1],
+  ["r", 40, 268, 164, 56], ["c", 272, 296, 34, 1], ["r", 340, 268, 64, 64], ["r", 440, 268, 120, 56],
+];
+function FloorMotif({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 600 360" aria-hidden="true" focusable="false">
+      {MOTIF.map(([kind, x, y, a, b, on], i) => kind === "r"
+        ? <rect key={i} x={x} y={y} width={a} height={b} rx="14" className={on ? "on" : undefined} />
+        : <circle key={i} cx={x} cy={y} r={a} className={b ? "on" : undefined} />)}
+    </svg>
+  );
+}
+
+// The theme the page actually shows: the visitor's choice, or the device's while on "system".
+function useTheme() {
+  const [theme, setTheme] = useState(savedTheme);
+  const [systemDark, setSystemDark] = useState(() => matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(() => {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const on = (e) => setSystemDark(e.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  useEffect(() => {
+    try { theme === "system" ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, theme); } catch {}
+  }, [theme]);
+  return [theme, setTheme, theme === "dark" || (theme === "system" && systemDark) ? "dark" : "light"];
+}
 function savedLang() {
   try { return localStorage.getItem(LANG_KEY) === "sq" ? "sq" : "en"; } catch { return "en"; }
 }
@@ -24,6 +63,9 @@ function Symbol({ name, size = 20 }) {
     list: <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />,
     key: <><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9m-4 4 3 3m-5-1 2 2" /></>,
     devices: <><rect x="2" y="4" width="14" height="11" rx="2" /><rect x="17.5" y="8" width="4.5" height="12" rx="1.5" /><path d="M6 19h7" /></>,
+    system: <><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" /></>,
+    sun: <><circle cx="12" cy="12" r="3.5" /><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" /></>,
+    moon: <path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z" />,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -209,15 +251,22 @@ export function Landing() {
     document.title = t("BlueBar · In step with your venue", "BlueBar · Në ritmin e lokalit tuaj");
     try { localStorage.setItem(LANG_KEY, lang); } catch {}
   }, [lang, t]);
+  const [theme, setTheme, shown] = useTheme();
   const nav = [["#vecorite", t("Features", "Veçoritë")], ["#provo", t("Try it", "Provojeni")], ["#fillimi", t("Getting started", "Si fillohet")], ["#pyetje", t("Questions", "Pyetje")]];
+  const themes = [["system", t("Match system", "Sipas sistemit")], ["light", t("Light", "E çelët")], ["dark", t("Dark", "E errët")]];
   return (
-    <div className="lp">
+    <div className="lp lp-salla" data-theme={shown}>
       <a className="lp-skip" href="#permbajtja">{t("Skip to content", "Kalo te përmbajtja")}</a>
       <header className="lp-header">
         <div className="lp-wrap lp-header-inner">
           <Brand t={t} />
           <nav className="lp-nav" aria-label={t("Main navigation", "Navigimi kryesor")}>{nav.map(([h, l]) => <a key={h} href={h}>{l}</a>)}</nav>
           <div className="lp-header-actions">
+            {(() => {
+              const next = { system: "light", light: "dark", dark: "system" }[theme];
+              const label = themes.find(([key]) => key === theme)[1];
+              return <button type="button" className="lp-theme-cycle" aria-label={`${t("Theme", "Pamja")}: ${label}`} title={`${t("Theme", "Pamja")}: ${label}`} onClick={() => setTheme(next)}><Symbol name={theme === "system" ? "system" : theme === "light" ? "sun" : "moon"} size={18} /></button>;
+            })()}
             <div className="lp-lang" data-lang={lang} role="group" aria-label="Language · Gjuha">
               <button type="button" lang="en" aria-label="English" aria-pressed={lang === "en"} onClick={() => switchLang("en")}>EN</button>
               <button type="button" lang="sq" aria-label="Shqip" aria-pressed={lang === "sq"} onClick={() => switchLang("sq")}>SQ</button>
@@ -231,6 +280,7 @@ export function Landing() {
       </header>
       <main id="permbajtja" tabIndex={-1}>
         <section className="lp-hero">
+          <FloorMotif className="lp-motif" />
           <div className="lp-wrap lp-hero-inner">
             <div className="lp-hero-copy">
               <p className="lp-eyebrow lp-live">{t("Point of sale for bars, cafés and restaurants", "Arka për bare, kafene dhe restorante")}</p>
@@ -313,6 +363,7 @@ export function Landing() {
         <section className="lp-cta">
           <div className="lp-wrap">
             <div className="lp-cta-card">
+              <FloorMotif className="lp-motif" />
               <div>
                 <h2>{t("Your first shift with BlueBar ", "Turni i parë me BlueBar ")}<em>{t("could be tonight.", "mund të jetë sonte.")}</em></h2>
                 <p>{t("Registration takes about two minutes. Staff sign in with the venue code and their own PIN.", "Regjistrimi zgjat rreth dy minuta. Stafi hyn me kodin e lokalit dhe PIN-in e vet.")}</p>

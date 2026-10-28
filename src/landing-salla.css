@@ -1,0 +1,168 @@
+/* BlueBar landing, salla look (the page at /). BlueBar's own light page: the room seen from above.
+   A corner of a floor plan sits behind the hero and the closing block, tables in outline with a
+   few occupied in the app's green. Bricolage and Figtree as on the night page, BlueBar blue as
+   the one colour that acts, solid surfaces with hairlines, and night navy (not black) for dark.
+   Only the bar blurs what's behind it. Scoped to .lp-salla; re-inks landing.css through its
+   variables, so the demo and voice card keep working unchanged. */
+html:has(.lp-salla) { background: #f6f7f9; scrollbar-color: #c2cad2 #f6f7f9; }
+html:has(.lp-salla[data-theme="dark"]) { background: #0d1c26; scrollbar-color: #2c4556 #0d1c26; }
+.lp.lp-salla {
+  color-scheme: light;
+  --paper: #f6f7f9;
+  --surface: #ffffff;
+  --band: #ffffff;
+  --ink: #16212a;
+  --ink-2: #3a4651;
+  --muted: #5d6974;
+  --faint: #8d98a3;
+  --line: #e2e7ec;
+  --cream: #eef2f6;
+  --soft: #eef2f6;
+  --night: #0d1c26;
+  --on-night: var(--ink);
+  --on-night-2: var(--ink-2);
+  --accent: var(--blue);
+  --accent-ink: var(--blue);
+  --green: #2f8a63;
+  --green-soft: #e4f3eb;
+  --motif: #cfd8e0;
+  --motif-on: rgba(47, 138, 99, 0.16);
+  --motif-on-line: rgba(47, 138, 99, 0.55);
+  --shadow: 0 1px 2px rgba(13, 28, 38, 0.05), 0 18px 40px -24px rgba(13, 28, 38, 0.28);
+  background: var(--paper);
+}
+.lp.lp-salla[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0d1c26;
+  --surface: #132836;
+  --band: #10222e;
+  --ink: #eef3f7;
+  --ink-2: #c3cfd9;
+  --muted: #8fa1b0;
+  --faint: #61788a;
+  --line: rgba(238, 243, 247, 0.1);
+  --cream: rgba(238, 243, 247, 0.05);
+  --soft: rgba(238, 243, 247, 0.05);
+  --accent-ink: #6fb1ff;
+  --blue-soft: rgba(111, 177, 255, 0.14);
+  --green-soft: rgba(60, 207, 142, 0.14);
+  --motif: rgba(238, 243, 247, 0.1);
+  --motif-on: rgba(60, 207, 142, 0.12);
+  --motif-on-line: rgba(60, 207, 142, 0.45);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 24px 48px -24px rgba(0, 0, 0, 0.6);
+}
+/* The demo screens and the voice card are devices: light in either theme. */
+.lp.lp-salla .tc-phone, .lp.lp-salla .tc-board, .lp.lp-salla .tc-till, .lp.lp-salla .tc-steps, .lp.lp-salla .tc-views, .lp.lp-salla .lp-voice-card {
+  --ink: #1b2228; --ink-2: #3a434c; --muted: #5d6873; --faint: #8b96a1; --line: #e2e7ec;
+  --paper: #f8f9fb; --cream: #eef2f6; --soft: #f4f6f8; --night: #0d1c26; --accent-ink: #0867c9; --blue-soft: #eaf3fd;
+  color: var(--ink);
+}
+
+.lp.lp-salla h1, .lp.lp-salla h2, .lp.lp-salla h3 { color: var(--ink); }
+.lp.lp-salla h1 em, .lp.lp-salla h2 em { color: var(--accent-ink); }
+.lp.lp-salla .lp-sub { color: var(--muted); }
+
+/* Section labels: a small blue chip in sentence case. */
+.lp.lp-salla .lp-eyebrow { gap: 8px; padding: 6px 12px; border-radius: 9999px; background: var(--blue-soft); color: var(--accent-ink); font: 600 13px/1 var(--font); letter-spacing: 0.01em; text-transform: none; }
+.lp.lp-salla .lp-live { padding-left: 10px; }
+
+/* The bar: full width, translucent paper, a hairline under it. The only blur on the page. */
+.lp.lp-salla .lp-header { background: color-mix(in srgb, var(--paper) 86%, transparent); -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); border-bottom: 1px solid var(--line); color: var(--ink); }
+.lp.lp-salla .lp-nav a, .lp.lp-salla .lp-login { color: var(--ink-2); background-image: linear-gradient(var(--blue), var(--blue)); background-size: 0 2px; background-position: 0 calc(100% + 4px); background-repeat: no-repeat; transition: background-size 220ms var(--ease), color 150ms ease; }
+.lp.lp-salla .lp-nav a:hover, .lp.lp-salla .lp-login:hover { color: var(--ink); background-size: 100% 2px; }
+.lp.lp-salla .lp-header-actions { gap: 12px; }
+.lp.lp-salla .lp-menu-toggle { color: var(--ink); }
+.lp.lp-salla .lp-mobile-nav { background: var(--paper); }
+.lp.lp-salla .lp-mobile-nav a { border-bottom-color: var(--line); }
+.lp.lp-salla .lp-lang { border-color: var(--line); }
+.lp.lp-salla .lp-lang::before { background: var(--ink); }
+.lp.lp-salla .lp-lang button { color: var(--muted); }
+.lp.lp-salla .lp-lang button:hover { background: var(--soft); color: var(--ink); }
+.lp.lp-salla .lp-lang button[aria-pressed="true"] { color: var(--paper); }
+.lp-theme-cycle { position: relative; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink-2); cursor: pointer; transition: border-color 160ms ease, color 160ms ease, transform 120ms var(--ease); }
+.lp-theme-cycle::after { content: ""; position: absolute; inset: -3px; }
+.lp-theme-cycle:hover { border-color: var(--faint); color: var(--ink); }
+.lp-theme-cycle:active { transform: scale(0.94); }
+
+/* Buttons: solid blue with squared-off corners; the second one a plain surface. */
+.lp.lp-salla .lp-button { border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(8, 72, 140, 0.25); }
+.lp.lp-salla .lp-button-ghost { background: var(--surface); border-color: var(--line); color: var(--ink); box-shadow: 0 1px 2px rgba(13, 28, 38, 0.05); }
+.lp.lp-salla .lp-button-ghost:hover { background: var(--surface); border-color: var(--faint); }
+.lp.lp-salla .lp-button-small { border-radius: 10px; }
+
+/* Hero: light, copy on the left, the product on the right, the floor plan behind it. */
+.lp.lp-salla .lp-hero { position: relative; overflow: hidden; background: var(--paper); color: var(--ink); }
+.lp.lp-salla .lp-hero > :not(.lp-motif) { position: relative; }
+.lp.lp-salla .lp-hero .lp-eyebrow { color: var(--accent-ink); }
+.lp.lp-salla .lp-hero h1 { color: var(--ink); }
+.lp.lp-salla .lp-hero h1 em { color: var(--accent-ink); }
+.lp.lp-salla .lp-lead { color: var(--ink-2); }
+.lp-motif { position: absolute; pointer-events: none; fill: none; stroke: var(--motif); stroke-width: 1.5; }
+.lp-motif .on { fill: var(--motif-on); stroke: var(--motif-on-line); }
+.lp-hero > .lp-motif { top: 40px; right: -60px; width: min(980px, 78vw); height: auto; -webkit-mask-image: radial-gradient(ellipse 70% 70% at 60% 40%, #000 35%, transparent 78%); mask-image: radial-gradient(ellipse 70% 70% at 60% 40%, #000 35%, transparent 78%); }
+.lp.lp-salla .lp-browser { background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--shadow); }
+.lp.lp-salla .lp-hero-media .lp-browser { box-shadow: 0 0 0 1px var(--line), 0 50px 90px -40px rgba(13, 28, 38, 0.45); }
+/* The screen's bar names the venue instead of drawing window buttons. */
+.lp.lp-salla .lp-browser-bar { align-items: center; gap: 7px; background: var(--surface); border-bottom-color: var(--line); }
+.lp.lp-salla .lp-browser-bar i { display: none; }
+.lp.lp-salla .lp-browser-bar::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.lp.lp-salla .lp-browser-bar::after { content: "Bar Aurora"; font: 600 11.5px/1 var(--font); color: var(--muted); }
+.lp.lp-salla .lp-phone { border-color: #16212a; box-shadow: 0 0 0 1px var(--line), 0 30px 60px -20px rgba(13, 28, 38, 0.45); }
+.lp.lp-salla .lp-facts div { border-top-color: var(--line); }
+.lp.lp-salla .lp-facts dt { color: var(--ink); }
+.lp.lp-salla .lp-facts dd { color: var(--muted); }
+
+/* Bands: the night bands of the other page become white (navy in dark), the rest is paper. */
+.lp.lp-salla .lp-section-night { background: var(--band); color: var(--ink); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.lp.lp-salla .lp-section-night h2 em, .lp.lp-salla .lp-section-night .lp-eyebrow { color: var(--accent-ink); }
+.lp.lp-salla .lp-section-cream, .lp.lp-salla .lp-try, .lp.lp-salla .lp-cta { background: var(--paper); }
+.lp.lp-salla .lp-try { border-top: 0; }
+
+/* What it does. */
+.lp.lp-salla .lp-acc, .lp.lp-salla .lp-acc-item { border-color: var(--line); }
+.lp.lp-salla .lp-features-media, .lp.lp-salla .lp-acc-inline { background: var(--cream); border: 1px solid var(--line); }
+
+/* Voice: a white band, the card a screen. */
+.lp.lp-salla .lp-voice .lp-sub { color: var(--muted); }
+.lp.lp-salla .lp-voice-points li { color: var(--ink); }
+.lp.lp-salla .lp-voice-card { border-radius: 20px; box-shadow: 0 0 0 1px var(--line), var(--shadow); }
+
+/* Try it. */
+.lp.lp-salla .tc-board, .lp.lp-salla .tc-till { box-shadow: var(--shadow); }
+
+/* Getting started: the timeline, in blue on white. */
+.lp.lp-salla .lp-steps::before { background: var(--line); }
+.lp.lp-salla .lp-steps span { background: var(--blue); color: #fff; box-shadow: 0 0 0 10px var(--band); }
+.lp.lp-salla .lp-steps p { color: var(--muted); }
+
+/* Also included: a ruled list; icons in blue on a blue wash. */
+.lp.lp-salla .lp-more div { border-top-color: var(--line); }
+.lp.lp-salla .lp-more dt svg { background: var(--blue-soft); color: var(--accent-ink); }
+.lp.lp-salla .lp-more dd { color: var(--muted); }
+
+/* Questions. */
+.lp.lp-salla .lp-questions, .lp.lp-salla .lp-questions details { border-color: var(--line); }
+.lp.lp-salla .lp-questions summary { color: var(--ink); }
+.lp.lp-salla .lp-questions details p { color: var(--muted); }
+
+/* The close: BlueBar's blue block, the floor plan drawn on it in white. */
+.lp.lp-salla .lp-cta-card { position: relative; overflow: hidden; border-radius: 28px; }
+.lp.lp-salla .lp-cta-card > :not(.lp-motif) { position: relative; }
+.lp-cta-card > .lp-motif { right: -40px; bottom: -40px; width: min(620px, 70%); height: auto; stroke: rgba(255, 255, 255, 0.22); -webkit-mask-image: linear-gradient(110deg, transparent 10%, #000 60%); mask-image: linear-gradient(110deg, transparent 10%, #000 60%); }
+.lp-cta-card > .lp-motif .on { fill: rgba(255, 255, 255, 0.14); stroke: rgba(255, 255, 255, 0.5); }
+.lp.lp-salla .lp-cta h2 { color: #fff; }
+.lp.lp-salla .lp-cta h2 em { color: #bfdcff; }
+.lp.lp-salla .lp-cta .lp-button-light { border-radius: 12px; border-color: #fff; background: #fff; color: #0b3f78; }
+.lp.lp-salla .lp-cta .lp-button-light:hover { background: #eaf3fd; border-color: #eaf3fd; }
+
+.lp.lp-salla .lp-footer { background: var(--paper); border-top: 1px solid var(--line); color: var(--muted); }
+.lp.lp-salla .lp-footer .lp-brand { color: var(--ink); }
+.lp.lp-salla .lp-footer nav a:hover { color: var(--ink); }
+
+@media (max-width: 960px) {
+  .lp-hero > .lp-motif { top: auto; bottom: 120px; right: -120px; width: 140vw; }
+}
+@media (max-width: 620px) {
+  .lp.lp-salla .lp-header-actions { gap: 8px; }
+  .lp-cta-card > .lp-motif { width: 120%; right: -30%; opacity: 0.7; }
+}
