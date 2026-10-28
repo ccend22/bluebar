@@ -2959,7 +2959,7 @@ footer > span:last-child {
   .floor-app .workspace { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
   .floor-app .topbar { position: relative; min-height: 56px; }
   .floor-app .demo, .floor-app footer, .floor-app .floor-help, .floor-app .floor-guide { display: none; }
-  .floor-app main { display: flex; flex: 1; flex-direction: column; width: 100%; min-height: 0; max-width: none; overflow: hidden; padding: 8px 24px 12px; }
+  .floor-app main { display: flex; flex: 1; flex-direction: column; width: 100%; min-height: 0; max-width: none; overflow: hidden auto; padding: 8px 24px 12px; }
   .floor-app .workspace-controls { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .floor-app .title-row { flex-shrink: 0; min-height: 44px; margin-bottom: 6px; }
   .floor-app .title-row p { display: none; }
@@ -2968,8 +2968,10 @@ footer > span:last-child {
   .floor-app .floor-layout.has-order { grid-template-columns: minmax(0, 1fr) minmax(340px, 390px); }
   .floor-app .floor { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .floor-app .floor-toolbar { flex-shrink: 0; margin-bottom: 10px; }
-  /* Fit the 16:10 room inside whatever space is left, instead of stretching it. */
-  .floor-app .floor-plan-viewport { flex: 1; min-height: 0; overflow: hidden; container-type: size; display: grid; place-items: center; }
+  /* Fit the 16:10 room inside whatever space is left, instead of stretching it, but never
+     below a readable, tappable size: with banners or new guest orders above it, the page
+     scrolls instead of shrinking the tables. */
+  .floor-app .floor-plan-viewport { flex: 1; min-height: 360px; overflow: hidden; container-type: size; display: grid; place-items: center; }
   .floor-app .floor-plan { width: min(100cqw, 160cqh); height: auto; aspect-ratio: 16 / 10; }
   .floor-app .order { position: static; display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .floor-app .order-heading { flex-shrink: 0; }

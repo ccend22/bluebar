@@ -239,9 +239,9 @@ export function PinPad({ value, onChange, onComplete, length = 6, disabled, vari
     onChange(next);
     if (next.length === length) onComplete(next);
   };
-  // On a computer the keyboard works too: digits and Backspace.
+  // On a computer the keyboard works too (sign-in and the new business PIN): digits and Backspace.
   useEffect(() => {
-    if (!terminal || disabled) return;
+    if (disabled) return;
     const onKey = (e) => {
       if (e.target.closest?.("input, textarea")) return;
       if (/^[0-9]$/.test(e.key)) press(e.key);

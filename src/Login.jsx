@@ -263,13 +263,16 @@ export function Login({ onSignedIn }) {
       <div className="onboard-actions"><button className="onboard-primary">Vazhdo</button></div>
     </form>;
   else if (step === "name")
-    content = <form onSubmit={(e) => { e.preventDefault(); if (!slugEdited) setSlug(toSlug(name)); go("slug"); }}>
+    // The LuxHotel line sits beside the form, not in it: its sign-in has a form of its own.
+    content = <>
+      <form onSubmit={(e) => { e.preventDefault(); if (!slugEdited) setSlug(toSlug(name)); go("slug"); }}>
       <h1>Si quhet lokali juaj?</h1>
       <p className="onboard-lede">{luxhotelToken ? "I lidhur me LuxHotel: herës tjetër hyni me një prekje. " : ""}Emri shfaqet në hyrje dhe në fatura.</p>
       <input className="onboard-input" aria-label="Emri i biznesit" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={80} autoComplete="organization" autoFocus placeholder="Bar Aurora" />
       <div className="onboard-actions"><button className="onboard-primary">Vazhdo</button></div>
+      </form>
       {!luxhotelToken && <div className="welcome-new"><span>Keni llogari LuxHotel?</span><LuxHotelButton variant="link" label="Regjistrohu me LuxHotel" onToken={registerWithLuxhotel} /></div>}
-    </form>;
+    </>;
   else if (step === "slug")
     content = <form onSubmit={(e) => { e.preventDefault(); go("pin"); }}>
       <h1>Kodi i lokalit.</h1>
