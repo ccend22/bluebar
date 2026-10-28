@@ -322,7 +322,7 @@ a {
   border-radius: 50%;
   background: #909090;
 }
-nav {
+.sidebar nav {
   display: grid;
   gap: 6px;
 }
@@ -745,6 +745,13 @@ main {
     0 8px 20px -12px rgba(20, 30, 40, 0.35);
   cursor: pointer;
   touch-action: manipulation;
+  container-type: inline-size;
+}
+/* A one-cell table in a short room is ~50px wide: "1,350 Lek" doesn't fit and the
+   live dot runs into the number. Drop the currency and tuck the dot into the corner. */
+@container (max-width: 64px) {
+  .fp-cur { display: none; }
+  .fp-table .fp-live-dot { top: 4px; right: 4px; width: 6px; height: 6px; }
 }
 .floor-plan:not(.editing) .fp-table:focus-visible {
   outline: 2px solid var(--blue);
@@ -2334,7 +2341,7 @@ footer > span:last-child {
   .sidebar-bottom {
     display: none;
   }
-  nav {
+  .sidebar nav {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;

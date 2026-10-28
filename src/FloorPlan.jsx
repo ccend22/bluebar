@@ -94,7 +94,8 @@ function FloorTable({ t, waiter, editing, isSelected, onSelect, onChange, onGhos
           <span className="fp-info">
             {/* Whose table it is, when there's a waiter on it; otherwise how much is on it. */}
             {waiter ? <span className="fp-waiter">{waiter}</span> : <span>{itemCount} {itemCount === 1 ? "artikull" : "artikuj"}</span>}
-            <b>{money(bill(t).remaining)}</b>
+            {/* Small tables drop the currency so the amount fits; the aria-label keeps it. */}
+            <b>{money(bill(t).remaining).replace(/ Lek$/, "")}<span className="fp-cur"> Lek</span></b>
           </span>
         )}
       </div>
