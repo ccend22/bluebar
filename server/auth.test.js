@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
 import { migrate } from "./migrate.js";
 import { buildApp } from "./app.js";
@@ -1847,6 +1848,23 @@ test("LuxHotel: sign up links the new business; sign in opens it as its manager"
     assert.equal(signedIn.json().venue.slug, "hotel-bar");
     assert.ok(signedIn.headers["set-cookie"]);
     assert.notEqual((await t.call("POST", "/api/luxhotel/login", { body: { token: "forged" } })).statusCode, 200);
+  } finally {
+    await t.close();
+  }
+});
+
+test("the state goes out gzipped to browsers that take it, and plain to everyone else", async () => {
+  const t = await setup();
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    const get = (encoding) => t.inject({ method: "GET", url: "/api/state", headers: { host: "localhost", origin: "http://127.0.0.1:5173", "x-bluebar-client": "1", cookie, ...(encoding && { "accept-encoding": encoding }) } });
+    const plain = await get();
+    assert.equal(plain.headers["content-encoding"], undefined);
+    const zipped = await get("gzip, deflate, br");
+    assert.equal(zipped.statusCode, 200);
+    assert.equal(zipped.headers["content-encoding"], "gzip");
+    assert.ok(zipped.rawPayload.length < plain.rawPayload.length / 2, "smaller on the wire");
+    assert.deepEqual(JSON.parse(gunzipSync(zipped.rawPayload)), plain.json(), "same state once unzipped");
   } finally {
     await t.close();
   }

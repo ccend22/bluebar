@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { resolveVenue, tenantPool, registerVenue, publicVenue, validateNetworks, spendBudget } from "./tenants.js";
 import { installer } from "./installers.js";
 import { encode } from "../public/bluebar-print.mjs";
@@ -130,6 +131,16 @@ export function buildApp({
       [randomUUID(), type, request.user?.name || null, auditPayload({ ...target, ...body })],
     ).catch(() => {}); // never fails the change itself
     return payload;
+  });
+  // JSON over the wire gzipped when the browser takes it: the state snapshot shrinks ~6x, which
+  // is what a waiter's phone on a weak connection waits for. Registered last, so it sees the
+  // final body. Small replies and binary ones (print jobs, files) go out as they are.
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (typeof payload !== "string" || payload.length < 1024 || reply.getHeader("content-encoding")) return payload;
+    if (!/\bgzip\b/.test(request.headers["accept-encoding"] || "")) return payload;
+    if (!String(reply.getHeader("content-type") || "").startsWith("application/json")) return payload;
+    reply.header("Content-Encoding", "gzip").header("Vary", "Accept-Encoding").removeHeader("content-length");
+    return gzipSync(payload);
   });
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "no-store");

@@ -4,6 +4,7 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
+import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { createPool, provider } from "./db.js";
 import { buildApp } from "./app.js";
@@ -39,16 +40,33 @@ const SECURITY = {
   "Permissions-Policy": "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
 };
 
+// dist/ never changes inside a container, so each file is read and compressed once and then
+// served from memory. Text goes out as brotli or gzip: the app's JS and CSS are ~4x smaller,
+// which is most of the wait on a phone network. Images and fonts are already compressed.
+const TEXT = new Set([".html", ".js", ".mjs", ".css", ".json", ".webmanifest", ".svg", ".txt"]);
+const cache = new Map();
 async function file(path) {
   const full = normalize(join(DIST, path));
   if (!full.startsWith(DIST)) return null; // never outside dist/
+  if (cache.has(full)) return cache.get(full);
+  let found = null;
   try {
-    if (!(await stat(full)).isFile()) return null;
-    return { body: await readFile(full), type: TYPES[extname(full)] || "application/octet-stream" };
-  } catch {
-    return null;
-  }
+    if ((await stat(full)).isFile()) {
+      const body = await readFile(full);
+      found = { body, type: TYPES[extname(full)] || "application/octet-stream" };
+      if (TEXT.has(extname(full)) && body.length > 1024) {
+        found.br = brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 5, [constants.BROTLI_PARAM_SIZE_HINT]: body.length } });
+        found.gzip = gzipSync(body);
+      }
+    }
+  } catch {}
+  cache.set(full, found);
+  return found;
 }
+const encoding = (req, found) => {
+  const accept = req.headers["accept-encoding"] || "";
+  return found.br && /\bbr\b/.test(accept) ? "br" : found.gzip && /\bgzip\b/.test(accept) ? "gzip" : null;
+};
 
 createServer(async (req, res) => {
   const path = decodeURIComponent((req.url || "/").split("?")[0]);
@@ -58,13 +76,16 @@ createServer(async (req, res) => {
     (path !== "/" && (await file(path))) ||
     (path.startsWith("/menu/") ? await file("menu.html") : await file("index.html"));
   if (!found) return res.writeHead(404).end();
+  const enc = encoding(req, found);
   res.writeHead(200, {
     ...SECURITY,
     "Content-Type": found.type,
+    ...(found.br && { Vary: "Accept-Encoding" }),
+    ...(enc && { "Content-Encoding": enc }),
     // Vite names assets by content: cache them for good. Pages and the worker: always fresh.
     "Cache-Control": path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache",
   });
-  res.end(req.method === "HEAD" ? undefined : found.body);
+  res.end(req.method === "HEAD" ? undefined : enc ? found[enc] : found.body);
 }).listen(Number(process.env.PORT || 8080), "0.0.0.0", () => console.log(`BlueBar on :${process.env.PORT || 8080}`));
 
 process.once("SIGTERM", async () => {

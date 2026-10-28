@@ -1,5 +1,6 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { bill, COURSES, invoicePos, money, posOf, printerFor, ticketPos, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
@@ -399,6 +400,14 @@ function App({ user, onLogout, onUserChange }) {
   };
   const nav = (p) => {
     if (!leaveTableDraft()) return;
+    // The page cross-fades into the next one where the browser can (the navigation stays put);
+    // otherwise, and for anyone asking for less motion, it just swaps.
+    if (p !== page && document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+      document.startViewTransition(() => flushSync(() => showPage(p)));
+    else showPage(p);
+    setTimeout(() => heading.current?.focus(), 0);
+  };
+  const showPage = (p) => {
     setPage(p);
     setSelected(null);
     setQuery("");
@@ -413,7 +422,6 @@ function App({ user, onLogout, onUserChange }) {
     setFloorEditing(false);
     setFloorSelected(null);
     setOrderMode("summary");
-    setTimeout(() => heading.current?.focus(), 0);
   };
   const tableFields = (t) => ({ label: t.label || "", area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats });
   const draftCount = {

@@ -52,8 +52,9 @@ html:has(.lp) { background: #0d1c26; scrollbar-color: #b4bdc6 #f8f9fb; }
 
 /* Small label over every headline, set like the header of a printed slip. */
 .lp .lp-eyebrow { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 18px; font: 600 12.5px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); }
-.lp-live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #3ccf8e; box-shadow: 0 0 0 0 rgba(60, 207, 142, 0.6); animation: lp-ping 2s ease-out infinite; }
-@keyframes lp-ping { 70%, 100% { box-shadow: 0 0 0 8px rgba(60, 207, 142, 0); } }
+.lp-live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #3ccf8e; animation: lp-ping 2s ease-in-out infinite; }
+/* Breathes with transform and opacity only: no repaint every frame. */
+@keyframes lp-ping { 50% { transform: scale(0.6); opacity: 0.45; } }
 
 /* Bar: night, like the hero it sits on. */
 .lp-header { position: sticky; top: 0; z-index: 30; background: rgba(13, 28, 38, 0.94); backdrop-filter: blur(16px); border-bottom: 1px solid rgba(243, 246, 249, 0.08); color: var(--on-night); }
@@ -77,7 +78,7 @@ html:has(.lp) { background: #0d1c26; scrollbar-color: #b4bdc6 #f8f9fb; }
 .lp-header { view-transition-name: lp-header; }
 ::view-transition-old(lp-header) { display: none; }
 ::view-transition-new(lp-header) { animation: none; }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: 260ms; animation-timing-function: ease; }
+html:has(.lp)::view-transition-old(root), html:has(.lp)::view-transition-new(root) { animation-duration: 260ms; animation-timing-function: ease; }
 .lp-menu-toggle { display: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--on-night); }
 .lp-mobile-nav { display: grid; padding: 6px 20px 18px; background: var(--night); }
 .lp-mobile-nav a { padding: 13px 0; font-size: 17px; border-bottom: 1px solid rgba(243, 246, 249, 0.1); }
@@ -363,8 +364,11 @@ html:has(.lp) { background: #0d1c26; scrollbar-color: #b4bdc6 #f8f9fb; }
 
 .tc-hint { margin-top: 26px; text-align: center; font-weight: 600; color: var(--ink-2); }
 .tc-views { display: none; }
-.tc-target { outline: 2px solid var(--blue); outline-offset: 4px; animation: tc-glow 1.6s ease-out infinite; }
-@keyframes tc-glow { 0% { box-shadow: 0 0 0 0 rgba(8, 103, 201, 0.4); } 100% { box-shadow: 0 0 0 12px rgba(8, 103, 201, 0); } }
+/* The next thing to tap: an outline, and a ring that fades out on its own layer (opacity and
+   transform only), so waiting on a step never repaints the demo every frame. */
+.tc-target { position: relative; outline: 2px solid var(--blue); outline-offset: 4px; }
+.tc-target::after { content: ""; position: absolute; inset: -4px; border-radius: inherit; box-shadow: 0 0 0 8px rgba(8, 103, 201, 0.28); pointer-events: none; animation: tc-glow 1.6s ease-out infinite; }
+@keyframes tc-glow { from { opacity: 1; transform: scale(0.98); } to { opacity: 0; transform: scale(1.03); } }
 
 @media (max-width: 1060px) {
   .tc-stage { grid-template-columns: 310px minmax(0, 1fr); }
@@ -400,7 +404,7 @@ html:has(.lp) { background: #0d1c26; scrollbar-color: #b4bdc6 #f8f9fb; }
 }
 @media (prefers-reduced-motion: reduce) {
   .tc-lines li, .tc-menu i, .tc-note, .tc-ticket, .tc-till dd, .tc-receipt { animation: lp-fade 300ms ease both; }
-  .tc-target { animation: none; }
+  .tc-target::after { display: none; }
 }
 
 /* Ordering by voice: the band on night, and the mic in the demo phone. */
