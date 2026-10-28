@@ -15,17 +15,22 @@ colors:
   line: "#dfe4e8"
   occupied-green: "#27654f"
   occupied-green-soft: "#e8f4ee"
-  lp-night: "#0b0c0d"
-  lp-night-raised: "#121416"
-  lp-seam: "#23262a"
-  lp-steel: "#2a2d31"
-  lp-clip: "#4a4f56"
-  lp-close-muted: "#57534c"
-  lp-paper: "#f4f1ea"
-  lp-paper-ink: "#16130f"
-  lp-muted: "#a9a49b"
-  lp-bell: "#ff5a1f"
-  lp-bell-hot: "#ff7a45"
+  lp-night: "#0d1c26"
+  lp-night-raised: "#132836"
+  lp-on-night: "#f3f6f9"
+  lp-on-night-soft: "rgba(243, 246, 249, 0.7)"
+  lp-accent-night: "#6fb1ff"
+  lp-blue: "#0867c9"
+  lp-blue-deep: "#0057ad"
+  lp-blue-soft: "#eaf3fd"
+  lp-paper: "#f8f9fb"
+  lp-cream: "#eef2f6"
+  lp-ink: "#1b2228"
+  lp-ink-soft: "#3a434c"
+  lp-muted: "#5d6873"
+  lp-faint: "#8b96a1"
+  lp-line: "#e2e7ec"
+  lp-live: "#3ccf8e"
   menu-paper: "#eef4ee"
   menu-paper-hi: "#f7faf6"
   menu-rule: "#c3d5c8"
@@ -45,32 +50,30 @@ typography:
     fontFamily: "SF Pro Text, -apple-system, BlinkMacSystemFont, system-ui, Segoe UI, sans-serif"
     fontSize: "14px"
   lp-display:
-    fontFamily: "Archivo, Arial Narrow, system-ui, sans-serif"
-    fontSize: "clamp(64px, 6.6vw, 96px)"
-    fontWeight: 850
-    lineHeight: 1
-    letterSpacing: "-0.025em"
-    fontVariation: "\"wdth\" 72"
+    fontFamily: "Bricolage Grotesque, Figtree, system-ui, sans-serif"
+    fontSize: "clamp(46px, 5.8vw, 82px)"
+    fontWeight: 700
+    lineHeight: 0.98
+    letterSpacing: "-0.045em"
   lp-headline:
-    fontFamily: "Archivo, Arial Narrow, system-ui, sans-serif"
-    fontSize: "clamp(40px, 4.6vw, 66px)"
-    fontWeight: 850
-    lineHeight: 1.02
-    fontVariation: "\"wdth\" 72"
-  lp-label:
-    fontFamily: "Archivo, Arial Narrow, system-ui, sans-serif"
-    fontSize: "18px"
-    fontWeight: 800
-    letterSpacing: "0.02em"
-    fontVariation: "\"wdth\" 85"
+    fontFamily: "Bricolage Grotesque, Figtree, system-ui, sans-serif"
+    fontSize: "clamp(34px, 4.4vw, 58px)"
+    fontWeight: 700
+    lineHeight: 1.04
+    letterSpacing: "-0.035em"
+  lp-eyebrow:
+    fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace"
+    fontSize: "12.5px"
+    fontWeight: 600
+    letterSpacing: "0.12em"
   lp-body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, system-ui, Segoe UI, sans-serif"
+    fontFamily: "Figtree, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif"
     fontSize: "17px"
-    lineHeight: 1.6
+    lineHeight: 1.55
   lp-print:
     fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace"
     fontSize: "14px"
-    lineHeight: 1.5
+    lineHeight: 1.45
   menu-masthead:
     fontFamily: "Barlow Condensed, Arial Narrow, system-ui, sans-serif"
     fontSize: "38px"
@@ -121,11 +124,10 @@ rounded:
   pill: "9999px"
   app-card: "16px"
   app-control: "10px"
-  lp-cta: "6px"
-  lp-rail: "2px"
-  lp-clip: "3px"
-  lp-screen-phone: "12px"
-  lp-screen-wide: "12px"
+  lp-screen: "12px"
+  lp-icon: "12px"
+  lp-panel: "24px"
+  lp-close: "32px"
   menu-photo: "3px"
   menu-box: "6px"
   menu-qty: "7px"
@@ -133,9 +135,9 @@ rounded:
   menu-button: "9px"
   menu-logo: "14px"
 spacing:
-  lp-gutter: "clamp(16px, 5vw, 72px)"
-  lp-section: "110px"
-  lp-section-compact: "72px"
+  lp-wrap: "1180px"
+  lp-gutter: "20px"
+  lp-section: "clamp(80px, 10vw, 136px)"
   menu-gutter: "18px"
   menu-qty-column: "62px"
   menu-column: "560px"
@@ -146,39 +148,35 @@ components:
     rounded: "{rounded.pill}"
   button-primary-hover:
     backgroundColor: "{colors.action-blue-hover}"
-  lp-cta:
-    backgroundColor: "{colors.lp-bell}"
-    textColor: "{colors.lp-night}"
-    typography: "{typography.lp-label}"
-    rounded: "{rounded.lp-cta}"
-    padding: "0 30px"
-    height: "56px"
-  lp-cta-hover:
-    backgroundColor: "{colors.lp-bell-hot}"
-  lp-cta-small:
-    backgroundColor: "{colors.lp-bell}"
-    textColor: "{colors.lp-night}"
-    rounded: "{rounded.lp-cta}"
+  lp-button:
+    backgroundColor: "{colors.lp-blue}"
+    textColor: "#ffffff"
+    rounded: "{rounded.pill}"
+    padding: "0 24px"
+    height: "48px"
+  lp-button-hover:
+    backgroundColor: "{colors.lp-blue-deep}"
+  lp-button-small:
+    backgroundColor: "{colors.lp-blue}"
+    textColor: "#ffffff"
+    rounded: "{rounded.pill}"
     padding: "0 16px"
-    height: "44px"
-  lp-rail:
-    backgroundColor: "{colors.lp-steel}"
-    rounded: "{rounded.lp-rail}"
-    height: "14px"
-  lp-sheet:
-    backgroundColor: "{colors.lp-paper}"
-    textColor: "{colors.lp-paper-ink}"
-    typography: "{typography.lp-print}"
-    padding: "26px 18px 24px"
-    width: "clamp(200px, 19.5vw, 300px)"
-  lp-sheet-wide:
-    backgroundColor: "{colors.lp-paper}"
-    textColor: "{colors.lp-paper-ink}"
-    typography: "{typography.lp-print}"
-    width: "min(340px, 100%)"
+    height: "36px"
+  lp-button-ghost:
+    backgroundColor: "transparent"
+    textColor: "{colors.lp-on-night}"
+    rounded: "{rounded.pill}"
+    height: "48px"
   lp-screen:
-    backgroundColor: "{colors.lp-night-raised}"
-    rounded: "{rounded.lp-screen-wide}"
+    backgroundColor: "#ffffff"
+    rounded: "{rounded.lp-screen}"
+  lp-stage:
+    backgroundColor: "{colors.lp-cream}"
+    rounded: "{rounded.lp-panel}"
+  lp-close:
+    backgroundColor: "{colors.lp-blue}"
+    textColor: "#ffffff"
+    rounded: "{rounded.lp-close}"
   menu-stamp-button:
     backgroundColor: "{colors.menu-ink-brand}"
     textColor: "{colors.menu-print-white}"
@@ -235,7 +233,7 @@ components:
 
 # BlueBar design
 
-BlueBar has three worlds, kept apart on purpose. The app (everything behind sign-in) is **Operate**: light, Apple-derived, quiet. The public landing at "/" is **Persuade**: "Shina e kuzhinës", the kitchen pass at night. Tokens prefixed `lp-` belong to the landing only and never enter the app; app tokens never appear on the landing except BlueBar's navy "b." mark. The guest menu at "/menu/<business>", opened from a table's QR code, is **Operate** for guests: the venue's own guest-check pad (comanda). Tokens prefixed `menu-` belong to the guest menu only; it uses no app or `lp-` tokens, and neither of them uses `menu-` tokens. The frontmatter is normative for all three.
+BlueBar has three worlds, kept apart on purpose. The app (everything behind sign-in) is **Operate**: light, Apple-derived, quiet. The public landing at "/" is **Persuade**: "the bar at night", night navy bands around real BlueBar screens. Tokens prefixed `lp-` belong to the landing only and never enter the app; app tokens never appear on the landing, though BlueBar Blue (#0867c9) is shared by value as the brand. The guest menu at "/menu/<business>", opened from a table's QR code, is **Operate** for guests: the venue's own guest-check pad (comanda). Tokens prefixed `menu-` belong to the guest menu only; it uses no app or `lp-` tokens, and neither of them uses `menu-` tokens. The frontmatter is normative for all three.
 
 # App (Operate)
 
@@ -263,84 +261,77 @@ All six pages checked at 1440, 820 and 390px without document overflow. Browser 
 ## Known drift (app)
 The Shared system prose above predates the build and is not repaired here; the frontmatter wins. The app ground is #f4f6f8 (not #f5f5f7) and Action Blue is #0867c9 (not #0066cc); the primary button hovers to #0077ed. Card radius is 16px and control radius 10px (not 18px / 11px). #f5f5f7 still appears as two one-off values in src/style.css.
 
-# Landing (Persuade): "Shina e kuzhinës"
+# Landing (Persuade): "The bar at night"
 
-Source: src/Landing.jsx, src/landing.css. Everything below applies to the landing only. Documentation reflects source inspection; the current revision has not received a visual pass because browser captures were blank.
+Source: src/Landing.jsx, src/LandingCounter.jsx, src/landing.css. Everything below applies to the landing only and is written in Stitch's semantic structure, so the same text can prompt new landing screens. Derived from the shipped CSS and checked in the browser at 1440px and 390px.
 
-## Overview
+## 1. Visual Theme & Atmosphere
 
-**Creative North Star: "The Kitchen Pass at Night"**
+A bar after the doors open: night navy bands for the hero, voice ordering and getting started, with daylight grey bands in between where the real screens are read. Confident and plain, never nightlife neon. The product is the proof: real BlueBar screens from the sample venue Bar Aurora, plus a working order demo the visitor can tap through.
 
-A near-black kitchen under warm lamp light, with thermal tickets clipped to a steel rail. The service story moves from the order to the floor, the waiter and the closing report. Real app screenshots and clearly labelled sample printouts provide proof. A paper-coloured closing section carries the final registration action.
+- **Density:** Daily App Balanced (4). Generous section spacing; the demo band is the only dense part.
+- **Variance:** Offset Asymmetric (6). Copy left and screens right, headline left and its sentence right, the FAQ heading held on the left while answers open on the right.
+- **Motion:** Fluid CSS (5). Functional and quiet: native scroll reveals, a slipping language pill, a typing voice demo, a receipt that prints.
 
-**Key Characteristics:** condensed Archivo headlines, quiet system-sans copy, thermal-paper monospace, orange actions, flat screenshots, and hanging sheets that settle on their clips. Layout and text stay separate from the light operating app and guest menu.
+## 2. Color Palette & Roles
 
-## Colors
+- **Night Navy** (#0d1c26, lp-night): hero, voice and getting-started bands, sticky bar (94% with a 16px blur), footer, overscroll.
+- **Raised Night** (#132836, lp-night-raised): surfaces lifted off the night bands.
+- **Night Text** (#f3f6f9, lp-on-night) and **Night Text Soft** (70%, lp-on-night-soft): headlines and copy on night.
+- **Daylight Paper** (#f8f9fb, lp-paper): the default page ground. **Cream** (#eef2f6, lp-cream): FAQ band, screen stage, icon tiles.
+- **Ink** (#1b2228, lp-ink), **Ink Soft** (#3a434c), **Muted** (#5d6873), **Faint** (#8b96a1): text from headline to resting accordion tab. **Line** (#e2e7ec, lp-line): every 1px rule.
+- **BlueBar Blue** (#0867c9, lp-blue): the one accent. Filled actions, the turn of each headline, focus ring, selection, checkmarks. Pressed and hover: **Blue Deep** (#0057ad). Wash: **Blue Soft** (#eaf3fd).
+- **Night Blue** (#6fb1ff, lp-accent-night): the same accent lifted for contrast on night bands only (headline turns, eyebrows, step numbers).
+- **Live Green** (#3ccf8e, lp-live): the pulsing dot on "live" eyebrows. A status signal, never an action.
 
-### Primary
-- **Order-Bell Orange** (lp-bell): registration actions, focus and selection; Bell Hot on hover. Text on orange uses Kitchen Night.
+**The One Accent Rule.** Blue is the only hue that acts. Night Blue is its night-band form, not a second accent. Live Green marks liveness and nothing else.
 
-### Neutral
-- **Kitchen Night** (lp-night): page, sticky bar, overscroll and scrollbar track. Raised Night backs screenshots.
-- **Seam** (lp-seam): section and navigation dividers. Rail Steel (lp-steel) draws rails and screenshot borders; Clip Steel grips the paper.
-- **Thermal Paper** (lp-paper): headline/link ink, tickets and closing section. Tickets use a warm vertical gradient from #fbf5e9 through paper to #e9e2d3.
-- **Paper Ink** (lp-paper-ink): print and closing-section text. Closing body copy is lp-close-muted.
-- **Ash** (lp-muted): secondary copy, navigation and the final hero line. Warm brown radial light, rgba(181,112,62,.15) in the hero and .14 around the report, belongs to the hanging-paper scenes.
+## 3. Typography Rules
 
-**The Bell Rule.** Orange means act, focus or selection. **The One Blue Rule.** Brand navy appears only in the small b. mark, not as an alternate landing action colour.
+- **Display:** Bricolage Grotesque 700 (self-hosted variable woff2), tracking −0.035em, balanced wrapping. Hero clamp(46px, 5.8vw, 82px) at line-height 0.98 and −0.045em; section headings clamp(34px, 4.4vw, 58px) at 1.04. The closing phrase of every headline (the `<em>`) turns blue, upright, never italic.
+- **Body:** Figtree 17px/1.55 (self-hosted variable woff2). Leads 17–19.5px capped near 44ch, section sentences 18px at 56ch, answers at 60ch, pretty wrapping.
+- **Eyebrow and print:** system monospace. Eyebrows are 600 12.5px, uppercase, +0.12em, set like the header of a printed slip. Order lines, slips and receipts are monospace too, with dashed rules.
+- **Numbers:** tabular figures in totals and the till.
+- **Banned:** Inter, generic serifs, condensed display faces from the previous "kitchen pass" direction.
 
-## Typography
+## 4. Component Stylings
 
-**Display:** self-hosted Archivo variable WOFF2, 850 weight, 72% stretch, uppercase, balanced headings, with 0.06em top padding for Albanian diacritics. Hero uses clamp(64px, 6.6vw, 96px), line-height 1, tracking −0.025em; section headings use clamp(40px, 4.6vw, 66px), line-height 1.02, tracking −0.02em. Closing heading uses clamp(48px, 6vw, 88px).
+- **Buttons:** pills. Primary is BlueBar Blue with white 600 16px text, 48px tall, 0 24px padding; hover Blue Deep; press scales to 0.97. Ghost on night: transparent with a 30% Night Text border. Light (on the blue close): Night Text fill, Night Navy text. One filled action per band. The header's small action is 36px.
+- **Language switch:** EN · SQ in a hairline pill; a lit pill slides under the chosen language over 320ms; the page cross-fades via View Transitions.
+- **Screens:** real screenshots inside a minimal browser frame (12px radius, three grey dots, hairline). The hero frame tilts (rotateY −7°, rotateX 2°) with the waiter's phone overlapping its corner; shadows on night are tinted navy (rgba(3, 10, 15, .8)), never neutral black.
+- **Feature accordion:** numbered tabs in display type (Faint at rest, Ink when open, number in Blue), one open at a time; its screen sits in a sticky Cream stage on the right, and inline under the tab on phones.
+- **Lists of capabilities:** ruled rows, not cards. A 46px Cream icon tile, a display-type title and a muted line, divided by 1px Line rules, two columns on desktop.
+- **FAQ:** native details/summary as ruled rows with a blue plus that turns 45° when open; summary text goes blue on hover.
+- **Cards:** only where something sits above the page: the voice card on night, the demo phone, slips and till, the blue close (32px radius, 24px on phones).
+- **Icons:** one authored SVG set, 24px grid, 1.7 stroke, round caps, currentColor.
 
-**Body:** system sans, 18px hero and 17px section copy, line-height 1.6, generally 47–50ch. Supporting notes and walkthrough text are 14–15px. **Actions:** Archivo, 85% stretch, 800 weight, uppercase, 18px; small header CTA 15px and 13px on phones. **Print:** system monospace, 12–14px body, 25px department headings (22px at intermediate widths, 20px on phones). Report totals are 16px, 14px on phones. Captions remain at least 12px.
+## 5. Layout Principles
 
-**The Legible Print Rule.** Hide optional ticket lines where space is constrained rather than shrink meaningful print below 12px.
+- Content width min(1180px, 100% − 40px). Sections pad clamp(80px, 10vw, 136px) vertically.
+- Hero: 1.05fr / 0.95fr split, copy left, screens right, four facts ruled along its foot (two columns on tablet and phone).
+- Section heads split 1.25fr / 0.75fr: headline left, its one sentence bottom-aligned right.
+- The demo stage is 310px phone | slips | 280px till, then phone + slips, then one column.
+- Everything collapses to one column at 960px, except the facts and capability rows, which go single-column at 620px. No horizontal scroll at any width. Touch targets at least 44px.
 
-## Layout
+## 6. Motion & Interaction
 
-Full-width night ground, gutter clamp(16px, 5vw, 72px). The opaque sticky bar has brand, section navigation and account actions. Header/footer spacing respects safe-area insets. The hero has a 1512px maximum width, copy left and a two-ticket scene right, columns 1.05fr / 1fr. Tickets hang at −3° and 4°, with the second 24px lower.
+- **Scroll reveals:** headings, accordion rows, capability rows, steps, FAQ rows and the close rise 28px and fade in on a native view timeline (animation-timeline: view(), entry 0–45%), with the second column and later steps offset 8% and 16%. Browsers without scroll timelines and reduced-motion users see the page static.
+- **Feature switch:** the open tab's body and its screen fade up 8px over 380–420ms on cubic-bezier(0.23, 1, 0.32, 1).
+- **Voice demo:** plays once on entering view: the phrase types itself with a blinking caret and a five-bar wave, then turns into order lines through the app's own parser.
+- **Order demo:** tables and menu tiles press to 0.95–0.96, count badges pop, slips drop in, the receipt prints top to bottom over 1.4s, the till's numbers tick in green.
+- **Perpetual:** only the live dot's ping and the next-step target's ring. Nothing else loops.
+- Transform and opacity only. Reduced motion swaps every entrance for a 300ms fade and stops every loop.
 
-A capabilities strip leads into a floor section with split heading/copy, wide screenshot and three notes. The service section pairs a 300px phone screenshot with three numbered steps. Management pairs copy and a ledger with a hanging shift report. Native FAQ disclosures precede the paper closing section. Content sections cap at 1400px with 110px vertical spacing; close and footer span the page.
+## 7. Anti-Patterns (Banned)
 
-At ≤1100px gaps and ticket padding tighten. At ≤850px section navigation hides, hero and management stack, capabilities wrap into two columns, FAQ and closing action stack, and section spacing becomes 72px. At ≤580px service and floor introductions stack, service copy appears before the screenshot, floor notes become one column, and hero actions span the width. Hero type uses clamp(60px, 11vw, 88px) at ≤850px and clamp(54px, 12.8vw, 72px) at ≤580px. Two tickets remain side by side with optional lines removed. At ≥1600px outer bar/strip/footer/close gutters align to a 1368px inner span.
-
-## Elevation & Depth
-
-Depth belongs to hanging objects. CTA and screenshot surfaces have no shadow. Screenshots use a single steel border; the bar is opaque.
-
-- **Paper:** filter drop-shadow(0 18px 22px rgba(0,0,0,.75)) drop-shadow(0 2px 2px rgba(0,0,0,.4)).
-- **Rail:** inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.6), 0 12px 26px -10px rgba(0,0,0,.9).
-- **Clip:** inset 0 1px 0 rgba(255,255,255,.35), inset 0 -2px 0 rgba(0,0,0,.35), 0 2px 3px rgba(0,0,0,.5).
-
-**The Wrapper Rule.** Mask the paper only; clip, shadow, tilt and motion stay on its wrapper. **The Honest Steel Rule.** A flat steel bar gets one highlight, not a chrome gradient.
-
-## Shapes
-
-CTAs have 6px corners; rails 2px; clips 3px; screenshots 12px. Paper has square upper corners and a 14×7px torn-edge mask. The report tilts 2°. The brand mark has 8px corners.
-
-## Components
-
-### Actions and navigation
-Primary links are 56px tall; header CTA and navigation links have 44px minimum height. Hover warms orange; press translates 1px and scales .98. Links underline on hover. Links and FAQ summaries receive a 3px orange focus outline with 5px offset. The skip link exposes the main content target; anchored sections reserve 96px above them for the sticky header.
-
-### Rail and sheet
-A 14px rail supports the clip of each printout. Tickets and the report are static content, not tab stops. The paper uses monospace, dashed separators, and visible sample labels. On entering view, sheets drop 26px and settle over 900ms with a 150ms stagger; hovering swings them. Sheets remain visible by default and reduced-motion preferences disable their animations and CTA transitions.
-
-### Screenshots
-Real assets in public/landing/*.webp with provenance files alongside them; explicit dimensions and lazy loading. Display flat, never inside drawn devices. The floor screenshot has a sample-data caption; the waiter screenshot has a figcaption.
-
-### FAQ and closing action
-Native details/summary provides keyboard disclosure with a drawn plus/minus. The closing section uses Thermal Paper with Paper Ink, plain supporting copy and registration/sign-in actions.
-
-## Do's and Don'ts
-
-- **Do** preserve the kitchen-pass identity and keep orange for actions, focus and selection.
-- **Do** label sample data beside screenshots and printouts; qualify printer compatibility, connectivity and fiscalization requirements.
-- **Do** use Archivo for display and preserve Albanian diacritic room.
-- **Don't** draw devices, invent customer evidence or imply every printer works without configuration.
-- **Don't** introduce app Action Blue, app parchment or guest-menu tokens into landing components. The closing paper surface uses the landing's own Thermal Paper.
-- **Don't** add neon tubes, glowing text, CTA halos or screenshot shadows.
+- No emojis. No Inter. No pure black. No neon glows, CTA halos or glowing text.
+- No second accent hue; no purple/blue AI gradients; flat colour only, no gradient fills or gradient text.
+- No three-up card grids; capabilities are ruled rows. No centred FAQ stack of cards.
+- No invented customers, testimonials, logos, prices or round-number claims; sample data is labelled as Bar Aurora.
+- No drawn devices beyond the minimal frames and the demo phone; no stock photos.
+- No "scroll to explore", bouncing chevrons or custom cursors.
+- No implying every printer works without configuration, or that fiscalization works without a connected BlueBill account.
+- No app parchment (#f4f6f8) or guest-menu `menu-` tokens on the landing. BlueBar Blue is shared by value with the app on purpose: it is the brand.
 
 # Guest menu (Operate, public): "The venue's guest-check pad"
 

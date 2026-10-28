@@ -41,7 +41,7 @@ const features = (t) => [
       ["Occupied tables light up, with the waiter's name and the amount", "Main room, terrace or upstairs, laid out the way your venue is", "The total of open orders stays at the top all evening"],
       ["Tavolinat e zëna dalin me ngjyrë, me emrin e kamarierit dhe shumën", "Salla, tarraca ose kati i dytë, ashtu si i keni në lokal", "Totali i porosive të hapura qëndron lart gjithë mbrëmjen"],
     ),
-    img: ["/landing/page-salla.webp", 2574, 1604, t("The floor plan with 10 tables in the main room and on the terrace, round, square and long.", "Plani i sallës me 10 tavolina në sallë dhe në tarracë, të rrumbullakëta, katrore dhe të gjata.")],
+    img: ["/landing/page-salla.webp", 2552, 1240, t("The floor plan with 12 tables; 7 are occupied, each with its waiter and amount, 4,780 Lek open in total.", "Plani i sallës me 12 tavolina; 7 të zëna, secila me kamarierin dhe shumën, 4,780 Lek të hapura gjithsej.")],
   },
   {
     id: "porosia", tab: t("Ordering", "Porosia"),
@@ -104,17 +104,28 @@ function Shot({ f }) {
 function Features({ t }) {
   const [open, setOpen] = useState(0);
   const FEATURES = features(t);
+  const items = useRef([]);
+  // On a phone the open part's screen sits inside it, so closing the one above would pull the
+  // newly opened heading out from under the finger: bring it back to the top of the screen.
+  const choose = (i) => {
+    setOpen(i);
+    if (!matchMedia("(max-width: 960px)").matches) return;
+    requestAnimationFrame(() => {
+      const el = items.current[i];
+      if (el && el.getBoundingClientRect().top < 72) el.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    });
+  };
   return (
     <div className="lp-features">
       <div className="lp-acc">
         {FEATURES.map((f, i) => (
-          <div key={f.id} className={`lp-acc-item ${i === open ? "is-open" : ""}`}>
-            <h3><button type="button" aria-expanded={i === open} aria-controls={i === open ? `acc-${f.id}` : undefined} onClick={() => setOpen(i)}><span>{String(i + 1).padStart(2, "0")}</span>{f.tab}</button></h3>
+          <div key={f.id} ref={(el) => (items.current[i] = el)} className={`lp-acc-item ${i === open ? "is-open" : ""}`}>
+            <h3><button type="button" aria-expanded={i === open} aria-controls={i === open ? `acc-${f.id}` : undefined} onClick={() => choose(i)}><span>{String(i + 1).padStart(2, "0")}</span>{f.tab}</button></h3>
             {i === open && (
               <div className="lp-acc-body" id={`acc-${f.id}`}>
                 <p className="lp-acc-title">{f.title}</p>
                 <ul>{f.points.map((p) => <li key={p}><Symbol name="check" size={18} />{p}</li>)}</ul>
-                <div className="lp-acc-inline"><Shot f={f} /></div>
+                <div className="lp-acc-inline"><Shot f={f} />{f.img && <p className="lp-pan-hint">{t("Swipe the screen to see all of it", "Rrëshqitni ekranin për ta parë të gjithë")}</p>}</div>
               </div>
             )}
           </div>
@@ -231,7 +242,7 @@ export function Landing() {
               </div>
             </div>
             <div className="lp-hero-media">
-              <div className="lp-browser"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1520" alt={t("BlueBar: Bar Aurora's floor, 4 occupied tables with their waiter and amount.", "BlueBar: salla e Bar Aurora, 4 tavolina të zëna me kamarierin dhe shumën.")} fetchPriority="high" /></div>
+              <div className="lp-browser lp-hero-desk"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1520" alt={t("BlueBar: Bar Aurora's floor, 4 occupied tables with their waiter and amount.", "BlueBar: salla e Bar Aurora, 4 tavolina të zëna me kamarierin dhe shumën.")} fetchPriority="high" /></div>
               <img className="lp-phone lp-hero-phone" src="/landing/phone-porosia.webp" width="1170" height="2100" alt={t("BlueBar on the waiter's phone: Table 01's order.", "BlueBar në telefonin e kamarierit: porosia e Tavolinës 01.")} />
             </div>
           </div>
@@ -291,8 +302,10 @@ export function Landing() {
 
         <section className="lp-section lp-section-cream" id="pyetje" aria-labelledby="faq-heading">
           <div className="lp-wrap lp-faq">
-            <p className="lp-eyebrow">{t("Questions", "Pyetje")}</p>
-            <h2 id="faq-heading">{t("Before you ", "Para se të ")}<em>{t("write to us.", "na shkruani.")}</em></h2>
+            <div className="lp-faq-head">
+              <p className="lp-eyebrow">{t("Questions", "Pyetje")}</p>
+              <h2 id="faq-heading">{t("Before you ", "Para se të ")}<em>{t("write to us.", "na shkruani.")}</em></h2>
+            </div>
             <div className="lp-questions">{questions(t).map(([q, a]) => <details key={q}><summary>{q}<Symbol name="plus" size={18} /></summary><p>{a}</p></details>)}</div>
           </div>
         </section>

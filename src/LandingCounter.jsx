@@ -70,6 +70,8 @@ const count = (lines) => Object.values(lines).reduce((s, q) => s + q, 0);
 const sum = (lines) => Object.entries(lines).reduce((s, [id, q]) => s + byId(id).price * q, 0);
 // On a phone the three screens stack, so bring the one that just changed into view.
 const reveal = (el) => setTimeout(() => el?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }), 80);
+// Below 720px the demo shows one screen at a time (see .tc-views in landing.css).
+const phoneView = () => matchMedia("(max-width: 720px)").matches;
 const merge = (a, b) => Object.entries(b).reduce((all, [id, q]) => ({ ...all, [id]: (all[id] || 0) + q }), a);
 
 export function Counter({ t }) {
@@ -100,6 +102,10 @@ export function Counter({ t }) {
   };
   const board = useRef(null);
   const foot = useRef(null);
+  const views = useRef(null);
+  // On a phone the three screens show one at a time; the demo moves to wherever the next step
+  // happens (the slips to mark ready, the receipt), and the tabs let the visitor look around.
+  const [view, setView] = useState("phone");
   useEffect(() => {
     if (!note) return;
     const t = setTimeout(() => setNote(""), 2600);
@@ -109,6 +115,14 @@ export function Counter({ t }) {
   const mine = tickets.filter((t) => t.table === table && !t.leaving);
   const step = receipt ? 5 : !table ? 0 : count(cart) ? 2 : !count(sent) ? 1 : mine.length ? 3 : 4;
   const target = (n) => (step === n ? "tc-target" : "");
+  const stepView = step === 3 ? "board" : step === 5 ? "till" : "phone";
+  const moved = useRef(false);
+  useEffect(() => {
+    setView(stepView);
+    // Keep the tabs, the next step and the screen that just changed in sight, but never scroll the page on first load.
+    if (moved.current && phoneView()) reveal(views.current);
+    moved.current = true;
+  }, [stepView]);
 
   const add = (m) => (table ? setCart({ ...cart, [m.id]: (cart[m.id] || 0) + 1 }) : setNote(t("Pick a table first.", "Zgjidhni fillimisht tavolinën.")));
   const minus = (id) => {
@@ -127,14 +141,14 @@ export function Counter({ t }) {
     setCart({});
     setFilter("all");
     setNote(t(`Sent to ${depts.map((d) => deptName(d, t)).join(" and ")}.`, `U dërgua te ${depts.join(" dhe ")}.`));
-    reveal(board.current);
+    if (!phoneView()) reveal(board.current);
   };
   // "Gati" takes the slip off the screen, as in the app; it slides out first.
   const ready = (slip) => {
     setTickets((all) => all.map((x) => (x.key === slip.key ? { ...x, leaving: true } : x)));
     setTimeout(() => setTickets((all) => all.filter((x) => x.key !== slip.key)), 320);
     if (slip.table === table) setNote(t(`Table ${pad(slip.table)}: ${deptName(slip.dept, t)} ready.`, `Tavolina ${pad(slip.table)}: ${slip.dept} gati.`));
-    if (mine.length === 1 && mine[0].key === slip.key) reveal(foot.current);
+    if (mine.length === 1 && mine[0].key === slip.key && !phoneView()) reveal(foot.current);
   };
   const pay = (method) => {
     const total = sum(sent);
@@ -158,9 +172,14 @@ export function Counter({ t }) {
           <li key={label} className={n < step ? "done" : n === step ? "now" : ""}><span>{n < step ? "✓" : n + 1}</span>{label}</li>
         ))}
       </ol>
+      <div className="tc-views" ref={views} role="group" aria-label={t("Show screen", "Shfaq ekranin")}>
+        {[["phone", t("Phone", "Telefoni")], ["board", t("Stations", "Repartet"), tickets.length], ["till", t("Till", "Arka")]].map(([key, label, n]) => (
+          <button key={key} type="button" aria-pressed={view === key} className={view !== key && stepView === key ? "is-next" : ""} onClick={() => setView(key)}>{label}{n > 0 && <span>{n}</span>}</button>
+        ))}
+      </div>
 
-      <div className="tc-stage">
-        <figure className="tc-col">
+      <div className="tc-stage" data-view={view}>
+        <figure className="tc-col tc-col-phone">
           <figcaption>{t("The waiter’s phone", "Telefoni i kamarierit")}</figcaption>
           <div className="tc-phone">
             <div className="tc-phone-screen">
@@ -231,7 +250,7 @@ export function Counter({ t }) {
           </div>
         </figure>
 
-        <figure className="tc-col">
+        <figure className="tc-col tc-col-till">
           <figcaption>{t("The till", "Arka")}</figcaption>
           <div className="tc-till">
             <dl>
