@@ -22,7 +22,7 @@ const MOTIF = [
   ["c", 72, 186, 34], ["r", 140, 154, 64, 64, 1], ["r", 240, 154, 64, 64], ["c", 372, 186, 34], ["r", 440, 154, 64, 64, 1],
   ["r", 40, 268, 164, 56], ["c", 272, 296, 34, 1], ["r", 340, 268, 64, 64], ["r", 440, 268, 120, 56],
 ];
-function FloorMotif({ className }) {
+export function FloorMotif({ className }) {
   return (
     <svg className={className} viewBox="0 0 600 360" aria-hidden="true" focusable="false">
       {MOTIF.map(([kind, x, y, a, b, on], i) => kind === "r"
@@ -32,8 +32,16 @@ function FloorMotif({ className }) {
   );
 }
 
+// One button that cycles the theme: system → light → dark. Shared with sign-up and sign-in.
+export function ThemeButton({ theme, setTheme, t = (en, sq) => sq }) {
+  const labels = { system: t("Match system", "Sipas sistemit"), light: t("Light", "E çelët"), dark: t("Dark", "E errët") };
+  const next = { system: "light", light: "dark", dark: "system" }[theme];
+  const label = `${t("Theme", "Pamja")}: ${labels[theme]}`;
+  return <button type="button" className="lp-theme-cycle" aria-label={label} title={label} onClick={() => setTheme(next)}><Symbol name={theme === "system" ? "system" : theme === "light" ? "sun" : "moon"} size={18} /></button>;
+}
+
 // The theme the page actually shows: the visitor's choice, or the device's while on "system".
-function useTheme() {
+export function useTheme() {
   const [theme, setTheme] = useState(savedTheme);
   const [systemDark, setSystemDark] = useState(() => matchMedia("(prefers-color-scheme: dark)").matches);
   useEffect(() => {
@@ -66,6 +74,8 @@ function Symbol({ name, size = 20 }) {
     system: <><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" /></>,
     sun: <><circle cx="12" cy="12" r="3.5" /><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" /></>,
     moon: <path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z" />,
+    qr: <><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2" /></>,
+    download: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" />,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -121,15 +131,6 @@ const features = (t) => [
     ),
     img: ["/landing/page-raportet.webp", 2338, 1532, t("The day's report: sales, cash, card and best sellers.", "Raporti i ditës: shitjet, cash, kartë dhe produktet më të shitura.")],
   },
-  {
-    id: "menuja", tab: t("Online menu", "Menuja online"),
-    title: t("Tourists scan the QR code and read the menu in their own language.", "Turisti skanon kodin QR dhe e lexon menunë në gjuhën e vet."),
-    points: t(
-      ["Six languages, translated automatically", "Prices in euros too, if you want", "When guests order themselves, the waiter approves it before it reaches the bar"],
-      ["Gjashtë gjuhë, të përkthyera automatikisht", "Çmimet edhe në euro, po ta doni", "Kur klienti porosit vetë, kamarieri e miraton para se të shkojë te bari"],
-    ),
-    phone: ["/landing/phone-menuja.webp", 1170, 2532, t("Bar Aurora's online menu, in English.", "Menuja online e Bar Aurora, në anglisht.")],
-  },
 ];
 
 function Shot({ f }) {
@@ -141,39 +142,86 @@ function Shot({ f }) {
   );
 }
 
-// A numbered list on the left, one open at a time; its screen sits beside it (inside it on a
-// phone, where there's no room beside).
-function Features({ t }) {
-  const [open, setOpen] = useState(0);
-  const FEATURES = features(t);
-  const items = useRef([]);
-  // On a phone the open part's screen sits inside it, so closing the one above would pull the
-  // newly opened heading out from under the finger: bring it back to the top of the screen.
-  const choose = (i) => {
-    setOpen(i);
-    if (!matchMedia("(max-width: 960px)").matches) return;
-    requestAnimationFrame(() => {
-      const el = items.current[i];
-      if (el && el.getBoundingClientRect().top < 72) el.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    });
+// "Download for …": BlueBar runs in the browser, so this installs it as an app on this device.
+// Where the browser offers its own install (Chrome, Edge, Android) that prompt opens; elsewhere a
+// short how-to for this system and browser appears under the buttons.
+function device() {
+  const ua = navigator.userAgent;
+  const platform = (navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
+  if (/iphone|ipad|ipod/i.test(ua) || (platform.includes("mac") && navigator.maxTouchPoints > 1)) return "iphone";
+  if (/android/i.test(ua)) return "android";
+  if (platform.includes("win")) return "windows";
+  if (platform.includes("mac")) return "mac";
+  return "linux";
+}
+const OS_NAME = { mac: "Mac", windows: "Windows", linux: "Linux", iphone: "iPhone", android: "Android" };
+const safari = () => /safari/i.test(navigator.userAgent) && !/chrome|chromium|crios|edg|android/i.test(navigator.userAgent);
+const chromium = () => /chrome|chromium|edg/i.test(navigator.userAgent);
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+});
+function howTo(os, t) {
+  if (os === "iphone") return t("In Safari, tap Share, then “Add to Home Screen”.", "Në Safari, prekni Shpërndaj, pastaj “Shto në ekranin bazë”.");
+  if (os === "android") return t("Open the browser menu ⋮ and tap “Install app”.", "Hapni menunë e shfletuesit ⋮ dhe prekni “Instalo aplikacionin”.");
+  if (os === "mac" && safari()) return t("In Safari, choose File → Add to Dock.", "Në Safari, zgjidhni File → Add to Dock.");
+  if (chromium()) return t("Click the install icon at the right end of the address bar.", "Klikoni ikonën e instalimit në fund të shiritit të adresës.");
+  return t("Open this page in Chrome or Edge, then click the install icon in the address bar.", "Hapeni këtë faqe në Chrome ose Edge, pastaj klikoni ikonën e instalimit te shiriti i adresës.");
+}
+function DownloadButton({ t, className = "lp-button", onHelp }) {
+  const os = useState(device)[0];
+  const click = async () => {
+    if (!installPrompt) return onHelp(howTo(os, t));
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    installPrompt = null;
+    if (outcome === "accepted") onHelp(t("BlueBar is installed. Open it like any other app.", "BlueBar u instalua. Hapeni si çdo aplikacion tjetër."));
   };
+  return <button type="button" className={className} onClick={click}><Symbol name="download" size={18} />{t(`Download for ${OS_NAME[os]}`, `Shkarko për ${OS_NAME[os]}`)}</button>;
+}
+
+// The whole system, full width, leaning toward the mouse like a sheet on a table. The tilt is
+// written straight to the element (no re-render) and only on mouse-driven screens.
+function TiltScreen({ t }) {
+  const el = useRef(null);
+  useEffect(() => {
+    const node = el.current;
+    if (!matchMedia("(hover: hover) and (pointer: fine)").matches || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let frame = 0;
+    const move = (e) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const r = node.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        node.style.setProperty("--rx", `${(-y * 7).toFixed(2)}deg`);
+        node.style.setProperty("--ry", `${(x * 9).toFixed(2)}deg`);
+        node.style.setProperty("--gx", `${((x + 0.5) * 100).toFixed(1)}%`);
+        node.style.setProperty("--gy", `${((y + 0.5) * 100).toFixed(1)}%`);
+        node.classList.add("is-tilting");
+      });
+    };
+    const leave = () => {
+      cancelAnimationFrame(frame);
+      node.classList.remove("is-tilting");
+      node.style.setProperty("--rx", "0deg");
+      node.style.setProperty("--ry", "0deg");
+    };
+    node.addEventListener("pointermove", move);
+    node.addEventListener("pointerleave", leave);
+    return () => {
+      cancelAnimationFrame(frame);
+      node.removeEventListener("pointermove", move);
+      node.removeEventListener("pointerleave", leave);
+    };
+  }, []);
   return (
-    <div className="lp-features">
-      <div className="lp-acc">
-        {FEATURES.map((f, i) => (
-          <div key={f.id} ref={(el) => (items.current[i] = el)} className={`lp-acc-item ${i === open ? "is-open" : ""}`}>
-            <h3><button type="button" aria-expanded={i === open} aria-controls={i === open ? `acc-${f.id}` : undefined} onClick={() => choose(i)}><span>{String(i + 1).padStart(2, "0")}</span>{f.tab}</button></h3>
-            {i === open && (
-              <div className="lp-acc-body" id={`acc-${f.id}`}>
-                <p className="lp-acc-title">{f.title}</p>
-                <ul>{f.points.map((p) => <li key={p}><Symbol name="check" size={18} />{p}</li>)}</ul>
-                <div className="lp-acc-inline"><Shot f={f} />{f.img && <p className="lp-pan-hint">{t("Swipe the screen to see all of it", "Rrëshqitni ekranin për ta parë të gjithë")}</p>}</div>
-              </div>
-            )}
-          </div>
-        ))}
+    <div className="lp-tilt-stage">
+      <div className="lp-tilt" ref={el}>
+        <div className="lp-browser"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1520" alt={t("BlueBar: Bar Aurora's floor, occupied tables with their waiter and amount, the menu on the left.", "BlueBar: salla e Bar Aurora, tavolinat e zëna me kamarierin dhe shumën, menuja majtas.")} fetchPriority="high" /></div>
+        <span className="lp-tilt-glare" aria-hidden="true" />
       </div>
-      <div className="lp-features-media"><Shot f={FEATURES[open]} /></div>
     </div>
   );
 }
@@ -209,12 +257,6 @@ function Voice({ t }) {
   );
 }
 
-const facts = (t) => [
-  [t("By voice", "Me zë"), t("the waiter says the order instead of typing it", "kamarieri e thotë porosinë, s’e shkruan")],
-  [t("6 languages", "6 gjuhë"), t("on the online menu with a QR code", "në menunë online me kod QR")],
-  ["BlueBill", t("fiscalizes every bill", "për fiskalizimin e çdo fature")],
-  [t("0 installs", "0 instalime"), t("opens in the browser, on any device", "hapet në shfletues, në çdo pajisje")],
-];
 const steps = (t) => [
   [t("Register your venue", "Regjistroni lokalin"), t("The venue's name, a code for your staff and your PIN. About two minutes.", "Emri i lokalit, një kod për stafin dhe PIN-i juaj. Rreth dy minuta.")],
   [t("Add your menu and tables", "Shtoni menunë dhe tavolinat"), t("Products with prices, categories, the main room and the terrace. If your menu is in Excel, import it as it is.", "Produktet me çmimet, kategoritë, salla dhe tarraca. Nëse menuja është në Excel, e importoni siç është.")],
@@ -226,7 +268,7 @@ const more = (t) => [
   ["users", t("Staff", "Stafi"), t("Waiters sign in with a PIN or pattern, and only from the venue's network.", "Kamarierët hyjnë me PIN ose pattern, dhe vetëm nga rrjeti i lokalit.")],
   ["list", t("Audit log", "Auditimi"), t("Who changed what and when, for every action without exception.", "Kush ndryshoi çfarë dhe kur, për çdo veprim pa përjashtim.")],
   ["key", t("Sign in with LuxHotel", "Hyrje me LuxHotel"), t("For hotels that run on LuxHotel System.", "Për hotelet që punojnë me LuxHotel System.")],
-  ["devices", t("On any device", "Në çdo pajisje"), t("Phone, tablet or the till computer. Install it as an app if you like.", "Telefon, tablet ose kompjuteri i kasës. Po deshët, instalohet si aplikacion.")],
+  ["qr", t("Online menu", "Menuja online"), t("Guests scan the table's QR code and read the menu in six languages, with prices in euros too.", "Klienti skanon kodin QR të tavolinës dhe e lexon menunë në gjashtë gjuhë, me çmimet edhe në euro.")],
 ];
 const questions = (t) => [
   [t("How much does it cost?", "Sa kushton?"), t("It depends on your venue: how many tables you have and how many devices you'll use. Write to us and we'll send you an offer.", "Varet nga lokali: sa tavolina keni dhe sa pajisje do të përdorni. Na shkruani dhe ju dërgojmë ofertën.")],
@@ -252,8 +294,10 @@ export function Landing() {
     try { localStorage.setItem(LANG_KEY, lang); } catch {}
   }, [lang, t]);
   const [theme, setTheme, shown] = useTheme();
+  const [help, setHelp] = useState("");
+  const [help2, setHelp2] = useState("");
+  const FEATURES = features(t);
   const nav = [["#vecorite", t("Features", "Veçoritë")], ["#provo", t("Try it", "Provojeni")], ["#fillimi", t("Getting started", "Si fillohet")], ["#pyetje", t("Questions", "Pyetje")]];
-  const themes = [["system", t("Match system", "Sipas sistemit")], ["light", t("Light", "E çelët")], ["dark", t("Dark", "E errët")]];
   return (
     <div className="lp lp-salla" data-theme={shown}>
       <a className="lp-skip" href="#permbajtja">{t("Skip to content", "Kalo te përmbajtja")}</a>
@@ -262,11 +306,7 @@ export function Landing() {
           <Brand t={t} />
           <nav className="lp-nav" aria-label={t("Main navigation", "Navigimi kryesor")}>{nav.map(([h, l]) => <a key={h} href={h}>{l}</a>)}</nav>
           <div className="lp-header-actions">
-            {(() => {
-              const next = { system: "light", light: "dark", dark: "system" }[theme];
-              const label = themes.find(([key]) => key === theme)[1];
-              return <button type="button" className="lp-theme-cycle" aria-label={`${t("Theme", "Pamja")}: ${label}`} title={`${t("Theme", "Pamja")}: ${label}`} onClick={() => setTheme(next)}><Symbol name={theme === "system" ? "system" : theme === "light" ? "sun" : "moon"} size={18} /></button>;
-            })()}
+            <ThemeButton theme={theme} setTheme={setTheme} t={t} />
             <div className="lp-lang" data-lang={lang} role="group" aria-label="Language · Gjuha">
               <button type="button" lang="en" aria-label="English" aria-pressed={lang === "en"} onClick={() => switchLang("en")}>EN</button>
               <button type="button" lang="sq" aria-label="Shqip" aria-pressed={lang === "sq"} onClick={() => switchLang("sq")}>SQ</button>
@@ -279,78 +319,86 @@ export function Landing() {
         {menuOpen && <nav className="lp-mobile-nav" id="lp-mobile-nav" aria-label={t("Mobile navigation", "Navigimi në telefon")}>{nav.map(([h, l]) => <a key={h} href={h} onClick={() => setMenuOpen(false)}>{l}</a>)}<a href={SIGN_IN}>{t("Sign in to your account", "Hyr në llogari")}</a><a href={REGISTER}>{t("Register your venue", "Regjistro lokalin")}</a></nav>}
       </header>
       <main id="permbajtja" tabIndex={-1}>
-        <section className="lp-hero">
+        <section className="lp-start">
           <FloorMotif className="lp-motif" />
-          <div className="lp-wrap lp-hero-inner">
-            <div className="lp-hero-copy">
-              <p className="lp-eyebrow lp-live">{t("Point of sale for bars, cafés and restaurants", "Arka për bare, kafene dhe restorante")}</p>
-              <h1>{t("Full house, ", "Salla plot, ")}<em>{t("till in order.", "arka në rregull.")}</em></h1>
-              <p className="lp-lead">{t("The waiter takes the order on their phone, by touch or by voice; the bar and the kitchen each get their own slip, and when you close the shift you know what should be in the till before you count it.", "Kamarieri e merr porosinë në telefon, me prekje ose me zë; bari dhe kuzhina marrin secili fletën e vet, dhe kur mbyllni turnin e dini sa duhet të ketë arka para se ta numëroni.")}</p>
-              <div className="lp-actions">
-                <a className="lp-button" href={REGISTER}>{t("Register your venue", "Regjistro lokalin")}</a>
-                <a className="lp-button lp-button-ghost" href="#provo">{t("Try it here, no account needed", "Provojeni këtu, pa llogari")}</a>
-              </div>
+          <div className="lp-wrap lp-start-copy">
+            <h1>{t("Full house, ", "Salla plot, ")}<em>{t("till in order.", "arka në rregull.")}</em></h1>
+            <p className="lp-lead">{t("The waiter takes the order on their phone, by touch or by voice; the bar and the kitchen each get their own slip, and when you close the shift you know what should be in the till before you count it.", "Kamarieri e merr porosinë në telefon, me prekje ose me zë; bari dhe kuzhina marrin secili fletën e vet, dhe kur mbyllni turnin e dini sa duhet të ketë arka para se ta numëroni.")}</p>
+            <div className="lp-actions">
+              <DownloadButton t={t} onHelp={setHelp} />
+              <a className="lp-button lp-button-ghost" href="#provo">{t("Try it", "Provojeni")}</a>
             </div>
-            <div className="lp-hero-media">
-              <div className="lp-browser lp-hero-desk"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1520" alt={t("BlueBar: Bar Aurora's floor, 4 occupied tables with their waiter and amount.", "BlueBar: salla e Bar Aurora, 4 tavolina të zëna me kamarierin dhe shumën.")} fetchPriority="high" /></div>
-              <img className="lp-phone lp-hero-phone" src="/landing/phone-porosia.webp" width="1170" height="2100" alt={t("BlueBar on the waiter's phone: Table 01's order.", "BlueBar në telefonin e kamarierit: porosia e Tavolinës 01.")} />
-            </div>
+            <p className="lp-help" role="status">{help}</p>
           </div>
-          <dl className="lp-wrap lp-facts">{facts(t).map(([big, small]) => <div key={big}><dt>{big}</dt><dd>{small}</dd></div>)}</dl>
+          <TiltScreen t={t} />
         </section>
 
-        <section className="lp-section" id="vecorite" aria-labelledby="features-heading">
+        <section className="lp-parts" aria-label={t("What BlueBar covers", "Çfarë mbulon BlueBar")}>
           <div className="lp-wrap">
-            <div className="lp-head-split">
-              <div><p className="lp-eyebrow">{t("What it does", "Çfarë bën")}</p><h2 id="features-heading">{t("Everyone in the venue sees ", "Secili në lokal sheh ")}<em>{t("only what they need.", "vetëm atë që i duhet.")}</em></h2></div>
-              <p className="lp-sub">{t("Pick a part and see the real screen. The data comes from Bar Aurora, our sample venue.", "Zgjidhni një pjesë dhe shihni ekranin e vërtetë. Të dhënat janë nga Bar Aurora, lokali ynë shembull.")}</p>
-            </div>
-            <Features t={t} />
+            <nav className="lp-chips">{[...FEATURES.map((f) => [`#${f.id}`, f.tab]), ["#zeri", t("By voice", "Me zë")], ["#edhe", t("Online menu", "Menuja online")]].map(([h, l]) => <a key={h} href={h}>{l}</a>)}</nav>
+            <p>{t("Every screen on this page is real, from Bar Aurora, our sample venue.", "Çdo ekran në këtë faqe është i vërtetë, nga Bar Aurora, lokali ynë shembull.")}</p>
           </div>
         </section>
 
-        <section className="lp-section lp-section-night lp-voice" id="zeri" aria-labelledby="voice-heading">
-          <div className="lp-wrap lp-voice-inner">
-            <div>
-              <p className="lp-eyebrow">{t("Ordering by voice", "Porosia me zë")}</p>
-              <h2 id="voice-heading">{t("The waiter says it, ", "Kamarieri e thotë, ")}<em>{t("BlueBar writes it down.", "BlueBar e shkruan.")}</em></h2>
-              <p className="lp-sub">{t("On the order screen, the waiter taps the microphone and says what the table asked for, the way they normally would. BlueBar turns it into items from your menu, with quantities, and the waiter checks the list before sending it.", "Te porosia, kamarieri shtyp mikrofonin dhe thotë atë që kërkoi tavolina, ashtu si e thotë zakonisht. BlueBar e kthen në artikuj nga menuja juaj, me sasitë, dhe kamarieri e sheh listën para se ta dërgojë.")}</p>
-              <ul className="lp-voice-points">
-                <li><Symbol name="check" size={18} />{t("Understands corrections too: “two Korça beers, no, Aperol”", "Kupton edhe korrigjimet: “dy birra Korça, jo, Aperol”")}</li>
-                <li><Symbol name="check" size={18} />{t("Anything not on the menu isn’t added", "Çfarë s’është në menu nuk shtohet")}</li>
-                <li><Symbol name="check" size={18} />{t("Up to 30 seconds per order", "Deri në 30 sekonda për një porosi")}</li>
-              </ul>
+        <div id="vecorite">
+          {[FEATURES[0], "voice", FEATURES[2]].map((f, i) => f === "voice" ? (
+            <section className="lp-split is-flipped" id="zeri" key="voice" aria-labelledby="voice-heading">
+              <div className="lp-wrap lp-split-inner">
+                <div className="lp-split-copy">
+                  <p className="lp-eyebrow">{t("Ordering by voice", "Porosia me zë")}</p>
+                  <h2 id="voice-heading">{t("The waiter says it, ", "Kamarieri e thotë, ")}<em>{t("BlueBar writes it down.", "BlueBar e shkruan.")}</em></h2>
+                  <ul className="lp-points">
+                    {FEATURES[1].points.map((p) => <li key={p}><Symbol name="check" size={18} />{p}</li>)}
+                    <li><Symbol name="check" size={18} />{t("Anything not on the menu isn’t added", "Çfarë s’është në menu nuk shtohet")}</li>
+                  </ul>
+                </div>
+                <Voice t={t} />
+              </div>
+            </section>
+          ) : (
+            <section className={`lp-split${i % 2 ? " is-flipped" : ""}`} id={f.id} key={f.id} aria-labelledby={`${f.id}-heading`}>
+              <div className="lp-wrap lp-split-inner">
+                <div className="lp-split-copy">
+                  <p className="lp-eyebrow">{f.tab}</p>
+                  <h2 id={`${f.id}-heading`}>{f.title}</h2>
+                  <ul className="lp-points">{f.points.map((p) => <li key={p}><Symbol name="check" size={18} />{p}</li>)}</ul>
+                </div>
+                <div className="lp-split-media"><Shot f={f} /></div>
+              </div>
+            </section>
+          ))}
+
+          <section className="lp-duo" aria-label={t("Payments and reports", "Pagesat dhe raportet")}>
+            <div className="lp-wrap lp-duo-grid">
+              {FEATURES.slice(3).map((f) => (
+                <article className="lp-duo-card" id={f.id} key={f.id}>
+                  <p className="lp-eyebrow">{f.tab}</p>
+                  <h3>{f.title}</h3>
+                  <p>{f.points.join(". ")}.</p>
+                  <img src={f.img[0]} width={f.img[1]} height={f.img[2]} alt={`BlueBar: ${f.img[3]}`} loading="lazy" />
+                </article>
+              ))}
             </div>
-            <Voice t={t} />
+          </section>
+        </div>
+
+        <section className="lp-section" id="edhe" aria-labelledby="more-heading">
+          <div className="lp-wrap">
+            <p className="lp-eyebrow">{t("Also included", "Edhe këto")}</p>
+            <h2 id="more-heading">{t("The things nobody asks for, ", "Gjërat që s’i kërkon askush, ")}<em>{t("until they need them.", "derisa i duhen.")}</em></h2>
+            <dl className="lp-grid">{more(t).map(([icon, title, d]) => <div key={title}><dt><Symbol name={icon} size={20} />{title}</dt><dd>{d}</dd></div>)}</dl>
           </div>
         </section>
 
         <section className="lp-section lp-try" id="provo" aria-labelledby="try-heading">
           <div className="lp-wrap lp-head-split">
-            <div><p className="lp-eyebrow lp-live">{t("Try it", "Provojeni")}</p><h2 id="try-heading">{t("Take an order, ", "Merrni një porosi, ")}<em>{t("right here, right now.", "tani, këtu.")}</em></h2></div>
-            <p className="lp-sub">{t("Order from the waiter’s phone and watch the slip arrive at the stations. Mark it ready, take the payment, and the bill prints at the till along with the day’s takings. It takes less than a minute.", "Porositni nga telefoni i kamarierit dhe shihni si mbërrin fleta te Repartet. Shënojeni gati, merrni pagesën, dhe fatura del te arka bashkë me xhiron e ditës. Zgjat më pak se një minutë.")}</p>
+            <div><p className="lp-eyebrow">{t("Try it", "Provojeni")}</p><h2 id="try-heading">{t("Take an order, ", "Merrni një porosi, ")}<em>{t("right here, right now.", "tani, këtu.")}</em></h2></div>
+            <p className="lp-sub">{t("Order from the waiter’s phone, mark it ready at the stations, take the payment. Less than a minute.", "Porositni nga telefoni i kamarierit, shënojeni gati te Repartet, merrni pagesën. Më pak se një minutë.")}</p>
           </div>
           <Counter t={t} />
         </section>
 
-        <section className="lp-section lp-section-night" id="fillimi" aria-labelledby="start-heading">
-          <div className="lp-wrap">
-            <p className="lp-eyebrow">{t("Getting started", "Si fillohet")}</p>
-            <h2 id="start-heading">{t("Three steps to ", "Tre hapa deri te ")}<em>{t("your first order.", "porosia e parë.")}</em></h2>
-            <ol className="lp-steps">{steps(t).map(([t, d], i) => <li key={t}><span>{i + 1}</span><h3>{t}</h3><p>{d}</p></li>)}</ol>
-            <div className="lp-actions"><a className="lp-button" href={REGISTER}>{t("Register your venue", "Regjistro lokalin")}</a></div>
-          </div>
-        </section>
-
-        <section className="lp-section" aria-labelledby="more-heading">
-          <div className="lp-wrap">
-            <p className="lp-eyebrow">{t("Also included", "Edhe këto")}</p>
-            <h2 id="more-heading">{t("The things nobody asks for, ", "Gjërat që s’i kërkon askush, ")}<em>{t("until they need them.", "derisa i duhen.")}</em></h2>
-            <dl className="lp-more">{more(t).map(([icon, t, d]) => <div key={t}><dt><Symbol name={icon} size={22} />{t}</dt><dd>{d}</dd></div>)}</dl>
-          </div>
-        </section>
-
-        <section className="lp-section lp-section-cream" id="pyetje" aria-labelledby="faq-heading">
+        <section className="lp-section" id="pyetje" aria-labelledby="faq-heading">
           <div className="lp-wrap lp-faq">
             <div className="lp-faq-head">
               <p className="lp-eyebrow">{t("Questions", "Pyetje")}</p>
@@ -360,16 +408,18 @@ export function Landing() {
           </div>
         </section>
 
-        <section className="lp-cta">
+        <section className="lp-get" id="fillimi" aria-labelledby="get-heading">
+          <FloorMotif className="lp-motif" />
           <div className="lp-wrap">
-            <div className="lp-cta-card">
-              <FloorMotif className="lp-motif" />
-              <div>
-                <h2>{t("Your first shift with BlueBar ", "Turni i parë me BlueBar ")}<em>{t("could be tonight.", "mund të jetë sonte.")}</em></h2>
-                <p>{t("Registration takes about two minutes. Staff sign in with the venue code and their own PIN.", "Regjistrimi zgjat rreth dy minuta. Stafi hyn me kodin e lokalit dhe PIN-in e vet.")}</p>
-              </div>
-              <div className="lp-actions"><a className="lp-button lp-button-light" href={REGISTER}>{t("Register your venue", "Regjistro lokalin")}</a><a className="lp-cta-link" href={SIGN_IN}>{t("I have an account", "Kam llogari")}</a></div>
+            <span className="lp-get-mark" aria-hidden="true">b.</span>
+            <h2 id="get-heading">{t("Your first shift with BlueBar ", "Turni i parë me BlueBar ")}<em>{t("could be tonight.", "mund të jetë sonte.")}</em></h2>
+            <p className="lp-sub">{t("Registration takes about two minutes.", "Regjistrimi zgjat rreth dy minuta.")}</p>
+            <div className="lp-actions">
+              <a className="lp-button" href={REGISTER}>{t("Register your venue", "Regjistro lokalin")}</a>
+              <DownloadButton t={t} className="lp-button lp-button-ghost" onHelp={setHelp2} />
             </div>
+            <p className="lp-help" role="status">{help2}</p>
+            <ol className="lp-get-steps">{steps(t).map(([title, d], i) => <li key={title}><span>{i + 1}</span><div><h3>{title}</h3><p>{d}</p></div></li>)}</ol>
           </div>
         </section>
       </main>

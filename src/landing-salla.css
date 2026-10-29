@@ -64,7 +64,6 @@ html:has(.lp-salla[data-theme="dark"]) { background: #0d1c26; scrollbar-color: #
 
 /* Section labels: a small blue chip in sentence case. */
 .lp.lp-salla .lp-eyebrow { gap: 8px; padding: 6px 12px; border-radius: 9999px; background: var(--blue-soft); color: var(--accent-ink); font: 600 13px/1 var(--font); letter-spacing: 0.01em; text-transform: none; }
-.lp.lp-salla .lp-live { padding-left: 10px; }
 
 /* The bar: full width, translucent paper, a hairline under it. The only blur on the page. */
 .lp.lp-salla .lp-header { background: color-mix(in srgb, var(--paper) 86%, transparent); -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); border-bottom: 1px solid var(--line); color: var(--ink); }
@@ -91,54 +90,37 @@ html:has(.lp-salla[data-theme="dark"]) { background: #0d1c26; scrollbar-color: #
 .lp.lp-salla .lp-button-small { border-radius: 10px; }
 
 /* Hero: light, copy on the left, the product on the right, the floor plan behind it. */
-.lp.lp-salla .lp-hero { position: relative; overflow: hidden; background: var(--paper); color: var(--ink); }
-.lp.lp-salla .lp-hero > :not(.lp-motif) { position: relative; }
-.lp.lp-salla .lp-hero .lp-eyebrow { color: var(--accent-ink); }
-.lp.lp-salla .lp-hero h1 { color: var(--ink); }
-.lp.lp-salla .lp-hero h1 em { color: var(--accent-ink); }
+
 .lp.lp-salla .lp-lead { color: var(--ink-2); }
 .lp-motif { position: absolute; pointer-events: none; fill: none; stroke: var(--motif); stroke-width: 1.5; }
 .lp-motif .on { fill: var(--motif-on); stroke: var(--motif-on-line); }
-.lp-hero > .lp-motif { top: 40px; right: -60px; width: min(980px, 78vw); height: auto; -webkit-mask-image: radial-gradient(ellipse 70% 70% at 60% 40%, #000 35%, transparent 78%); mask-image: radial-gradient(ellipse 70% 70% at 60% 40%, #000 35%, transparent 78%); }
+
 .lp.lp-salla .lp-browser { background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--shadow); }
-.lp.lp-salla .lp-hero-media .lp-browser { box-shadow: 0 0 0 1px var(--line), 0 50px 90px -40px rgba(13, 28, 38, 0.45); }
+
 /* The screen's bar names the venue instead of drawing window buttons. */
 .lp.lp-salla .lp-browser-bar { align-items: center; gap: 7px; background: var(--surface); border-bottom-color: var(--line); }
 .lp.lp-salla .lp-browser-bar i { display: none; }
 .lp.lp-salla .lp-browser-bar::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .lp.lp-salla .lp-browser-bar::after { content: "Bar Aurora"; font: 600 11.5px/1 var(--font); color: var(--muted); }
 .lp.lp-salla .lp-phone { border-color: #16212a; box-shadow: 0 0 0 1px var(--line), 0 30px 60px -20px rgba(13, 28, 38, 0.45); }
-.lp.lp-salla .lp-facts div { border-top-color: var(--line); }
-.lp.lp-salla .lp-facts dt { color: var(--ink); }
-.lp.lp-salla .lp-facts dd { color: var(--muted); }
 
 /* Bands: the night bands of the other page become white (navy in dark), the rest is paper. */
-.lp.lp-salla .lp-section-night { background: var(--band); color: var(--ink); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.lp.lp-salla .lp-section-night h2 em, .lp.lp-salla .lp-section-night .lp-eyebrow { color: var(--accent-ink); }
-.lp.lp-salla .lp-section-cream, .lp.lp-salla .lp-try, .lp.lp-salla .lp-cta { background: var(--paper); }
+
+ .lp.lp-salla .lp-try { background: var(--paper); }
 .lp.lp-salla .lp-try { border-top: 0; }
 
 /* What it does. */
-.lp.lp-salla .lp-acc, .lp.lp-salla .lp-acc-item { border-color: var(--line); }
-.lp.lp-salla .lp-features-media, .lp.lp-salla .lp-acc-inline { background: var(--cream); border: 1px solid var(--line); }
 
 /* Voice: a white band, the card a screen. */
-.lp.lp-salla .lp-voice .lp-sub { color: var(--muted); }
-.lp.lp-salla .lp-voice-points li { color: var(--ink); }
+
 .lp.lp-salla .lp-voice-card { border-radius: 20px; box-shadow: 0 0 0 1px var(--line), var(--shadow); }
 
 /* Try it. */
 .lp.lp-salla .tc-board, .lp.lp-salla .tc-till { box-shadow: var(--shadow); }
 
 /* Getting started: the timeline, in blue on white. */
-.lp.lp-salla .lp-steps::before { background: var(--line); }
-.lp.lp-salla .lp-steps span { background: var(--blue); color: #fff; box-shadow: 0 0 0 10px var(--band); }
-.lp.lp-salla .lp-steps p { color: var(--muted); }
 
 /* Also included: a ruled list; icons in blue on a blue wash. */
-.lp.lp-salla .lp-more div { border-top-color: var(--line); }
-.lp.lp-salla .lp-more dt svg { background: var(--blue-soft); color: var(--accent-ink); }
-.lp.lp-salla .lp-more dd { color: var(--muted); }
 
 /* Questions. */
 .lp.lp-salla .lp-questions, .lp.lp-salla .lp-questions details { border-color: var(--line); }
@@ -146,23 +128,106 @@ html:has(.lp-salla[data-theme="dark"]) { background: #0d1c26; scrollbar-color: #
 .lp.lp-salla .lp-questions details p { color: var(--muted); }
 
 /* The close: BlueBar's blue block, the floor plan drawn on it in white. */
-.lp.lp-salla .lp-cta-card { position: relative; overflow: hidden; border-radius: 28px; }
-.lp.lp-salla .lp-cta-card > :not(.lp-motif) { position: relative; }
-.lp-cta-card > .lp-motif { right: -40px; bottom: -40px; width: min(620px, 70%); height: auto; stroke: rgba(255, 255, 255, 0.22); -webkit-mask-image: linear-gradient(110deg, transparent 10%, #000 60%); mask-image: linear-gradient(110deg, transparent 10%, #000 60%); }
-.lp-cta-card > .lp-motif .on { fill: rgba(255, 255, 255, 0.14); stroke: rgba(255, 255, 255, 0.5); }
-.lp.lp-salla .lp-cta h2 { color: #fff; }
-.lp.lp-salla .lp-cta h2 em { color: #bfdcff; }
-.lp.lp-salla .lp-cta .lp-button-light { border-radius: 12px; border-color: #fff; background: #fff; color: #0b3f78; }
-.lp.lp-salla .lp-cta .lp-button-light:hover { background: #eaf3fd; border-color: #eaf3fd; }
 
 .lp.lp-salla .lp-footer { background: var(--paper); border-top: 1px solid var(--line); color: var(--muted); }
 .lp.lp-salla .lp-footer .lp-brand { color: var(--ink); }
 .lp.lp-salla .lp-footer nav a:hover { color: var(--ink); }
 
-@media (max-width: 960px) {
-  .lp-hero > .lp-motif { top: auto; bottom: 120px; right: -120px; width: 140vw; }
-}
 @media (max-width: 620px) {
   .lp.lp-salla .lp-header-actions { gap: 8px; }
-  .lp-cta-card > .lp-motif { width: 120%; right: -30%; opacity: 0.7; }
+  
+}
+
+/* ---- The page, simplified: a centred start, the whole system tilting under it, then one idea
+   per band, a grid, the demo, the questions and the way in. */
+.lp-salla .lp-button { gap: 8px; }
+.lp-salla .lp-button svg { flex: none; margin-left: -2px; }
+.lp.lp-salla .lp-eyebrow { margin-bottom: 14px; }
+.lp-help { min-height: 1.5em; margin: 14px auto 0; color: var(--muted); font-size: 15px; }
+.lp-help:empty { visibility: hidden; }
+
+.lp-start { position: relative; overflow: hidden; padding: clamp(64px, 9vw, 120px) 0 clamp(56px, 7vw, 96px); text-align: center; }
+.lp-start > :not(.lp-motif) { position: relative; }
+.lp-start > .lp-motif { top: 0; left: 50%; width: min(1200px, 120vw); height: auto; transform: translateX(-50%); -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, #000 10%, transparent 70%); mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, #000 10%, transparent 70%); opacity: 0.45; }
+.lp-start-copy { max-width: 860px; }
+.lp.lp-salla .lp-start h1 { font-size: clamp(48px, 7vw, 92px); line-height: 0.98; letter-spacing: -0.045em; }
+.lp.lp-salla .lp-start h1 em { display: block; }
+.lp.lp-salla .lp-start .lp-lead { max-width: 56ch; margin: 24px auto 0; color: var(--ink-2); font-size: clamp(17px, 1.4vw, 20px); }
+.lp-start .lp-actions { justify-content: center; margin-top: 34px; }
+
+/* The tilting screen. */
+.lp-tilt-stage { width: min(1240px, calc(100% - 40px)); margin: clamp(48px, 6vw, 72px) auto 0; perspective: 1800px; }
+.lp-tilt { --rx: 0deg; --ry: 0deg; --gx: 50%; --gy: 0%; position: relative; transform: rotateX(var(--rx)) rotateY(var(--ry)); transform-style: preserve-3d; transition: transform 600ms var(--ease); will-change: transform; }
+.lp-tilt.is-tilting { transition: transform 120ms linear; }
+.lp-tilt .lp-browser { border-radius: 14px; box-shadow: 0 0 0 1px var(--line), 0 60px 100px -50px rgba(13, 28, 38, 0.55), 0 24px 40px -30px rgba(13, 28, 38, 0.35); }
+.lp-tilt-glare { position: absolute; inset: 0; border-radius: 14px; pointer-events: none; background: radial-gradient(600px circle at var(--gx) var(--gy), rgba(255, 255, 255, 0.22), transparent 45%); opacity: 0; transition: opacity 300ms ease; }
+.lp-tilt.is-tilting .lp-tilt-glare { opacity: 1; }
+
+/* The parts, as chips that jump to their band. */
+.lp-parts { padding: 8px 0 clamp(40px, 5vw, 64px); text-align: center; }
+.lp-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.lp-chips a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-2); font-size: 15px; font-weight: 600; transition: border-color 150ms ease, color 150ms ease; }
+.lp-chips a:hover { border-color: var(--blue); color: var(--accent-ink); }
+.lp.lp-salla .lp-parts p { margin-top: 16px; color: var(--muted); font-size: 15px; }
+
+/* One idea per band: copy on one side, its screen on the other, sides alternating. */
+.lp-split { padding: clamp(56px, 7vw, 96px) 0; scroll-margin-top: 64px; }
+.lp-split-inner { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 40px clamp(32px, 6vw, 88px); align-items: center; }
+.lp-split.is-flipped .lp-split-inner { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); }
+.lp-split.is-flipped .lp-split-copy { order: 2; }
+.lp.lp-salla .lp-split h2 { font-size: clamp(28px, 2.8vw, 38px); line-height: 1.1; text-wrap: balance; }
+.lp-points { display: grid; gap: 12px; margin: 24px 0 0; padding: 0; list-style: none; }
+.lp-points li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; color: var(--ink-2); font-size: 16px; }
+.lp-points svg { margin-top: 3px; color: var(--accent-ink); }
+.lp-split-media .lp-shot { animation: none; }
+
+/* Payments and reports, side by side. */
+.lp-duo { padding: clamp(24px, 4vw, 48px) 0 clamp(56px, 7vw, 96px); }
+.lp-duo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.lp-duo-card { display: flex; flex-direction: column; overflow: hidden; padding: 28px 28px 0; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); scroll-margin-top: 80px; }
+.lp.lp-salla .lp-duo-card h3 { font: 700 clamp(22px, 2vw, 26px)/1.15 var(--display); letter-spacing: -0.025em; text-wrap: balance; }
+.lp.lp-salla .lp-duo-card p:not(.lp-eyebrow) { margin: 10px 0 24px; color: var(--muted); font-size: 15.5px; }
+.lp-duo-card img { display: block; width: calc(100% + 28px); max-width: none; height: auto; margin: auto -28px 0 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); border-top-left-radius: 12px; }
+.lp-duo-card .lp-eyebrow { align-self: flex-start; }
+
+/* Also included: six cards. */
+.lp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 48px 0 0; }
+.lp-grid div { padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.lp-grid dt { display: grid; justify-items: start; gap: 16px; font: 700 19px/1.2 var(--display); letter-spacing: -0.02em; color: var(--ink); }
+.lp-grid dt svg { width: 40px; height: 40px; padding: 10px; border-radius: 11px; background: var(--blue-soft); color: var(--accent-ink); }
+.lp-grid dd { margin: 8px 0 0; color: var(--muted); font-size: 15px; }
+
+/* The way in: BlueBar's mark, one line, the two actions, three steps. */
+.lp-get { position: relative; overflow: hidden; padding: clamp(80px, 10vw, 136px) 0 clamp(64px, 8vw, 104px); border-top: 1px solid var(--line); text-align: center; scroll-margin-top: 64px; }
+.lp-get > :not(.lp-motif) { position: relative; }
+.lp-get > .lp-motif { top: 0; left: 50%; width: min(1100px, 120vw); height: auto; transform: translateX(-50%); -webkit-mask-image: radial-gradient(ellipse 55% 50% at 50% 30%, #000 5%, transparent 65%); mask-image: radial-gradient(ellipse 55% 50% at 50% 30%, #000 5%, transparent 65%); opacity: 0.6; }
+.lp-get-mark { display: grid; place-items: center; width: 80px; height: 80px; margin: 0 auto 28px; border-radius: 22px; background: var(--blue); color: #fff; font: 800 36px/1 var(--display); letter-spacing: -0.04em; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 18px 36px -16px rgba(8, 72, 140, 0.65); }
+.lp.lp-salla .lp-get h2 { max-width: 18ch; margin: 0 auto; font-size: clamp(36px, 4.6vw, 60px); line-height: 1.02; }
+.lp.lp-salla .lp-get .lp-sub { margin: 16px auto 0; }
+.lp-get .lp-actions { justify-content: center; margin-top: 30px; }
+.lp-get-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 48px 0 0; padding: 0; list-style: none; text-align: left; }
+.lp-get-steps li { display: grid; grid-template-columns: 34px 1fr; gap: 14px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.lp-get-steps span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--blue-soft); color: var(--accent-ink); font: 700 15px var(--font); }
+.lp.lp-salla .lp-get-steps h3 { margin-top: 5px; font-size: 17px; }
+.lp.lp-salla .lp-get-steps p { margin-top: 6px; color: var(--muted); font-size: 15px; }
+
+@media (max-width: 960px) {
+  .lp-split-inner, .lp-split.is-flipped .lp-split-inner, .lp-duo-grid { grid-template-columns: minmax(0, 1fr); }
+  .lp-split.is-flipped .lp-split-copy { order: 0; }
+  .lp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lp-get-steps { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  .lp-start .lp-actions .lp-button { flex: 1 1 100%; }
+  .lp-tilt-stage { width: calc(100% - 24px); }
+  .lp-tilt .lp-browser { overflow-x: auto; scrollbar-width: none; }
+  .lp-tilt .lp-browser::-webkit-scrollbar { display: none; }
+  .lp-tilt .lp-browser-bar { position: sticky; left: 0; }
+  .lp-tilt .lp-browser img { width: 200%; max-width: none; }
+  .lp-grid { grid-template-columns: minmax(0, 1fr); }
+  .lp-duo-card { padding: 22px 22px 0; }
+  .lp-duo-card img { width: calc(100% + 22px); margin-right: -22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-tilt, .lp-tilt-glare { transition: none; }
 }
