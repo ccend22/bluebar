@@ -6,8 +6,14 @@ import { LuxHotelButton } from "./LuxHotel.jsx";
 const luxhotelSignIn = async (token) => openBusiness((await luxhotelLogin(token)).venue.slug);
 import { PinPad, Icon } from "./components.jsx";
 import { PatternPad } from "./PatternPad.jsx";
+import { FloorMotif, ThemeButton, useTheme } from "./Landing.jsx";
+
+// Sign-up and sign-in wear the landing's look: the floor plan behind, BlueBar's blue mark, and
+// the visitor's light / dark / system choice carried over from the landing.
+const Mark = ({ small }) => <span className={`onboard-mark${small ? " small" : ""}`} role="img" aria-label="BlueBar">b.</span>;
 
 function PinLogin({ onSignedIn }) {
+  const [theme, setTheme, shown] = useTheme();
   const [mode, setMode] = useState("waiter"),
     [waiters, setWaiters] = useState(null),
     [waiterId, setWaiterId] = useState(""),
@@ -69,15 +75,16 @@ function PinLogin({ onSignedIn }) {
   const selectedWaiter = waiters?.waiters.find((w) => String(w.id) === waiterId);
   const showWaiterList = mode === "waiter" && waiterFlow !== "pin_only" && (waiters?.waiters.length ?? 0) > 0;
   return (
-    <main className="onboard terminal">
+    <main className="onboard onboard-salla terminal" data-theme={shown}>
+      <FloorMotif className="onboard-motif" />
       <header className="onboard-bar">
         <a className="onboard-back" href="/"><Icon name="back" size={18} /> Ndrysho biznesin</a>
+        <span />
+        <ThemeButton theme={theme} setTheme={setTheme} />
       </header>
       <section className="terminal-shell">
       <div className="terminal-brand">
-        <span className="terminal-logo" aria-hidden="true">
-          <img src="/favicon.svg" alt="" width="48" height="48" />
-        </span>
+        <span className="terminal-logo" aria-hidden="true"><Mark small /></span>
         <h1>{venue?.name || "Hyrje"}</h1>
         <p className="onboard-lede">Kodi i biznesit: <strong>{venueSlug}</strong></p>
         <div className="onboard-segmented" role="group" aria-label="Lloji i llogarisë">
@@ -189,6 +196,7 @@ export function Login({ onSignedIn }) {
   const [busy, setBusy] = useState(false);
   const [luxhotelToken, setLuxhotelToken] = useState("");
   const website = useRef("");
+  const [theme, setTheme, shown] = useTheme();
   if (new URLSearchParams(window.location.search).has("business"))
     return <PinLogin onSignedIn={onSignedIn} />;
 
@@ -231,7 +239,7 @@ export function Login({ onSignedIn }) {
   let content;
   if (step === "hello")
     content = <>
-      <img className="onboard-icon" src="/favicon.svg" alt="BlueBar" width="72" height="72" />
+      <Mark />
       <h1 className="onboard-hello">Përshëndetje.</h1>
       <p className="onboard-lede">Tavolinat, porositë dhe arka e lokalit tuaj. Në një vend.</p>
       <ul className="onboard-features">
@@ -298,7 +306,8 @@ export function Login({ onSignedIn }) {
       <div className="onboard-actions"><button className="onboard-primary" onClick={() => openBusiness(slug)} autoFocus>Fillo</button></div>
     </>;
 
-  return <main className="onboard">
+  return <main className="onboard onboard-salla" data-theme={shown}>
+    <FloorMotif className="onboard-motif" />
     <header className="onboard-bar">
       {back && step !== "ready" ? (
         <button className="onboard-back" disabled={busy} onClick={() => go(back, "back")}><Icon name="back" size={18} /> Kthehu</button>
@@ -308,7 +317,7 @@ export function Login({ onSignedIn }) {
           {SIGNUP.map((s, i) => <i key={s} className={i <= at ? "on" : ""} />)}
         </span>
       )}
-      <span />
+      <ThemeButton theme={theme} setTheme={setTheme} />
     </header>
     <section className={`onboard-step ${dir}`} key={step}>
       {error && <p className="onboard-error" role="alert">{error}</p>}

@@ -6308,3 +6308,73 @@ body.order-open { overflow: hidden; }
   .shift-head button { width: 100%; }
   .till-hero-actions button { flex: 1; }
 }
+
+/* Sign-up and sign-in in the landing's "salla" look: paper (night navy in dark), the floor plan
+   behind, Bricolage headings, Figtree text, BlueBar blue with 12px corners. The app's variables
+   are re-inked in this scope, so the PIN pad and fields follow the theme on their own. */
+html:has(.onboard-salla) { background: #f6f7f9; }
+html:has(.onboard-salla[data-theme="dark"]) { background: #0d1c26; }
+.onboard.onboard-salla {
+  color-scheme: light;
+  --paper: #f6f7f9; --surface: #ffffff; --surface-subtle: #f1f4f7; --ink: #16212a; --ink-2: #3a4651;
+  --muted: #5d6974; --faint: #8d98a3; --line: #e2e7ec; --line-strong: #c9d2da; --accent-ink: var(--blue);
+  --blue-soft: #eaf3fd; --motif: #cfd8e0; --motif-on: rgba(47, 138, 99, 0.16); --motif-on-line: rgba(47, 138, 99, 0.55);
+  position: relative; isolation: isolate;
+  background: var(--paper); color: var(--ink);
+  font-family: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+.onboard.onboard-salla[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0d1c26; --surface: #132836; --surface-subtle: #18303f; --ink: #eef3f7; --ink-2: #c3cfd9;
+  --muted: #8fa1b0; --faint: #61788a; --line: rgba(238, 243, 247, 0.12); --line-strong: rgba(238, 243, 247, 0.22);
+  --accent-ink: #6fb1ff; --blue-soft: rgba(111, 177, 255, 0.16);
+  --motif: rgba(238, 243, 247, 0.09); --motif-on: rgba(60, 207, 142, 0.12); --motif-on-line: rgba(60, 207, 142, 0.45);
+}
+.onboard-motif {
+  /* Content is centred here, so the room keeps to the corner and fades out before it. */
+  position: absolute; z-index: -1; top: 56px; right: -260px; width: 820px; height: auto; pointer-events: none;
+  fill: none; stroke: var(--motif); stroke-width: 1.5;
+  -webkit-mask-image: radial-gradient(ellipse 55% 65% at 82% 28%, #000 15%, transparent 68%);
+  mask-image: radial-gradient(ellipse 55% 65% at 82% 28%, #000 15%, transparent 68%);
+}
+.onboard-motif .on { fill: var(--motif-on); stroke: var(--motif-on-line); }
+.onboard-salla .onboard-bar > :last-child { justify-self: end; }
+.onboard-salla .onboard-back { color: var(--accent-ink); font-weight: 600; }
+.onboard-salla .onboard-back:hover { color: var(--accent-ink); opacity: 0.8; }
+.onboard-salla .onboard-progress i { background: var(--line-strong); }
+.onboard-salla .onboard-progress i.on { background: var(--blue); }
+.onboard-mark {
+  display: grid; place-items: center; width: 76px; height: 76px; margin: 0 auto 28px; border-radius: 20px;
+  background: var(--blue); color: #fff; font: 800 34px/1 "Bricolage Grotesque", "Figtree", system-ui, sans-serif; letter-spacing: -0.04em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 16px 32px -14px rgba(8, 72, 140, 0.6);
+  animation: onboard-pop 600ms var(--ease-out) both;
+}
+.onboard-mark.small { width: 60px; height: 60px; margin: 0; border-radius: 16px; font-size: 27px; }
+.onboard-salla h1 { font-family: "Bricolage Grotesque", "Figtree", system-ui, sans-serif; font-weight: 700; letter-spacing: -0.035em; color: var(--ink); }
+.onboard-salla h1.onboard-hello { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--ink); }
+.onboard-salla .onboard-lede, .onboard-salla .onboard-note, .onboard-salla .terminal-who, .onboard-salla .welcome-new { color: var(--muted); }
+.onboard-salla .onboard-lede strong, .onboard-salla .onboard-features strong { color: var(--ink); }
+.onboard-salla .onboard-features li { color: var(--accent-ink); }
+.onboard-salla .onboard-features span { color: var(--muted); }
+.onboard-salla .terminal-pad h2 { color: var(--ink); }
+.onboard-salla .onboard-primary { border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(8, 72, 140, 0.25); }
+.onboard-salla .onboard-link, .onboard-salla .lux-link { color: var(--accent-ink); }
+.onboard-salla .lux-button { border-radius: 12px; border-color: var(--line); background: var(--surface); color: var(--ink); }
+.onboard-salla .lux-button:hover { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+.onboard-salla .onboard-input { border-radius: 12px; border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+.onboard-salla .onboard-input::placeholder { color: var(--faint); }
+.onboard-salla .onboard-segmented { border-radius: 12px; background: var(--line); }
+.onboard-salla .onboard-segmented button { color: var(--ink-2); }
+.onboard-salla .onboard-segmented button:hover { color: var(--ink); }
+.onboard-salla .onboard-segmented button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+.onboard-salla .onboard-people button { border-color: var(--line-strong); background: var(--surface); color: var(--ink); }
+.onboard-salla .onboard-people button[aria-pressed="true"] { border-color: var(--blue); background: var(--blue); color: #fff; }
+.onboard-salla .pin-pad.terminal .pin-keys button { color: var(--ink); }
+.onboard-salla[data-theme="dark"] .pin-pad.terminal .pin-keys button:disabled { color: var(--faint); }
+.onboard-salla[data-theme="dark"] .pin-pad.terminal .pin-keys .pin-clear { background: rgba(240, 110, 96, 0.12); border-color: rgba(240, 110, 96, 0.3); color: #f3a59b; }
+.onboard-salla[data-theme="dark"] .onboard-error { background: rgba(240, 110, 96, 0.14); color: #f3b0a7; }
+/* The LuxHotel sign-in dialog stays a light card in either theme. */
+.onboard-salla .lux-dialog { --surface: #ffffff; --ink: #16212a; --muted: #5d6974; --faint: #8d98a3; --line: #e2e7ec; --line-strong: #c9d2da; color-scheme: light; }
+@media (max-width: 560px) {
+  .onboard-motif { top: auto; bottom: -20px; right: -55%; width: 150vw; opacity: 0.8; }
+}
