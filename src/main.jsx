@@ -37,6 +37,7 @@ import {
   TableSymbol,
   TableShapePicker,
   DepartmentTag,
+  BrandMark,
 } from "./components.jsx";
 import "./style.css";
 
@@ -874,7 +875,7 @@ function App({ user, onLogout, onUserChange }) {
       >
         <aside className="sidebar">
           <a className="brand" href="#main" onClick={() => nav("Tavolinat")}>
-            <span className="brandmark">b.</span>BlueBar
+            <span className="brandmark"><BrandMark /></span>BlueBar
           </a>
           <div className="workspace-label">
             <span className="venue-dot" />
@@ -972,7 +973,7 @@ function App({ user, onLogout, onUserChange }) {
               <strong>{page}</strong>
             </div>
             <div className="topbar-brand" aria-hidden="true">
-              <span className="brandmark">b.</span>
+              <span className="brandmark"><BrandMark /></span>
               <span>{user.venue?.name || "BlueBar"}</span>
             </div>
             <div className="header-actions">

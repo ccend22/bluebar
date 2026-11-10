@@ -1,5 +1,13 @@
 import React, { useEffect } from "react";
 
+// BlueBar's mark: the "b." drawn once, white on whatever tile holds it.
+export const BrandMark = () => (
+  <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="11" strokeLinecap="round"><path d="M26.5 25.5V57" /><circle cx="42" cy="57" r="15.5" /></g>
+    <circle cx="73" cy="72" r="6" fill="currentColor" />
+  </svg>
+);
+
 const paths = {
   tables: (
     <>

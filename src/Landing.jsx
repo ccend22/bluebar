@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { BrandMark } from "./components.jsx";
 import "./landing.css";
 import "./landing-salla.css";
 import { Counter, Mic, Wave, heard, phrases, useTyping } from "./LandingCounter.jsx";
@@ -80,7 +81,7 @@ function Symbol({ name, size = 20 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 function Brand({ t }) {
-  return <a className="lp-brand" href="/" aria-label={t("BlueBar, home", "BlueBar, faqja kryesore")}><span className="lp-mark" aria-hidden="true">b.</span>BlueBar</a>;
+  return <a className="lp-brand" href="/" aria-label={t("BlueBar, home", "BlueBar, faqja kryesore")}><span className="lp-mark" aria-hidden="true"><BrandMark /></span>BlueBar</a>;
 }
 
 // What BlueBar does, one screen at a time. Pictures are real screens from the sample venue
@@ -411,7 +412,7 @@ export function Landing() {
         <section className="lp-get" id="fillimi" aria-labelledby="get-heading">
           <FloorMotif className="lp-motif" />
           <div className="lp-wrap">
-            <span className="lp-get-mark" aria-hidden="true">b.</span>
+            <span className="lp-get-mark" aria-hidden="true"><BrandMark /></span>
             <h2 id="get-heading">{t("Your first shift with BlueBar ", "Turni i parë me BlueBar ")}<em>{t("could be tonight.", "mund të jetë sonte.")}</em></h2>
             <p className="lp-sub">{t("Registration takes about two minutes.", "Regjistrimi zgjat rreth dy minuta.")}</p>
             <div className="lp-actions">

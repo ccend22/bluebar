@@ -4,13 +4,13 @@ import { LuxHotelButton } from "./LuxHotel.jsx";
 
 // "Hyr me LuxHotel": the LuxHotel account's business opens with its manager signed in.
 const luxhotelSignIn = async (token) => openBusiness((await luxhotelLogin(token)).venue.slug);
-import { PinPad, Icon } from "./components.jsx";
+import { PinPad, Icon, BrandMark } from "./components.jsx";
 import { PatternPad } from "./PatternPad.jsx";
 import { FloorMotif, ThemeButton, useTheme } from "./Landing.jsx";
 
 // Sign-up and sign-in wear the landing's look: the floor plan behind, BlueBar's blue mark, and
 // the visitor's light / dark / system choice carried over from the landing.
-const Mark = ({ small }) => <span className={`onboard-mark${small ? " small" : ""}`} role="img" aria-label="BlueBar">b.</span>;
+const Mark = ({ small }) => <span className={`onboard-mark${small ? " small" : ""}`} role="img" aria-label="BlueBar"><BrandMark /></span>;
 
 function PinLogin({ onSignedIn }) {
   const [theme, setTheme, shown] = useTheme();
