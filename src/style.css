@@ -16,6 +16,7 @@
   --green: #27654f;
   --green-soft: #e8f4ee;
   --amber: #835615;
+  --red: #a3322a;
   --radius: 16px;
   --radius-control: 10px;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -4015,6 +4016,13 @@ textarea { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--lin
   background: var(--surface);
   border-color: var(--line);
 }
+.install-offer .icon-button { flex: none; margin-left: 0; }
+/* Phone: the mark is already in the top bar; without it the text, "Instalo" and the close fit one row. */
+@media (max-width: 600px) {
+  .install-offer { flex-wrap: nowrap; }
+  .install-offer img { display: none; }
+  .install-offer > span { min-width: 0; }
+}
 .install-offer img {
   flex-shrink: 0;
   border-radius: 8px;
@@ -6375,3 +6383,58 @@ html:has(.onboard-salla[data-theme="dark"]) { background: #0d1c26; }
 @media (max-width: 560px) {
   .onboard-motif { top: auto; bottom: -20px; right: -55%; width: 150vw; opacity: 0.8; }
 }
+
+/* ---- Cilësimet: the topics as a side list beside the open one on wide screens; a row of
+   tabs with icons on narrow ones. Hints sit right under their field, buttons keep their size. ---- */
+.settings-layout { display: grid; gap: 16px; }
+.settings-layout .settings-tabs { margin-bottom: 0; }
+/* How many things the configuration check found under a topic. */
+.settings-tabs button i {
+  display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9999px;
+  background: #fbf0dd; color: var(--amber); font-size: 11px; font-weight: 700; font-style: normal; font-variant-numeric: tabular-nums;
+}
+.settings-tabs button i.error { background: #fdecea; color: var(--red); }
+/* Fields hold a name or a PIN: no wider than what is typed in them. */
+.settings-grid .stack-form > .field, .settings-grid .business-fields > .field { max-width: 420px; }
+/* Tablet: all six topics in view, three to a row, instead of a strip that hides half of them. */
+@media (min-width: 700px) and (max-width: 1179px) {
+  .settings-layout .settings-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; border-radius: 16px; overflow: visible; }
+  .settings-layout .settings-tabs button { justify-content: flex-start; min-height: 44px; padding-inline: 14px; border-radius: 12px; font-size: 13px; }
+}
+/* Phone: the strip fades at its right edge, so it reads as something to swipe. */
+@media (max-width: 699px) {
+  .settings-layout .settings-tabs { width: 100%; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); padding-right: 32px; }
+  .settings-layout .settings-tabs button { min-height: 40px; font-size: 13px; }
+}
+.settings-body { min-width: 0; }
+.settings-tabs button { display: inline-flex; align-items: center; gap: 7px; }
+.settings-tabs button svg { flex: none; }
+.settings-tabs button b { font-weight: inherit; }
+.settings-tabs button small { display: none; }
+@media (min-width: 1180px) {
+  .settings-layout { grid-template-columns: 272px minmax(0, 760px); gap: 28px; align-items: start; }
+  .settings-tabs {
+    position: sticky; top: 88px; display: grid; gap: 2px; width: auto; margin: 0; padding: 6px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: visible;
+  }
+  .settings-tabs button {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 1px; align-items: center;
+    min-height: 0; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--radius-control);
+    font-size: 13px; color: #1f2428; text-align: left; white-space: normal;
+    transition: background-color 140ms ease, border-color 140ms ease;
+  }
+  .settings-tabs button svg { grid-row: span 2; color: var(--muted); }
+  .settings-tabs button b { font-weight: 600; }
+  .settings-tabs button small { display: block; grid-column: 2; overflow: hidden; font-size: 11.5px; font-weight: 400; line-height: 1.35; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); margin: 0; }
+  .settings-tabs button:hover { background: rgba(15, 30, 45, 0.04); }
+  .settings-tabs button i { grid-column: 3; grid-row: 1 / 3; }
+  .settings-tabs button[aria-pressed="true"] { background: var(--blue-soft); color: var(--blue); }
+  .settings-tabs button[aria-pressed="true"] small { color: var(--blue); opacity: 0.75; }
+  .settings-tabs button[aria-pressed="true"] svg { color: var(--blue); }
+  .settings-body .config-check { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) { .settings-tabs button { transition: none; } }
+.settings-grid .stack-form > .field + .helper, .settings-grid .business-fields > .field + .helper { margin-top: -12px; }
+.settings-grid .panel > p.helper + .stack-form { margin-top: 16px; }
+.settings-grid .stack-form > button, .settings-grid .panel button.full-width { justify-self: start; width: auto; min-width: 160px; padding-inline: 22px; }
+.settings-grid .fiscal-actions > button { flex: 0 0 auto; padding-inline: 22px; }

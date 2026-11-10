@@ -94,10 +94,20 @@ const pages = [
   {
     name: "Cilësimet",
     icon: "settings",
-    description: "Fiskalizimi, rrjeti i lokalit, hyrja e stafit dhe printerët.",
+    description: "Printerët, stafi, kasat, menuja online dhe fiskalizimi.",
   },
 ];
-const SETTINGS_TABS = ["Printerët", "Stafi dhe hyrja", "Kasat dhe stacionet", "Menuja online", "Fiskalizimi", "Llogaria ime"];
+// Each topic with its icon and the line under it in the side list.
+const SETTINGS_TABS = [
+  ["Printerët", "print", "Printerët dhe kompjuteri i tyre"],
+  ["Stafi dhe hyrja", "people", "Hyrja e stafit dhe rrjeti i lokalit"],
+  ["Kasat dhe stacionet", "coffee", "Arkat, zonat dhe stacionet"],
+  ["Menuja online", "menu", "Kodi QR dhe porositë e klientëve"],
+  ["Fiskalizimi", "receipt", "Lidhja me BlueBill dhe tatimet"],
+  ["Llogaria ime", "user", "Emri, PIN-i dhe kjo pajisje"],
+];
+// Which settings topic fixes each group of the configuration check (Produktet has its own page).
+const ISSUE_TAB = { Stafi: "Stafi dhe hyrja", Kasat: "Kasat dhe stacionet", Stacionet: "Kasat dhe stacionet", Rregullat: "Kasat dhe stacionet" };
 const matches = (text, query) =>
   text.toLocaleLowerCase("sq").includes(query.trim().toLocaleLowerCase("sq"));
 const date = (value) => {
@@ -335,7 +345,11 @@ function App({ user, onLogout, onUserChange }) {
     [deliveryOpen, setDeliveryOpen] = useState(false),
     [paymentFilter, setPaymentFilter] = useState("Të gjitha"),
     [stockFilter, setStockFilter] = useState("Të gjitha"),
-    [settingsTab, setSettingsTab] = useState("Printerët"),
+    [settingsTab, setSettingsTab] = useState(() => {
+      // Back on the topic last open in this browser tab, not always the first one.
+      try { return SETTINGS_TABS.find(([t]) => t === sessionStorage.getItem("settings-tab"))?.[0] || "Printerët"; } catch { return "Printerët"; }
+    }),
+    [settingsIssues, setSettingsIssues] = useState([]),
     [manageTables, setManageTables] = useState(false),
     [report, setReport] = useState(null),
     [cancelling, setCancelling] = useState(false),
@@ -2705,15 +2719,38 @@ function App({ user, onLogout, onUserChange }) {
             {page === "Raportet" && <Reports state={state} />}
             {page === "Cilësimet" && (
               <>
-              {/* One topic at a time instead of ten panels on one page; what needs a look, one line under the tabs. */}
+              {/* One topic at a time instead of ten panels on one page: a side list on wide screens,
+                  a row of tabs on narrow ones; what needs a look, one line above the topic. */}
+              <div className="settings-layout">
               <div className="tabs settings-tabs" role="tablist" aria-label="Cilësimet">
-                {SETTINGS_TABS.map((t) => (
-                  <button key={t} role="tab" aria-selected={settingsTab === t} aria-pressed={settingsTab === t} onClick={() => setSettingsTab(t)}>
-                    {t}
-                  </button>
-                ))}
+                {SETTINGS_TABS.map(([t, icon, hint]) => {
+                  const issues = settingsIssues.filter((i) => ISSUE_TAB[i.group] === t);
+                  return (
+                    <button
+                      key={t}
+                      role="tab"
+                      aria-selected={settingsTab === t}
+                      aria-pressed={settingsTab === t}
+                      onClick={(e) => {
+                        setSettingsTab(t);
+                        try { sessionStorage.setItem("settings-tab", t); } catch {}
+                        e.currentTarget.scrollIntoView({ inline: "center", block: "nearest" });
+                      }}
+                    >
+                      <Icon name={icon} size={18} />
+                      <b>{t}</b>
+                      <small>{hint}</small>
+                      {issues.length > 0 && (
+                        <i className={issues.some((i) => i.level === "error") ? "error" : undefined} aria-label={`${issues.length} për t'u parë`}>
+                          {issues.length}
+                        </i>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <ConfigCheck state={state} />
+              <div className="settings-body">
+              <ConfigCheck state={state} onIssues={setSettingsIssues} />
               <div className="settings-grid">
                 {settingsTab === "Printerët" && (
                   <div className="settings-column settings-wide">
@@ -2757,6 +2794,8 @@ function App({ user, onLogout, onUserChange }) {
                     <DeviceSettings />
                   </div>
                 )}
+              </div>
+              </div>
               </div>
               </>
             )}

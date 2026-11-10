@@ -131,7 +131,7 @@ export function StationSetup({ state, update }) {
 }
 
 // What's misconfigured, in plain words, before a busy night finds it.
-export function ConfigCheck({ state }) {
+export function ConfigCheck({ state, onIssues }) {
   const [agent, setAgent] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -144,6 +144,9 @@ export function ConfigCheck({ state }) {
     };
   }, []);
   const issues = configIssues(state, agent);
+  // The settings list marks the topics these belong to.
+  const key = issues.map((i) => i.level + i.group).join();
+  useEffect(() => onIssues?.(issues), [key]);
   // Nothing wrong: one quiet line, not a panel.
   if (!issues.length)
     return (
