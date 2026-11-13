@@ -30,3 +30,30 @@ test("pasted amounts never silently change sign, decimals or empty columns", () 
   for (const value of ["-1", "1.5", "100001", "NaN", "0"]) assert.equal(validDeliveryQuantity(value), false);
   for (const value of ["1", "24", "100000"]) assert.equal(validDeliveryQuantity(value), true);
 });
+
+test('document imports reject impossible dates and combined quantities above the receiving limit', async () => {
+  const { validDocumentDate, validDeliveryRows } = await import('./documentImport.js');
+  assert.equal(validDocumentDate('2026-02-30'), false);
+  assert.equal(validDocumentDate('2026-02-29'), false);
+  assert.equal(validDocumentDate('2024-02-29'), true);
+  const products = [{ id: 1, trackStock: true }, { id: 2, trackStock: false }];
+  assert.equal(validDeliveryRows([{ id: '1', qty: '60000' }, { id: '1', qty: '50000' }], products), false);
+  assert.equal(validDeliveryRows([{ id: '2', qty: '2' }], products), false);
+  assert.equal(validDeliveryRows([{ id: '999', qty: '2' }], products), false);
+  assert.equal(validDeliveryRows([{ id: '1', qty: '2' }, { id: '1', qty: '3' }], products), true);
+});
+
+test('retrying a partially saved document excludes acknowledged expense rows', async () => {
+  const { saveDocumentRows } = await import('./documentImport.js');
+  let remaining = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
+  const writes = [];
+  const acknowledge = (row) => { remaining = remaining.filter((r) => r.key !== row.key); };
+  await assert.rejects(saveDocumentRows(remaining, async (row) => {
+    if (row.key === 'b') throw new Error('Unavailable');
+    writes.push(row.key);
+  }, acknowledge), /Unavailable/);
+  assert.deepEqual(remaining.map((r) => r.key), ['b', 'c']);
+  await saveDocumentRows(remaining, async (row) => { writes.push(row.key); }, acknowledge);
+  assert.deepEqual(writes, ['a', 'b', 'c']);
+  assert.deepEqual(remaining, []);
+});

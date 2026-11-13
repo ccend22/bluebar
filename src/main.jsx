@@ -5,7 +5,7 @@ import { bill, COURSES, invoicePos, money, posOf, printerFor, tableReservations,
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
-import { AiImport, ProductImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
+import { AiImport, ProductImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
 import { Finance } from "./Finance.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
@@ -1619,10 +1619,11 @@ function App({ user, onLogout, onUserChange }) {
                     title="Gjendja e stokut"
                     description="Njësi të shitshme · rezervimet përfshijnë porositë e hapura"
                   >
-                    <div className="actions">
+                    <div className="actions stock-actions">
                       <Badge tone={lowStock ? "amber" : "green"}>
                         {lowStock} produkte me stok të ulët
                       </Badge>
+                      {counted.length > 0 && <StockAiImport state={state} update={update} />}
                       <button className="primary" onClick={() => setDeliveryOpen(true)} disabled={!counted.length}>
                         <Icon name="plus" size={17} />
                         Furnizim i ri

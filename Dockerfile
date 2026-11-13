@@ -15,7 +15,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
-COPY src/domain.js src/floorGeometry.js ./src/
+COPY src/domain.js src/floorGeometry.js src/documentImport.js src/parseList.js ./src/
 COPY public/bluebar-print.mjs ./public/
 USER node
 CMD ["node", "server/cloudrun.js"]

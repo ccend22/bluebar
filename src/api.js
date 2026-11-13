@@ -125,3 +125,8 @@ export const fetchAccounts = () => request("/accounts");
 export const saveAccount = ({ id, ...account }) => (id ? send("PUT", `/accounts/${id}`, account) : send("POST", "/accounts", account));
 export const deleteAccount = (id) => send("DELETE", `/accounts/${id}`);
 export const moveMoney = (move) => send("POST", "/accounts/moves", move);
+// "Importo me AI" for documents: allow time for detailed invoice images.
+const readDocument = (path) => (input, note) =>
+  request(path, { method: "POST", body: JSON.stringify({ ...input, ...(note && { note }) }), timeout: 100000 });
+export const readDelivery = readDocument("/stock/from-photo");
+export const readExpenses = readDocument("/expenses/from-photo");

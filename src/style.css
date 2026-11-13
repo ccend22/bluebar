@@ -7238,3 +7238,24 @@ body:has(.app) { background: #f6f8fb; }
   .fin-month, .fin-date { max-width: 100%; }
   .fin-presets { margin-left: 0; }
 }
+
+/* "Importo me AI" for documents (src/AiDocument.jsx): three steps, and the rows to check. */
+.ai-steps.ai-steps-3 { grid-template-columns: repeat(3, 1fr); }
+.ai-rows { display: grid; gap: 8px; }
+.ai-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 100px 40px; align-items: center; gap: 8px; }
+.ai-row-expense { grid-template-columns: 140px 110px minmax(0, 1fr) 130px 120px minmax(0, 1.2fr) 40px; }
+.ai-row-head span { color: #6f7b88; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.ai-row input, .ai-row select { width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; font: inherit; }
+.ai-row-read { overflow: hidden; color: #3a4652; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.ai-row.has-issue input, .ai-row.has-issue select { border-color: #e3c592; background: #fffaf1; }
+.fin-list .fin-section > button { margin-left: 12px; min-height: 40px; }
+@media (max-width: 900px) {
+  .ai-row, .ai-row-expense { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 12px; border: 1px solid var(--card-line); border-radius: 14px; }
+  .ai-row-head { display: none; }
+  .ai-row > .icon-button { justify-self: end; }
+  .ai-row input, .ai-row select { font-size: 16px; }
+}
+
+/* Keep the inventory supply actions together below the stock status. */
+.stock-actions > .badge { grid-column: 1 / -1; justify-self: end; }
+.stock-actions > button { white-space: nowrap; }

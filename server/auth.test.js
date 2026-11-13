@@ -2081,3 +2081,54 @@ test("Financat: sales less refunds, approved and pending expenses, till cash-out
     await t.close();
   }
 });
+
+test("Importo me AI in Inventari and Shpenzimet: rows come back cleaned, unknown products unmatched, nothing saved", async () => {
+  const image = `data:image/webp;base64,${Buffer.alloc(300, 1).toString("base64")}`;
+  let asked;
+  const delivery = async (input) => {
+    asked = input;
+    const id = (name) => input.products.find((p) => p.name === name)?.id;
+    return { items: [{ id: id("Birrë Korça"), name: "Korca 0.33 x24", qty: 48 }, { id: 999, name: "Diçka tjetër", qty: 3 }, { id: 0, name: "Bosh", qty: 0 }] };
+  };
+  const expensesReader = async () => ({ expenses: [
+    { date: "2026-11-02", amount: 9600.4, category: "Utilities", method: "Bankë", note: "OSHEE  drita" },
+    { date: "2026-02-30", amount: 1500, category: "", method: "kartë", note: "" },
+    { date: "", amount: -5, category: "x", method: "Cash", note: "" },
+  ] });
+  const t = await setup({ delivery, expensesReader });
+  try {
+    await t.send("product.save", { name: "Birrë Korça", category: "Pije", price: 250, trackStock: true });
+    await t.send("product.save", { name: "Espresso", category: "Kafe", price: 100, trackStock: false });
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("POST", "/api/stock/from-photo", { cookie: ana, body: { image } })).statusCode, 403);
+    assert.equal((await t.call("POST", "/api/expenses/from-photo", { cookie: ana, body: { text: "receipt" } })).statusCode, 403);
+    assert.equal((await t.call("POST", "/api/stock/from-photo", { cookie: boss, body: { image, text: "both" } })).statusCode, 400);
+    assert.equal((await t.call("POST", "/api/expenses/from-photo", { cookie: boss, body: {} })).statusCode, 400);
+    const d = await t.call("POST", "/api/stock/from-photo", { cookie: boss, body: { image, note: "vetëm pijet" } });
+    assert.equal(d.statusCode, 200);
+    const korca = asked.products.find((p) => p.name === "Birrë Korça").id;
+    assert.deepEqual(d.json().items, [{ id: korca, name: "Korca 0.33 x24", qty: 48 }, { id: null, name: "Diçka tjetër", qty: 3 }]);
+    assert.ok(!asked.products.some((p) => p.name === "Espresso"), "only counted products are offered");
+    assert.equal(asked.note, "vetëm pijet");
+    const e = await t.call("POST", "/api/expenses/from-photo", { cookie: boss, body: { text: "OSHEE 9600" } });
+    assert.deepEqual(e.json().expenses, [
+      { date: "2026-11-02", amount: 9600, category: "Utilities", method: "Bankë", note: "OSHEE drita" },
+      { date: "", amount: 1500, category: "Të tjera", method: "", note: "" },
+    ]);
+    const { state } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+    assert.equal(state.products.find((p) => p.name === "Birrë Korça").stock, 0, "nothing received until the manager saves");
+  } finally {
+    await t.close();
+  }
+  const none = await setup({ delivery: null, expensesReader: async () => { throw new DOMException("Timed out", "TimeoutError"); } });
+  try {
+    const boss = none.cookieOf(await none.managerLogin());
+    assert.equal((await none.call("POST", "/api/stock/from-photo", { cookie: boss, body: { image } })).statusCode, 503);
+    const timeout = await none.call("POST", "/api/expenses/from-photo", { cookie: boss, body: { text: "receipt" } });
+    assert.equal(timeout.statusCode, 504);
+    assert.match(timeout.json().error, /nuk u përgjigj në kohë/);
+  } finally {
+    await none.close();
+  }
+});

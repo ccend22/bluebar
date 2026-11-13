@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { bill, money } from "./domain.js";
-import { deleteAccount, deleteExpense, fetchAccounts, fetchExpenses, fetchFinance, moveMoney, saveAccount, saveExpense } from "./api.js";
+import { deleteAccount, deleteExpense, fetchAccounts, fetchExpenses, fetchFinance, moveMoney, readExpenses, saveAccount, saveExpense } from "./api.js";
+import { saveDocumentRows, validDocumentDate } from "./documentImport.js";
+import { AiDocumentImport } from "./AiDocument.jsx";
 import { Icon } from "./components.jsx";
 
 // Raportet: the period's money at a glance (Përmbledhje), where it sits (Llogaritë financiare),
@@ -239,6 +241,7 @@ function Expenses({ expenses, name, notify, onChange, defaultDay }) {
           <h2>Shpenzimet</h2>
           <span className="fin-chip">{name}</span>
           <span className="fin-total">{lek(total)}</span>
+          <ExpensesAiImport categories={categories} defaultDay={defaultDay} notify={notify} onSaved={onChange} />
         </div>
         {expenses.length ? (
           <ul>
@@ -424,5 +427,67 @@ function Accounts({ notify }) {
         );
       })}
     </div>
+  );
+}
+
+// Shpenzimet → "Importo me AI": receipts, bills or a bank statement read into expenses, each
+// checked (date, amount, category, how it was paid, approved or pending) before it is saved.
+function ExpensesAiImport({ categories, defaultDay, notify, onSaved }) {
+  const valid = (r) => validDocumentDate(r.date) && /^\d+$/.test(String(r.amount)) && Number(r.amount) >= 1 && Number(r.amount) <= 100000000 && r.category.trim();
+  return (
+    <AiDocumentImport
+      title="Shpenzime me AI"
+      intro="Kupona, fatura (drita, uji, furnitorët) ose një ekstrakt bankar: AI i kthen në shpenzime."
+      notePlaceholder="p.sh. të gjitha u paguan me bankë"
+      read={async (input, note) =>
+        (await readExpenses(input, note)).expenses.map((x) => ({
+          key: crypto.randomUUID(), date: x.date || defaultDay, amount: String(x.amount), category: x.category, method: x.method || "Cash", status: "aprovuar", note: x.note,
+        }))}
+      ready={(rows) => rows.length > 0 && rows.every(valid)}
+      save={async (rows, { onSavedRow }) => {
+        let n = 0;
+        try {
+          await saveDocumentRows(rows, (r) => saveExpense({ spentAt: new Date(`${r.date}T12:00`).toISOString(), amount: Number(r.amount), category: r.category.trim(), method: r.method, status: r.status, note: r.note.trim() }), (r) => {
+            n++;
+            onSavedRow(r);
+          });
+          notify(`U shtuan ${n} shpenzime.`);
+          return n;
+        } catch (e) {
+          throw new Error(`${n ? `U ruajtën ${n} shpenzime. Kanë mbetur vetëm rreshtat e paruajtur. ` : ""}${e.message}`);
+        } finally {
+          if (n) onSaved();
+        }
+      }}
+      saved={(n) => (n === 1 ? "U shtua 1 shpenzim" : `U shtuan ${n} shpenzime`)}
+      review={({ rows, setRows, busy }) => {
+        const set = (key, field, value) => setRows((list) => list.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+        return (
+          <div className="ai-rows">
+            <datalist id="ai-expense-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+            <div className="ai-row ai-row-expense ai-row-head" aria-hidden="true"><span>Data</span><span>Shuma (Lek)</span><span>Kategoria</span><span>Mënyra</span><span>Gjendja</span><span>Shënim</span><span /></div>
+            {rows.map((r, i) => (
+              <div key={r.key} className={`ai-row ai-row-expense ${valid(r) ? "" : "has-issue"}`}>
+                <input type="date" aria-label={`Data, rreshti ${i + 1}`} value={r.date} disabled={busy} onChange={(e) => set(r.key, "date", e.target.value)} />
+                <input inputMode="numeric" aria-label={`Shuma, rreshti ${i + 1}`} value={r.amount} disabled={busy} onChange={(e) => set(r.key, "amount", e.target.value)} />
+                <input list="ai-expense-categories" aria-label={`Kategoria, rreshti ${i + 1}`} value={r.category} maxLength={40} disabled={busy} onChange={(e) => set(r.key, "category", e.target.value)} />
+                <select aria-label={`Mënyra, rreshti ${i + 1}`} value={r.method} disabled={busy} onChange={(e) => set(r.key, "method", e.target.value)}>
+                  <option value="Cash">Cash</option>
+                  <option value="Bankë">Bankë / Kartë</option>
+                </select>
+                <select aria-label={`Gjendja, rreshti ${i + 1}`} value={r.status} disabled={busy} onChange={(e) => set(r.key, "status", e.target.value)}>
+                  <option value="aprovuar">Aprovuar</option>
+                  <option value="pritje">Në pritje</option>
+                </select>
+                <input aria-label={`Shënim, rreshti ${i + 1}`} value={r.note} maxLength={200} disabled={busy} onChange={(e) => set(r.key, "note", e.target.value)} />
+                <button type="button" className="icon-button" aria-label={`Hiq rreshtin ${i + 1}`} disabled={busy} onClick={() => setRows((list) => list.filter((x) => x.key !== r.key))}>
+                  <Icon name="close" size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        );
+      }}
+    />
   );
 }

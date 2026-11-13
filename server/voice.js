@@ -36,6 +36,7 @@ const QUICK = (model) => (/^gemini-2/.test(model) ? { thinkingBudget: 0 } : { th
 
 // One structured Gemini answer: parts in, JSON matching the schema out.
 async function gemini(key, model, fetchImpl, parts, schema, timeout) {
+  const signal = AbortSignal.timeout(timeout);
   const ask = (thinking) =>
     fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
@@ -44,7 +45,7 @@ async function gemini(key, model, fetchImpl, parts, schema, timeout) {
         contents: [{ parts }],
         generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: schema, ...(thinking && { thinkingConfig: thinking }) },
       }),
-      signal: AbortSignal.timeout(timeout),
+      signal,
     });
   let response = await ask(QUICK(model));
   // A model that doesn't take that setting: ask again with its default (slower, still right).
@@ -138,4 +139,66 @@ export function geminiFurniture(key, { model = process.env.GEMINI_IMAGE_MODEL ||
     if (!picture?.data) throw new Error("Gemini returned no picture");
     return { mime: picture.mimeType || picture.mime_type || "image/png", image: picture.data };
   };
+}
+
+// Inventari → "Importo me AI": a supplier's invoice or delivery note (photo or text) read into
+// what arrived, each line matched to one of the venue's counted products by id (0: none fits).
+const DELIVERY_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    items: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { id: { type: "INTEGER" }, name: { type: "STRING" }, qty: { type: "INTEGER" } }, required: ["id", "name", "qty"] },
+    },
+  },
+  required: ["items"],
+};
+const deliveryInstructions = (products) => `This is a supplier's invoice, delivery note or receipt for a bar or restaurant in Albania (a photo of it, or its text).
+List every product line on it:
+- "name": the line's product name as written.
+- "qty": how many single units arrived. "2 x 24" or "2 arka x 24" is 48; a case of 6 bottles counted once is 6 if the case size is written, else the number written.
+- "id": the id of the venue's product below that this line is (same product, any spelling, brand or size written differently); 0 if none of them is it. Never guess an id for a product that is not in the list.
+Leave out totals, VAT, deposits, delivery charges and anything that is not a product. If nothing is readable, return "items": [].
+
+The venue's counted products (id: name):
+`;
+export function geminiDelivery(key, { model = process.env.GEMINI_MODEL || "gemini-3.5-flash", fetchImpl = fetch } = {}) {
+  if (!key) return null;
+  return ({ image, mime, text, note, products }) =>
+    gemini(key, model, fetchImpl, [
+      { text: deliveryInstructions() + products.map((p) => `${p.id}: ${p.name}`).join("\n") + (note ? `\n\nThe manager adds: ${note}` : "") },
+      image ? { inline_data: { mime_type: mime, data: image } } : { text: `The document:\n${text}` },
+    ], DELIVERY_SCHEMA, 90000);
+}
+
+// Raportet → Shpenzimet → "Importo me AI": receipts, bills or a bank statement read into the
+// venue's spending, one row per payment.
+const EXPENSES_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    expenses: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { date: { type: "STRING" }, amount: { type: "NUMBER" }, category: { type: "STRING" }, method: { type: "STRING" }, note: { type: "STRING" } },
+        required: ["date", "amount", "category", "method", "note"],
+      },
+    },
+  },
+  required: ["expenses"],
+};
+const EXPENSES_INSTRUCTIONS = `These are receipts, bills, invoices or a bank statement of a bar or restaurant in Albania (a photo, or their text). List each payment the venue made:
+- "date": the payment's date as YYYY-MM-DD, or "" if none is written.
+- "amount": the total paid, as a number in Lek ("1.200" or "1,200" is 1200). On a bank statement, only money going out.
+- "category": one short Albanian word or two for what it was: Furnitorë, Staff, Qira, Utilities, Taksa, Mirëmbajtje, Transport, Marketing, or another if none fits.
+- "method": "Cash" if paid in cash, "Bankë" if by card, transfer or a bank statement line, "" if it does not say.
+- "note": who was paid and what for, in a few words (e.g. "OSHEE, drita tetor").
+Leave out money coming in, subtotals and VAT lines. Never invent payments. If nothing is readable, return "expenses": [].`;
+export function geminiExpenses(key, { model = process.env.GEMINI_MODEL || "gemini-3.5-flash", fetchImpl = fetch } = {}) {
+  if (!key) return null;
+  return ({ image, mime, text, note }) =>
+    gemini(key, model, fetchImpl, [
+      { text: EXPENSES_INSTRUCTIONS + (note ? `\n\nThe manager adds: ${note}` : "") },
+      image ? { inline_data: { mime_type: mime, data: image } } : { text: `The documents:\n${text}` },
+    ], EXPENSES_SCHEMA, 90000);
 }

@@ -1,3 +1,4 @@
+import { validDocumentDate } from "../src/documentImport.js";
 import Fastify from "fastify";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { gzipSync } from "node:zlib";
@@ -12,7 +13,7 @@ import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
 import { accounts, finance } from "./finance.js";
 import { deeplTranslator, LANGS } from "./translate.js";
-import { geminiVoice, geminiMenuPhoto, geminiFurniture } from "./voice.js";
+import { geminiVoice, geminiMenuPhoto, geminiFurniture, geminiDelivery, geminiExpenses } from "./voice.js";
 import { verifyLuxHotelToken } from "./luxhotel.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
@@ -84,6 +85,9 @@ export function buildApp({
   menuPhoto = geminiMenuPhoto(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
   // A photo of the venue's table or floor → its drawing for the 3D floor (null: no drawing from photos).
   furniture = geminiFurniture(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
+  // A supplier's invoice → what arrived, by product; receipts or a statement → expenses.
+  delivery = geminiDelivery(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
+  expensesReader = geminiExpenses(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
   // A LuxHotel (Firebase) ID token → the LuxHotel account it proves; throws when it doesn't.
   luxhotel = (token) => verifyLuxHotelToken(token, process.env.LUXHOTEL_PROJECT_ID || process.env.VITE_LUXHOTEL_PROJECT_ID),
 }) {
@@ -791,6 +795,55 @@ export function buildApp({
     await request.db.query("UPDATE bluebar.control SET floor_texture=$1 WHERE id=1", [await chosenAsset(request, "floor")]);
     await bumpRevision(request.db);
     return { ok: true };
+  });
+  // Inventari and Shpenzimet → "Importo me AI": a photo or pasted text read by Gemini into rows
+  // the manager checks before anything is saved. One budget for both, per venue.
+  const documentBudget = throttle(30, 10 * 60_000);
+  const documentBody = { body: { type: "object", additionalProperties: false, properties: {
+    image: { type: "string", maxLength: 1_900_000, pattern: "^data:image/(jpeg|png|webp);base64," },
+    text: { type: "string", minLength: 1, maxLength: 20000 },
+    note: { type: "string", maxLength: 300 },
+  }, oneOf: [{ required: ["image"] }, { required: ["text"] }] } };
+  const readDocument = async (request, reader, extra = {}) => {
+    if (!reader) throw new AppError("Leximi me AI nuk është konfiguruar në server (GEMINI_API_KEY).", 503);
+    if (!documentBudget(request.venue.slug)) throw new AppError("Shumë dokumente për pak kohë. Prisni disa minuta.", 429);
+    const { image: dataUrl, text, note } = request.body;
+    const [head, image] = dataUrl ? dataUrl.split(",") : [];
+    try {
+      return await reader({ ...(image ? { image, mime: head.slice(5, head.indexOf(";")) } : { text }), note: note?.trim(), ...extra });
+    } catch (e) {
+      console.error("ai document:", e.message);
+      if (e.name === "TimeoutError" || e.name === "AbortError")
+        throw new AppError("AI nuk u përgjigj në kohë. Provoni sërish ose ngarkoni një foto vetëm të rreshtave të faturës.", 504);
+      throw new AppError(`Dokumenti nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
+    }
+  };
+  const tidy = (v, max) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+  app.post("/api/stock/from-photo", { preValidation: session("manager"), bodyLimit: 2_000_000, schema: documentBody }, async (request) => {
+    const products = (await request.db.query("SELECT id, name FROM bluebar.products WHERE track_stock ORDER BY name")).rows;
+    const out = await readDocument(request, delivery, { products });
+    const known = new Set(products.map((p) => p.id));
+    return {
+      items: (Array.isArray(out?.items) ? out.items : [])
+        .map((x) => ({ id: known.has(Number(x?.id)) ? Number(x.id) : null, name: tidy(x?.name, 80), qty: Math.round(Number(x?.qty)) }))
+        .filter((x) => x.name && Number.isInteger(x.qty) && x.qty > 0 && x.qty <= 100000)
+        .slice(0, 200),
+    };
+  });
+  app.post("/api/expenses/from-photo", { preValidation: session("manager"), bodyLimit: 2_000_000, schema: documentBody }, async (request) => {
+    const out = await readDocument(request, expensesReader);
+    return {
+      expenses: (Array.isArray(out?.expenses) ? out.expenses : [])
+        .map((x) => ({
+          date: validDocumentDate(x?.date) ? x.date : "",
+          amount: Math.round(Number(x?.amount)),
+          category: tidy(x?.category, 40) || "Të tjera",
+          method: x?.method === "Cash" || x?.method === "Bankë" ? x.method : "",
+          note: tidy(x?.note, 200),
+        }))
+        .filter((x) => Number.isInteger(x.amount) && x.amount > 0 && x.amount <= 100000000)
+        .slice(0, 100),
+    };
   });
   // Produktet → "Importo me AI": a menu photo (or its pasted text) goes to Gemini, the rows come
   // back for the import table; nothing is saved until the manager presses "Ruaj".

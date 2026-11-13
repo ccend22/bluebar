@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { plural } from "./domain.js";
 import { Icon } from "./components.jsx";
 import { blank, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
-import { readMenuPhoto } from "./api.js";
+import { readDelivery, readMenuPhoto } from "./api.js";
+import { deliveryItems, validDeliveryRows } from "./documentImport.js";
+import { AiDocumentImport } from "./AiDocument.jsx";
 import { shrink } from "./OnlineMenu.jsx";
 
 // Produktet → product form: is this product counted in units, and how many are there now?
@@ -490,5 +492,50 @@ export function StockDelivery({ state, update, onClose }) {
         </button>
       </div>
     </section>
+  );
+}
+
+// Inventari → "Importo me AI": a supplier's invoice or delivery note read into what arrived. Each
+// line is matched to a counted product (or left for the manager to choose), then received at once.
+export function StockAiImport({ state, update }) {
+  const counted = state.products.filter((p) => p.trackStock !== false).sort((a, b) => a.name.localeCompare(b.name, "sq"));
+  return (
+    <AiDocumentImport
+      label="Furnizo me AI"
+      title="Furnizim me AI"
+      intro="Fatura ose fletëdërgesa e furnitorit: AI gjen produktet tuaja dhe sasitë që erdhën."
+      notePlaceholder="p.sh. çdo arkë ka 24 shishe"
+      read={async (input, note) =>
+        (await readDelivery(input, note)).items.map((x) => ({ key: crypto.randomUUID(), id: x.id ? String(x.id) : "", name: x.name, qty: String(x.qty) }))}
+      ready={(rows) => validDeliveryRows(rows, counted)}
+      save={async (rows) => {
+        const list = deliveryItems(rows);
+        const units = list.reduce((s, x) => s + x.qty, 0);
+        return (await update("stock.receiveMany", { items: list }, `Furnizimi u ruajt: ${units} copë për ${plural(list.length, "produkt", "produkte")}.`)) ? list.length : 0;
+      }}
+      saved={(n) => `Stoku u shtua për ${plural(n, "produkt", "produkte")}`}
+      review={({ rows, setRows, busy }) => {
+        const set = (key, field, value) => setRows((list) => list.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+        return (
+          <div className="ai-rows">
+            <div className="ai-row ai-row-head" aria-hidden="true"><span>Në faturë</span><span>Produkti juaj</span><span>Sasia</span><span /></div>
+            {rows.map((r) => (
+              <div key={r.key} className={`ai-row ${r.id && validDeliveryQuantity(r.qty) ? "" : "has-issue"}`}>
+                <span className="ai-row-read">{r.name}</span>
+                <select aria-label={`Produkti për "${r.name}"`} value={r.id} disabled={busy} onChange={(e) => set(r.key, "id", e.target.value)}>
+                  <option value="">Zgjidhni produktin…</option>
+                  {counted.map((p) => <option key={p.id} value={p.id}>{p.name} · ka {p.stock}</option>)}
+                </select>
+                <input aria-label={`Sasia për "${r.name}"`} inputMode="numeric" value={r.qty} disabled={busy} onChange={(e) => set(r.key, "qty", e.target.value)} />
+                <button type="button" className="icon-button" aria-label={`Hiq "${r.name}"`} disabled={busy} onClick={() => setRows((list) => list.filter((x) => x.key !== r.key))}>
+                  <Icon name="close" size={16} />
+                </button>
+              </div>
+            ))}
+            {rows.some((r) => !r.id) && <p className="helper">Rreshtat pa produkt nuk u gjetën te produktet që numërohen: zgjidhni një, ose hiqini.</p>}
+          </div>
+        );
+      }}
+    />
   );
 }
