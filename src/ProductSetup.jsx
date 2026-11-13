@@ -1,7 +1,9 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { plural } from "./domain.js";
 import { Icon } from "./components.jsx";
 import { blank, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
+import { readMenuPhoto } from "./api.js";
+import { shrink } from "./OnlineMenu.jsx";
 
 // Produktet → product form: is this product counted in units, and how many are there now?
 export function StockFields({ product }) {
@@ -30,12 +32,9 @@ export function StockFields({ product }) {
 const COLUMNS = ["name", "price", "category", "department", "stock"];
 const LABELS = { name: "Emri", price: "Çmimi (Lek)", category: "Kategoria", department: "Reparti", stock: "Stoku" };
 
-// Produktet → "Shto shumë": a quick table, one product per row, saved in one go.
-export function ProductImport({ state, update, onClose }) {
-  const [rows, setRows] = useState(() => [blank(state.categories[0] || ""), blank(state.categories[0] || "")]);
-  const [paste, setPaste] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const table = useRef(null);
+// The editable rows "Shto shumë" and "Importo me AI" both end in, with what's wrong with each.
+function useImportRows(state, initial) {
+  const [rows, setRows] = useState(initial);
   const existing = useMemo(() => new Set(state.products.map((p) => p.name.toLocaleLowerCase())), [state.products]);
   const filled = rows.filter((r) => r.name.trim());
   const problem = (r) => {
@@ -47,6 +46,22 @@ export function ProductImport({ state, update, onClose }) {
     return "";
   };
   const problems = rows.filter(problem).length;
+  // Rows read elsewhere (a pasted list, a menu photo) join the table, dropping its empty rows.
+  const add = (parsed) =>
+    setRows((list) => [...list.filter((r) => r.name.trim() || r.price !== "" || r.stock !== ""), ...parsed, blank(parsed.at(-1)?.category || "")]);
+  const newRow = () => setRows((list) => [...list, blank(list.at(-1)?.category || "", list.at(-1)?.department || "")]);
+  const ready = filled.length > 0 && filled.length <= 200 && !problems;
+  const products = () => filled.map((r) => ({
+    name: r.name.trim(), price: Number(r.price), category: r.category.trim(),
+    ...(r.department.trim() ? { department: r.department.trim() } : {}),
+    ...(r.stock !== "" ? { stock: Number(r.stock) } : {}),
+  }));
+  const status = filled.length > 200 ? "Ruani deri në 200 produkte njëherësh" : problems ? `${problems} rreshta për t'u rregulluar` : `${filled.length} produkte gati`;
+  return { rows, setRows, filled, problem, add, newRow, ready, products, status };
+}
+
+function ImportTable({ state, rows: { rows, setRows, problem }, disabled }) {
+  const table = useRef(null);
   const set = (key, field, value) => setRows((list) => list.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
   // Enter goes down the column; past the last row a new row opens, keeping its category.
   const next = (index, field) => (e) => {
@@ -58,14 +73,62 @@ export function ProductImport({ state, update, onClose }) {
       requestAnimationFrame(focus);
     } else focus();
   };
+  return (
+    <>
+      <datalist id="import-categories">{state.categories.map((c) => <option key={c} value={c} />)}</datalist>
+      <datalist id="import-departments">{state.departments.map((d) => <option key={d} value={d} />)}</datalist>
+      <div className="import-table" ref={table} role="table" aria-label="Produktet e reja">
+        <div className="import-row import-header" role="row">
+          <span role="columnheader">Emri</span>
+          <span role="columnheader">Çmimi (Lek)</span>
+          <span role="columnheader">Kategoria</span>
+          <span role="columnheader">Reparti</span>
+          <span role="columnheader">Stoku</span>
+          <span />
+        </div>
+        {rows.map((r, i) => {
+          const issue = problem(r);
+          return (
+            <div className={`import-row ${issue ? "has-issue" : ""}`} role="row" key={r.key}>
+              {COLUMNS.map((field) => (
+                <label key={field} className={`import-cell import-cell-${field}`} role="cell">
+                <span className="import-cell-label">{LABELS[field]}</span>
+                <input
+                  disabled={disabled}
+                  aria-invalid={Boolean(issue)}
+                  data-cell={`${i}-${field}`}
+                  aria-label={`${{ name: "Emri", price: "Çmimi", category: "Kategoria", department: "Reparti", stock: "Stoku" }[field]}, rreshti ${i + 1}`}
+                  value={r[field]}
+                  onChange={(e) => set(r.key, field, e.target.value)}
+                  onKeyDown={next(i, field)}
+                  inputMode={field === "price" || field === "stock" ? "numeric" : undefined}
+                  list={field === "category" ? "import-categories" : field === "department" ? "import-departments" : undefined}
+                  placeholder={{ name: "p.sh. Espresso", price: "100", category: "Kafe", department: "Bar", stock: "pa numërim" }[field]}
+                  maxLength={field === "name" ? 80 : 40}
+                />
+                </label>
+              ))}
+              <button type="button" className="icon-button" aria-label={`Hiq rreshtin ${i + 1}`} onClick={() => setRows((list) => (list.length > 1 ? list.filter((x) => x.key !== r.key) : [blank(r.category)]))}>
+                <Icon name="close" size={16} />
+              </button>
+              {issue && <small className="import-issue">{issue}</small>}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// Produktet → "Shto shumë": a quick table, one product per row, saved in one go.
+export function ProductImport({ state, update, onClose }) {
+  const rows = useImportRows(state, [blank(state.categories[0] || ""), blank(state.categories[0] || "")]);
+  const [paste, setPaste] = useState(null);
+  const [saving, setSaving] = useState(false);
   const save = async () => {
-    if (saving || problems || !filled.length || filled.length > 200) return;
+    if (saving || !rows.ready) return;
     setSaving(true);
-    const products = filled.map((r) => ({
-      name: r.name.trim(), price: Number(r.price), category: r.category.trim(),
-      ...(r.department.trim() ? { department: r.department.trim() } : {}),
-      ...(r.stock !== "" ? { stock: Number(r.stock) } : {}),
-    }));
+    const products = rows.products();
     const ok = await update("products.import", { products }, `U shtua${products.length === 1 ? "" : "n"} ${plural(products.length, "produkt", "produkte")}.`);
     setSaving(false);
     if (ok) onClose();
@@ -106,8 +169,7 @@ export function ProductImport({ state, update, onClose }) {
               className="primary"
               disabled={!paste.trim()}
               onClick={() => {
-                const parsed = parseList(paste, rows.at(-1)?.category || state.categories[0] || "");
-                setRows((list) => [...list.filter((r) => r.name.trim() || r.price !== "" || r.stock !== ""), ...parsed, blank(parsed.at(-1)?.category || "")]);
+                rows.add(parseList(paste, rows.rows.at(-1)?.category || state.categories[0] || ""));
                 setPaste(null);
               }}
             >
@@ -116,57 +178,250 @@ export function ProductImport({ state, update, onClose }) {
           </div>
         </div>
       )}
-      <datalist id="import-categories">{state.categories.map((c) => <option key={c} value={c} />)}</datalist>
-      <datalist id="import-departments">{state.departments.map((d) => <option key={d} value={d} />)}</datalist>
-      <div className="import-table" ref={table} role="table" aria-label="Produktet e reja">
-        <div className="import-row import-header" role="row">
-          <span role="columnheader">Emri</span>
-          <span role="columnheader">Çmimi (Lek)</span>
-          <span role="columnheader">Kategoria</span>
-          <span role="columnheader">Reparti</span>
-          <span role="columnheader">Stoku</span>
-          <span />
-        </div>
-        {rows.map((r, i) => {
-          const issue = problem(r);
-          return (
-            <div className={`import-row ${issue ? "has-issue" : ""}`} role="row" key={r.key}>
-              {COLUMNS.map((field) => (
-                <label key={field} className={`import-cell import-cell-${field}`} role="cell">
-                <span className="import-cell-label">{LABELS[field]}</span>
-                <input
-                  disabled={saving}
-                  aria-invalid={Boolean(issue)}
-                  data-cell={`${i}-${field}`}
-                  aria-label={`${{ name: "Emri", price: "Çmimi", category: "Kategoria", department: "Reparti", stock: "Stoku" }[field]}, rreshti ${i + 1}`}
-                  value={r[field]}
-                  onChange={(e) => set(r.key, field, e.target.value)}
-                  onKeyDown={next(i, field)}
-                  inputMode={field === "price" || field === "stock" ? "numeric" : undefined}
-                  list={field === "category" ? "import-categories" : field === "department" ? "import-departments" : undefined}
-                  placeholder={{ name: "p.sh. Espresso", price: "100", category: "Kafe", department: "Bar", stock: "pa numërim" }[field]}
-                  maxLength={field === "name" ? 80 : 40}
-                />
-                </label>
-              ))}
-              <button type="button" className="icon-button" aria-label={`Hiq rreshtin ${i + 1}`} onClick={() => setRows((list) => (list.length > 1 ? list.filter((x) => x.key !== r.key) : [blank(r.category)]))}>
-                <Icon name="close" size={16} />
-              </button>
-              {issue && <small className="import-issue">{issue}</small>}
-            </div>
-          );
-        })}
-      </div>
+      <ImportTable state={state} rows={rows} disabled={saving} />
       <div className="import-foot">
-        <button type="button" onClick={() => setRows((list) => [...list, blank(list.at(-1)?.category || "", list.at(-1)?.department || "")])}>
+        <button type="button" onClick={rows.newRow}>
           <Icon name="plus" size={16} /> Rresht i ri
         </button>
-        <span className="helper">{filled.length > 200 ? "Ruani deri në 200 produkte njëherësh" : problems ? `${problems} rreshta për t'u rregulluar` : `${filled.length} produkte gati`}</span>
-        <button type="button" className="primary" disabled={!filled.length || filled.length > 200 || problems > 0 || saving} onClick={save}>
-          {saving ? "Po ruhen…" : (filled.length ? `Ruaj ${plural(filled.length, "produkt", "produkte")}` : "Ruaj produktet")}
+        <span className="helper">{rows.status}</span>
+        <button type="button" className="primary" disabled={!rows.ready || saving} onClick={save}>
+          {saving ? "Po ruhen…" : (rows.filled.length ? `Ruaj ${plural(rows.filled.length, "produkt", "produkte")}` : "Ruaj produktet")}
         </button>
       </div>
     </section>
+  );
+}
+
+const STEPS = ["Ngarko", "Konfiguro", "Shiko", "Sukses"];
+
+// Produktet → "Importo me AI": a photo of the menu (or its text) → AI reads the products and
+// prices → the manager checks them in the import table → saved in one go.
+export function AiImport({ state, update }) {
+  const dialog = useRef(null);
+  const [step, setStep] = useState(0);
+  const [source, setSource] = useState(null); // { file, url } or { text }
+  const [department, setDepartment] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [saved, setSaved] = useState(0);
+  const [skipped, setSkipped] = useState([]);
+  const rows = useImportRows(state, []);
+  useEffect(() => () => source?.url && URL.revokeObjectURL(source.url), [source]);
+
+  const choose = (file) => {
+    if (!file?.type.startsWith("image/")) return setError("Zgjidhni një foto (JPG, PNG, WebP…).");
+    setError("");
+    setSource({ file, url: URL.createObjectURL(file) });
+  };
+  const chooseText = (text) => {
+    if (!text.trim()) return setError("Clipboard është bosh. Kopjoni një foto ose tekstin e menusë.");
+    setError("");
+    setSource({ text: text.slice(0, 20000) });
+  };
+  const fromClipboard = async () => {
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        const type = item.types.find((t) => t.startsWith("image/"));
+        if (type) return choose(new File([await item.getType(type)], "menu", { type }));
+      }
+      chooseText(await navigator.clipboard.readText());
+    } catch {
+      setError("Shfletuesi nuk e lejoi leximin e clipboard. Shtypni Ctrl+V (⌘V) këtu.");
+    }
+  };
+  const open = () => {
+    if (step === 3) (setStep(0), setSource(null), setNote(""), rows.setRows([]));
+    setError("");
+    dialog.current?.showModal();
+  };
+  const read = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      // Larger than a product photo: the menu's small print has to stay readable.
+      const input = source.file ? { image: await shrink(source.file, { size: 2000 }) } : { text: source.text };
+      const { products } = await readMenuPhoto({ ...input, ...(note.trim() && { note: note.trim() }) });
+      // What's already on the till stays as it is; "KAFE" on the menu is the "Kafe" already here,
+      // and a new all-caps heading reads better as "Pije".
+      const have = new Set(state.products.map((p) => p.name.toLocaleLowerCase()));
+      const categories = new Map(state.categories.map((c) => [c.toLocaleLowerCase(), c]));
+      const category = (c) => categories.get(c.toLocaleLowerCase()) || (c === c.toLocaleUpperCase() ? c.charAt(0) + c.slice(1).toLocaleLowerCase() : c);
+      const fresh = products.filter((p) => !have.has(p.name.toLocaleLowerCase()));
+      setSkipped(products.filter((p) => have.has(p.name.toLocaleLowerCase())).map((p) => p.name));
+      if (!products.length) setError("AI nuk gjeti asnjë produkt me çmim. Provoni një foto më të qartë.");
+      else if (!fresh.length) setError("Të gjitha produktet e kësaj menuje ekzistojnë tashmë.");
+      else {
+        rows.setRows([]);
+        rows.add(fresh.map((p) => ({ ...blank(category(p.category) || state.categories[0] || "", department), name: p.name, price: String(p.price) })));
+        setStep(2);
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+    setBusy(false);
+  };
+  const save = async () => {
+    setBusy(true);
+    const products = rows.products();
+    const ok = await update("products.import", { products }, `U shtua${products.length === 1 ? "" : "n"} ${plural(products.length, "produkt", "produkte")}.`);
+    setBusy(false);
+    if (ok) (setSaved(products.length), setStep(3));
+  };
+  const forward = [() => setStep(1), read, save][step];
+  const canForward = step === 0 ? Boolean(source) : step === 1 ? !busy : step === 2 ? rows.ready && !busy : false;
+
+  const preview = source && (
+    <div className="ai-preview">
+      {source.url ? <img src={source.url} alt="Fotoja e menusë" /> : <pre>{source.text.slice(0, 600)}</pre>}
+      {step === 0 && <button type="button" onClick={() => setSource(null)}>Ndrysho</button>}
+    </div>
+  );
+
+  return (
+    <>
+      <button type="button" onClick={open}>
+        <Icon name="sparkle" size={18} />
+        Importo me AI
+      </button>
+      <dialog
+        ref={dialog}
+        className="ai-dialog"
+        aria-labelledby="ai-title"
+        onCancel={(e) => busy && e.preventDefault()}
+        onPaste={(e) => {
+          if (step !== 0 || e.target.closest("input, textarea")) return;
+          const file = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
+          file ? choose(file) : chooseText(e.clipboardData.getData("text"));
+        }}
+      >
+        <header className="ai-head">
+          <h2 id="ai-title"><Icon name="sparkle" size={22} /> Importo me AI</h2>
+          <button type="button" className="icon-button" aria-label="Mbyll" disabled={busy} onClick={() => dialog.current?.close()}>
+            <Icon name="close" size={18} />
+          </button>
+        </header>
+        <ol className="ai-steps">
+          {STEPS.map((name, i) => (
+            <li key={name} className={i <= step ? "reached" : ""} aria-current={i === step ? "step" : undefined}>
+              <span className="ai-step-number">{i < step ? <Icon name="check" size={14} /> : i + 1}</span>
+              <span className="ai-step-bar" />
+              {name}
+            </li>
+          ))}
+        </ol>
+        <div className="ai-body">
+          {step === 0 && (
+            <>
+              <div className="ai-intro">
+                <h3>Ngarkoni ose bëni foto të menusë</h3>
+                <p>AI lexon produktet dhe çmimet. I shihni të gjitha para se të ruhen.</p>
+              </div>
+              {preview || (
+                <div className="ai-sources">
+                  <button type="button" className="ai-source" onClick={fromClipboard}>
+                    <Icon name="clipboard" size={30} />
+                    <strong>Ngjit foto ose tekst</strong>
+                    <span>Klikoni për të marrë foton ose tekstin nga clipboard</span>
+                  </button>
+                  <label
+                    className={`ai-source ai-source-drop ${dragging ? "dragging" : ""}`}
+                    onDragOver={(e) => (e.preventDefault(), setDragging(true))}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={(e) => (e.preventDefault(), setDragging(false), choose(e.dataTransfer.files[0]))}
+                  >
+                    <Icon name="upload" size={30} />
+                    <strong>Ngarko foto / Drag &amp; Drop</strong>
+                    <span>Zgjidhni foton nga pajisja ose bëni një të re<br />Tërhiqeni dhe lëshojeni foton këtu</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        e.target.value = "";
+                        if (file) choose(file);
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+            </>
+          )}
+          {step === 1 && (
+            <div className="ai-config">
+              {preview}
+              <div className="ai-fields">
+                <label className="field">
+                  <span>Reparti për të gjitha</span>
+                  <select value={department} onChange={(e) => setDepartment(e.target.value)} disabled={busy}>
+                    <option value="">Pa repart (e zgjidhni më vonë)</option>
+                    {state.departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Udhëzim për AI (opsionale)</span>
+                  <textarea
+                    rows={3}
+                    maxLength={300}
+                    value={note}
+                    disabled={busy}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="p.sh. vetëm pijet; çmimet janë në euro"
+                  />
+                </label>
+                {busy && <p className="ai-reading" role="status"><span className="ai-spinner" /> AI po lexon menunë… zakonisht 10–30 sekonda.</p>}
+              </div>
+            </div>
+          )}
+          {step === 2 && (
+            <>
+              <div className="ai-intro">
+                <h3>Kontrolloni produktet</h3>
+                <p>Ndryshoni çfarë nuk është e saktë. Kategoritë dhe repartet e reja krijohen vetë; stoku bosh = pa numërim.</p>
+              </div>
+              {skipped.length > 0 && (
+                <p className="ai-note">
+                  {plural(skipped.length, "produkt ekziston", "produkte ekzistojnë")} tashmë dhe {skipped.length === 1 ? "u la" : "u lanë"} jashtë: {skipped.join(", ")}.
+                </p>
+              )}
+              <ImportTable state={state} rows={rows} disabled={busy} />
+              <div className="ai-table-foot">
+                <button type="button" onClick={rows.newRow} disabled={busy}><Icon name="plus" size={16} /> Rresht i ri</button>
+                <span className="helper">{rows.status}</span>
+              </div>
+            </>
+          )}
+          {step === 3 && (
+            <div className="ai-done">
+              <span className="ai-done-icon"><Icon name="check" size={30} /></span>
+              <h3>U shtua{saved === 1 ? "" : "n"} {plural(saved, "produkt", "produkte")}</h3>
+              <p>I gjeni te Produktet. Fotot dhe stokun mund t'ua shtoni kur të doni.</p>
+            </div>
+          )}
+          {error && <p className="ai-error" role="alert">{error}</p>}
+        </div>
+        <div className="ai-foot">
+          {step === 3 ? (
+            <>
+              <button type="button" onClick={open}>Importo një menu tjetër</button>
+              <button type="button" className="primary" onClick={() => dialog.current?.close()}>Mbyll</button>
+            </>
+          ) : (
+            <>
+              <button type="button" disabled={step === 0 || busy} onClick={() => (setError(""), setStep(step - 1))}>
+                <Icon name="back" size={17} /> Kthehu
+              </button>
+              <button type="button" className="primary" disabled={!canForward} onClick={forward}>
+                {step === 1 ? (busy ? "Po lexohet…" : "Lexo me AI") : step === 2 ? (busy ? "Po ruhen…" : `Ruaj ${plural(rows.filled.length, "produkt", "produkte")}`) : "Vazhdo"}
+                {step === 0 && <Icon name="arrow" size={17} />}
+              </button>
+            </>
+          )}
+        </div>
+      </dialog>
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { bill, COURSES, money, pendingUnits, posOf, shiftFor, tableName, tableShift } from "./domain.js";
+import { bill, COURSES, money, pendingUnits, posOf, shiftFor, since, tableName, tableShift } from "./domain.js";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { VoicePanel, useRecorder } from "./VoiceOrder.jsx";
 import { parseOrder } from "./voice.js";
@@ -152,9 +152,7 @@ export function TableOrder({
     const own = tickets.filter((k) => placeOf(k) === place);
     return { key: place, department: own[0].department, label: place !== own[0].department ? place : null, ready: own.every((k) => k.doneAt) };
   });
-  const minutes = hasOrder && table.occupiedSince
-    ? Math.max(0, Math.round((Date.now() - new Date(table.occupiedSince)) / 60000))
-    : null;
+  const minutes = hasOrder && table.occupiedSince ? since(table.occupiedSince) : null;
   // From the menu: a plain unit. From a line's "+": one more made the same way.
   const add = (productId, details = {}) =>
     update("order.add", { tableId: table.id, productId, waiterId: ownerId, ...details });
@@ -467,7 +465,7 @@ export function TableOrder({
                 </button>
               </span>
             )}
-            {minutes !== null && <span>{minutes} min</span>}
+            {minutes !== null && <span>{minutes}</span>}
           </p>
         </div>
         <div className="order-heading-actions">

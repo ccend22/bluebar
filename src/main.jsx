@@ -5,7 +5,8 @@ import { bill, COURSES, invoicePos, money, posOf, printerFor, ticketPos, total, 
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
-import { ProductImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
+import { AiImport, ProductImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
+import { Reservations } from "./Reservations.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
@@ -60,6 +61,11 @@ const pages = [
     name: "Repartet",
     icon: "coffee",
     description: "Fletët e çdo reparti — bar, ëmbëltore, restorant — gati për t'u përgatitur.",
+  },
+  {
+    name: "Rezervimet",
+    icon: "calendar",
+    description: "Kush vjen, sa veta, në cilën tavolinë dhe në çfarë ore.",
   },
   {
     name: "Faturat",
@@ -422,6 +428,10 @@ function App({ user, onLogout, onUserChange }) {
     else showPage(p);
     setTimeout(() => heading.current?.focus(), 0);
   };
+  // Opening a product brings its whole form into view: one short move, then no scrolling to reach "Ruaj".
+  useEffect(() => {
+    if (page === "Produktet" && editor) document.querySelector(".product-dialog")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [page, Boolean(editor), editor?.id]);
   const showPage = (p) => {
     setPage(p);
     setSelected(null);
@@ -897,7 +907,7 @@ function App({ user, onLogout, onUserChange }) {
           </div>
           <nav aria-label="Navigimi kryesor">
             {pages
-              .filter((p) => role === "Menaxher" || ["Tavolinat", "Porositë", "Repartet"].includes(p.name))
+              .filter((p) => role === "Menaxher" || ["Tavolinat", "Porositë", "Repartet", "Rezervimet"].includes(p.name))
               .map((p) => (
                 <button
                   key={p.name}
@@ -1037,6 +1047,7 @@ function App({ user, onLogout, onUserChange }) {
               <div className="title-actions">
                 {page === "Produktet" ? (
                   <>
+                    <AiImport state={state} update={update} />
                     <button onClick={() => (setBulkOpen(true), setEditor(null))}>
                       <Icon name="list" size={18} />
                       Shto shumë
@@ -1135,7 +1146,7 @@ function App({ user, onLogout, onUserChange }) {
               <div
                 // With a table's popup open the page is behind it: the notice floats above, or a
                 // refused add ("Pa stok", "Turni është i mbyllur"…) would look like nothing happened.
-                className={`notice ${notice.tone} ${(page === "Tavolinat" || page === "Porositë") && table ? "floating" : ""}`}
+                className={`notice ${notice.tone} ${((page === "Tavolinat" || page === "Porositë") && table) || (page === "Produktet" && editor) ? "floating" : ""}`}
                 role={notice.tone === "error" ? "alert" : "status"}
               >
                 <Icon
@@ -2186,7 +2197,7 @@ function App({ user, onLogout, onUserChange }) {
 
             {page === "Produktet" && bulkOpen && <ProductImport state={state} update={update} onClose={() => setBulkOpen(false)} />}
             {page === "Produktet" && (
-              <div className="management-layout">
+              <div className="management-layout products-layout">
                 <section className="panel">
                   <SectionHeading
                     title="Menuja e lokalit"
@@ -2293,8 +2304,14 @@ function App({ user, onLogout, onUserChange }) {
                   )}
                 </section>
                 <aside className="management-aside">
+                  {/* The product form takes the side column (a sheet on small screens), so editing never means scrolling to find it. */}
                   {editor && (
-                    <section className="panel editor-panel">
+                    <div
+                      className="order-modal-backdrop"
+                      onPointerDown={(e) => e.target === e.currentTarget && setEditor(null)}
+                      onKeyDown={(e) => e.key === "Escape" && setEditor(null)}
+                    >
+                    <section className="panel editor-panel product-dialog" role="dialog" aria-label={editor.id ? "Ndrysho produktin" : "Produkt i ri"}>
                       <SectionHeading
                         title={editor.id ? "Ndrysho produktin" : "Produkt i ri"}
                       >
@@ -2308,7 +2325,7 @@ function App({ user, onLogout, onUserChange }) {
                       </SectionHeading>
                       <form
                         key={editor.id || "new"}
-                        className="stack-form"
+                        className="stack-form product-form"
                         onSubmit={saveProduct}
                       >
                         <Field
@@ -2347,7 +2364,7 @@ function App({ user, onLogout, onUserChange }) {
                           required
                         />
                         <StockFields key={editor.id || "new"} product={editor} />
-                        <label className="field">
+                        <label className="field product-extras">
                           <span>Variante dhe shtesa (një për rresht)</span>
                           <textarea
                             name="extras"
@@ -2377,11 +2394,14 @@ function App({ user, onLogout, onUserChange }) {
                             ? "Çmimi i ri zbatohet për produktet e shtuara në porosi të reja."
                             : "Për shumë produkte njëherësh përdorni \"Shto shumë\"."}
                         </p>
-                        <button className="primary">
-                          {editor.id ? "Ruaj ndryshimet" : "Shto produkt"}
-                        </button>
+                        <div className="product-form-foot">
+                          <button className="primary">
+                            {editor.id ? "Ruaj ndryshimet" : "Shto produkt"}
+                          </button>
+                        </div>
                       </form>
                     </section>
+                    </div>
                   )}
                   <section className="panel">
                     <SectionHeading
@@ -2431,9 +2451,9 @@ function App({ user, onLogout, onUserChange }) {
                         maxLength={40}
                         required
                       />
-                      <button>
+                      <button aria-label="Shto repart">
                         <Icon name="plus" size={16} />
-                        Shto repart
+                        Shto
                       </button>
                     </form>
                   </section>
@@ -2500,9 +2520,9 @@ function App({ user, onLogout, onUserChange }) {
                         maxLength={40}
                         required
                       />
-                      <button>
+                      <button aria-label="Shto kategori menuje">
                         <Icon name="plus" size={16} />
-                        Shto kategori menuje
+                        Shto
                       </button>
                     </form>
                   </section>
@@ -2510,6 +2530,7 @@ function App({ user, onLogout, onUserChange }) {
               </div>
             )}
 
+            {page === "Rezervimet" && <Reservations state={state} update={update} role={role} />}
             {page === "Kamarierët" && (
               <div className="management-layout">
                 <section className="panel">

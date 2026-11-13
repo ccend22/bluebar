@@ -20,6 +20,10 @@ export async function loadState(client) {
     ", 'guest_alerts', (SELECT COALESCE(jsonb_agg(r ORDER BY r.id), '[]'::jsonb) FROM" +
     " (SELECT id, table_id, items, note, decided_at FROM bluebar.guest_orders" +
     "  WHERE status = 'accepted' AND seen_at IS NULL AND decided_at > now() - interval '6 hours') r)" +
+    // Reservations from yesterday on (the day before covers the venue's clock vs the database's).
+    ", 'reservations', (SELECT COALESCE(jsonb_agg(r ORDER BY r.day, r.start_time), '[]'::jsonb) FROM" +
+    " (SELECT id, name, phone, guests, table_id, to_char(day, 'YYYY-MM-DD') AS day, start_time, end_time, created_by" +
+    "  FROM bluebar.reservations WHERE day >= current_date - 1) r)" +
     ") AS data";
   const data = (await client.query(query)).rows[0].data;
   const rows = (name) => data[name];
@@ -182,6 +186,10 @@ export async function loadState(client) {
       products,
       waiters,
       tables,
+      reservations: rows("reservations").map((r) => ({
+        id: r.id, name: r.name, phone: r.phone, guests: r.guests, table: r.table_id, date: r.day, start: r.start_time, end: r.end_time, by: r.created_by,
+      })),
+      reservationSlots: control.reservation_slots || [],
       invoices,
       movements,
       printers: rows("printers")
@@ -427,6 +435,16 @@ export async function persist(client, previous, next) {
         k.station ?? null, k.posId ?? null, k.transferTo ?? null, k.transferBy ?? null, k.transferAt ?? null,
         k.kind || (k.void ? "void" : "order"), k.note || "", k.allergy || ""],
     );
+  for (const x of (previous.reservations || []).filter((x) => !next.reservations.some((y) => y.id === x.id)))
+    await client.query("DELETE FROM bluebar.reservations WHERE id=$1", [x.id]);
+  for (const x of (next.reservations || []).filter((x) => changed((previous.reservations || []).find((y) => y.id === x.id), x)))
+    await client.query(
+      `INSERT INTO bluebar.reservations(id,name,phone,guests,table_id,day,start_time,end_time,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT(id) DO UPDATE SET name=$2,phone=$3,guests=$4,table_id=$5,day=$6,start_time=$7,end_time=$8`,
+      [x.id, x.name, x.phone, x.guests, x.table ?? null, x.date, x.start, x.end ?? null, x.by ?? null],
+    );
+  if (changed(previous.reservationSlots || [], next.reservationSlots || []))
+    await client.query("UPDATE bluebar.control SET reservation_slots=$1 WHERE id=1", [JSON.stringify(next.reservationSlots)]);
   for (const x of previous.printers.filter((x) => !next.printers.some((y) => y.id === x.id)))
     await client.query("DELETE FROM bluebar.printers WHERE id=$1", [x.id]);
   for (const x of next.printers.filter((x) => changed(previous.printers.find((y) => y.id === x.id), x)))
@@ -615,7 +633,7 @@ export async function executeOrderPatch(pool, command, actor = null) {
         `SELECT c.version, cmd.payload_hash, cmd.result,
           EXISTS(SELECT 1 FROM bluebar.shifts WHERE closed IS NULL AND pos_id = tp.id) AS shift_open,
           tp.id AS table_pos, tp.name AS table_pos_name, aw.pos_id AS actor_pos,
-          t.id AS table_id, t.active AS table_active,
+          t.id AS table_id, t.active AS table_active, t.waiter_id AS table_waiter,
           w.active AS waiter_active,
           p.name AS product_name, p.price AS product_price, p.stock AS product_stock, p.available AS product_available, p.track_stock AS product_tracks,
           COALESCE((SELECT sum(qty) FROM bluebar.order_lines WHERE product_id = $4), 0)::integer AS reserved,
@@ -672,6 +690,9 @@ export async function executeOrderPatch(pool, command, actor = null) {
     if (!context.table_active) throw new AppError("Tavolina është joaktive.");
     if (context.actor_pos && context.actor_pos !== context.table_pos)
       throw new AppError(`Kjo tavolinë i përket kasës "${context.table_pos_name}".`, 403);
+    // Same rule as mine() in applyCommand: a colleague's open order isn't the waiter's to change.
+    if (actor?.role === "waiter" && context.table_line_count && context.table_waiter && context.table_waiter !== actor.waiterId)
+      throw new AppError("Kjo tavolinë është e një kolegu. Merreni tavolinën për ta ndryshuar.");
 
     if (command.type === "order.add") {
       if (!context.waiter_active) throw new AppError("Zgjidhni një kamarier aktiv.");

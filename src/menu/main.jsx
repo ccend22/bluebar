@@ -11,7 +11,7 @@ import { Line } from "./Line.jsx";
 import { CheckContent, Copies, Sheet, Stub } from "./Check.jsx";
 import { useOrder } from "./useOrder.js";
 import { Icon } from "./icons.jsx";
-import { LANGS, TEXT, clock, currency } from "./text.js";
+import { LANGS, TEXT, currency } from "./text.js";
 import { ACCENTS } from "./accents.js";
 import "./fonts.css";
 import "./menu.css";
@@ -192,7 +192,6 @@ function Menu() {
           {menu.brand?.tagline && <p className="tagline">{menu.brand.tagline}</p>}
           <div className="form-boxes">
             {table && <span className="form-box"><small>{t.table}</small>{String(table).padStart(2, "0")}</span>}
-            <span className="form-box"><small>{t.time}</small>{clock(Date.now())}</span>
             {order.placed.length > 0 && (
               <button className="form-box action" onClick={() => setCopiesOpen(true)}>
                 <small>{t.copies}</small>{order.placed.length}

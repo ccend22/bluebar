@@ -1,4 +1,5 @@
-import { addItem, bill, checkout, closeShift, COURSES, DENOMINATIONS, drawer, findLine, lineDetails, newLineKey, pendingUnits, posOf, readDetails, routeStation, shiftFor, tableShift, unitPrice } from "../src/domain.js";
+import { randomUUID } from "node:crypto";
+import { addItem, bill, checkout, closeShift, COURSES, DENOMINATIONS, drawer, findLine, lineDetails, newLineKey, pendingUnits, posOf, readDetails, reservationClash, reservationTime, routeStation, shiftFor, tableName, tableShift, unitPrice } from "../src/domain.js";
 import { cellsOf, centerOf, footprint, freeSpot, sizeFor } from "../src/floorGeometry.js";
 // Why stock changes by hand. Losses are counted as such in the reports.
 export const LOSSES = ["Humbje", "Thyerje", "Skadim"];
@@ -45,6 +46,7 @@ const bool = (v) => {
   if (typeof v !== "boolean") fail("Vlerë e pavlefshme.");
   return v;
 };
+const clock = (v) => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 const nextId = (items) => Math.max(0, ...items.map((x) => x.id)) + 1;
 // The print agent opens a raw TCP connection to this address from inside the venue,
 // so only LAN addresses are accepted — never a public host.
@@ -222,6 +224,13 @@ export function applyCommand(state, type, payload, actor = null) {
       fail(`Kjo tavolinë i përket kasës "${state.pointsOfSale.find((k) => k.id === posOf(state, t))?.name}".`);
     return t;
   };
+  // A colleague's open order stays theirs until the waiter takes the table ("Merre
+  // tavolinën"). Without this, an add retried after a 409 would quietly take it over.
+  const mine = (t) => {
+    if (actor?.role === "waiter" && t.lines.length && t.waiter && t.waiter !== actor.waiterId)
+      fail("Kjo tavolinë është e një kolegu. Merreni tavolinën për ta ndryshuar.");
+    return t;
+  };
   // The till a shift command is for; omitted means the first one (a single-till business).
   const pos = () => {
     if (p.posId === undefined) return state.pointsOfSale[0]?.id ?? fail("Krijoni një kasë.");
@@ -246,7 +255,7 @@ export function applyCommand(state, type, payload, actor = null) {
   });
   switch (type) {
     case "order.add": {
-      table();
+      mine(table());
       integer(p.productId);
       activeWaiter();
       const { tableId, productId, waiterId, ...details } = p;
@@ -300,7 +309,7 @@ export function applyCommand(state, type, payload, actor = null) {
       break;
     }
     case "order.remove": {
-      const t = table();
+      const t = mine(table());
       if (!tableShift(state, t)) fail("Turni është i mbyllur.");
       const line = findLine(t, p);
       if (!line) fail("Produkti nuk është në porosi.");
@@ -396,7 +405,7 @@ export function applyCommand(state, type, payload, actor = null) {
     case "order.note": {
       // The order's own note and allergy. Once anything is at a station, changing them
       // needs a reason and every station holding its work gets a correction.
-      const t = table();
+      const t = mine(table());
       if (!t.lines.length) fail("Tavolina nuk ka porosi të hapur.");
       const textOf = (v, current) => {
         if (v === undefined) return current || "";
@@ -435,7 +444,7 @@ export function applyCommand(state, type, payload, actor = null) {
     case "order.remake": {
       // Make it again (dropped, burnt, sent back): the station gets a remake slip, the
       // wasted unit leaves stock as a loss, the bill doesn't change.
-      const t = table();
+      const t = mine(table());
       const line = findLine(t, p);
       if (!line) fail("Produkti nuk është në porosi.");
       if (!line.sent) fail("Artikulli nuk është dërguar ende.");
@@ -507,6 +516,66 @@ export function applyCommand(state, type, payload, actor = null) {
             .join("; "),
       );
       result = { round, tickets };
+      break;
+    }
+    case "reservation.save": {
+      const reservations = state.reservations || [], slots = state.reservationSlots || [];
+      let existing;
+      if (p.id !== undefined) {
+        existing = reservations.find((x) => x.id === p.id);
+        if (!existing) fail("Rezervimi nuk ekziston.");
+      }
+      const phone = typeof p.phone === "string" ? p.phone.trim() : "";
+      if (!/^\+?[0-9][0-9 ()/-]{5,19}$/.test(phone)) fail("Vendosni një numër telefoni të saktë.");
+      if (typeof p.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(p.date) || Number.isNaN(Date.parse(p.date))) fail("Zgjidhni datën.");
+      if (!clock(p.start)) fail("Zgjidhni orën.");
+      // With the venue's slots, the time is one of them; without, only a start time. A booking
+      // being edited may keep the time it already has, from before the slots changed.
+      const end = p.end ?? null;
+      const kept = existing && existing.start === p.start && existing.end === end;
+      if (!kept && (slots.length ? !slots.some((x) => x.start === p.start && x.end === end) : end !== null))
+        fail(slots.length ? "Zgjidhni një nga fashat orare të lokalit." : "Vendosni vetëm orën e fillimit.");
+      let table = null;
+      if (p.table != null) {
+        integer(p.table);
+        if (!state.tables.some((t) => t.id === p.table && t.active)) fail("Tavolina nuk ekziston.");
+        table = p.table;
+      }
+      const reservation = {
+        id: existing?.id || randomUUID(),
+        name: name(p.name),
+        phone,
+        guests: integer(p.guests, 1, 500),
+        table,
+        date: p.date,
+        start: p.start,
+        end,
+        by: existing ? existing.by : actor?.name || null,
+      };
+      const clash = reservationClash(reservations, reservation);
+      if (clash) fail(`${tableName(table, state.tables)} është e rezervuar për ${clash.name} në ${reservationTime(clash)}.`);
+      next = {
+        ...state,
+        reservations: [...reservations.filter((x) => x.id !== reservation.id), reservation]
+          .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start)),
+      };
+      result = { id: reservation.id };
+      break;
+    }
+    case "reservation.delete": {
+      if (!(state.reservations || []).some((x) => x.id === p.id)) fail("Rezervimi nuk ekziston.");
+      next = { ...state, reservations: state.reservations.filter((x) => x.id !== p.id) };
+      break;
+    }
+    // The venue's time slots; reservations already made keep the time they were given.
+    case "reservation.slots": {
+      if (!Array.isArray(p.slots) || p.slots.length > 24) fail("Deri në 24 fasha orare.");
+      const slots = p.slots.map((x) => {
+        if (!clock(x?.start) || !clock(x?.end) || x.start === x.end) fail("Çdo fashë ka një orë fillimi dhe një orë mbarimi të ndryshme.");
+        return { start: x.start, end: x.end };
+      }).sort((a, b) => a.start.localeCompare(b.start));
+      if (new Set(slots.map((x) => x.start)).size < slots.length) fail("Dy fasha nisin në të njëjtën orë.");
+      next = { ...state, reservationSlots: slots };
       break;
     }
     case "printer.save": {
@@ -1066,7 +1135,11 @@ export function applyCommand(state, type, payload, actor = null) {
       // soft-removed via table.toggle instead; only a never-used table can be deleted.
       if (state.invoices.some((inv) => inv.table === p.id) || state.tickets.some((k) => k.table === p.id))
         fail("Kjo tavolinë ka histori faturash; çaktivizojeni në vend të fshirjes.");
-      next = { ...state, tables: state.tables.filter((x) => x.id !== p.id) };
+      next = {
+        ...state,
+        tables: state.tables.filter((x) => x.id !== p.id),
+        reservations: (state.reservations || []).map((r) => (r.table === p.id ? { ...r, table: null } : r)),
+      };
       break;
     }
     case "table.layout": {

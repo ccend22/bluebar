@@ -11,7 +11,7 @@ import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } fr
 import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
 import { deeplTranslator, LANGS } from "./translate.js";
-import { geminiVoice } from "./voice.js";
+import { geminiVoice, geminiMenuPhoto } from "./voice.js";
 import { verifyLuxHotelToken } from "./luxhotel.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
@@ -51,6 +51,8 @@ const WAITER_COMMANDS = new Set([
   "order.edit", "order.note", "order.fire", "order.remake",
   "ticket.done", "ticket.transfer", "ticket.accept",
   "guest.accept", "guest.reject", "guest.seen",
+  // Whoever answers the phone takes the booking; the time slots are the manager's.
+  "reservation.save", "reservation.delete",
 ]);
 const publicUser = ({ role, waiterId, name }) => ({ role, waiterId, name });
 const pin = { type: "string", pattern: "^[0-9]{6}$" };
@@ -77,6 +79,8 @@ export function buildApp({
   translate = deeplTranslator(process.env.DEEPL_API_KEY),
   // A waiter's spoken order → menu products (null: no voice ordering).
   voice = geminiVoice(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
+  // A photo of a printed menu → rows for "Shto shumë" (null: no reading menus from photos).
+  menuPhoto = geminiMenuPhoto(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
   // A LuxHotel (Firebase) ID token → the LuxHotel account it proves; throws when it doesn't.
   luxhotel = (token) => verifyLuxHotelToken(token, process.env.LUXHOTEL_PROJECT_ID || process.env.VITE_LUXHOTEL_PROJECT_ID),
 }) {
@@ -699,6 +703,36 @@ export function buildApp({
     }
     return { heard: String(out?.heard || "").slice(0, 500), items: [...items].map(([id, qty]) => ({ id, qty })) };
   });
+  // Produktet → "Importo me AI": a menu photo (or its pasted text) goes to Gemini, the rows come
+  // back for the import table; nothing is saved until the manager presses "Ruaj".
+  const menuPhotoBudget = throttle(30, 10 * 60_000);
+  app.post("/api/products/from-photo", {
+    preValidation: session("manager"),
+    bodyLimit: 2_000_000,
+    schema: { body: { type: "object", additionalProperties: false, properties: {
+      image: { type: "string", maxLength: 1_900_000, pattern: "^data:image/(jpeg|png|webp);base64," },
+      text: { type: "string", minLength: 1, maxLength: 20000 },
+      note: { type: "string", maxLength: 300 },
+    }, oneOf: [{ required: ["image"] }, { required: ["text"] }] } },
+  }, async (request) => {
+    if (!menuPhoto) throw new AppError("Leximi i menusë nga foto nuk është konfiguruar në server (GEMINI_API_KEY).", 503);
+    if (!menuPhotoBudget(request.venue.slug)) throw new AppError("Shumë foto për pak kohë. Prisni disa minuta.", 429);
+    const { image: dataUrl, text, note } = request.body;
+    const [head, image] = dataUrl ? dataUrl.split(",") : [];
+    let out;
+    try {
+      out = await menuPhoto(image ? { image, mime: head.slice(5, head.indexOf(";")), note: note?.trim() } : { text, note: note?.trim() });
+    } catch (e) {
+      console.error("products/from-photo:", e.message);
+      throw new AppError(`Fotoja nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
+    }
+    const clean = (v, max) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+    const products = (Array.isArray(out?.products) ? out.products : [])
+      .map((x) => ({ name: clean(x?.name, 80), price: Math.round(Number(x?.price)), category: clean(x?.category, 40) }))
+      .filter((x) => x.name && Number.isFinite(x.price) && x.price > 0)
+      .slice(0, 200);
+    return { products };
+  });
   // Cilësimet → Menuja online → "Përkthe menunë": everything missing a language.
   // Everything still missing a language: what "Përkthe menunë" does, and what follows a
   // bulk import ("Shto shumë"), whose products and new categories aren't saved one by one.
@@ -1296,6 +1330,9 @@ export function buildApp({
                 "shift.open",
                 "shift.close",
                 "shift.cash",
+                "reservation.save",
+                "reservation.delete",
+                "reservation.slots",
               ],
             },
             payload: { type: "object" },
@@ -1345,6 +1382,9 @@ export function buildApp({
         .send({ error: "Skema mungon. Ekzekutoni npm run db:migrate." });
     if (error.statusCode === 413)
       return reply.code(413).send({ error: "Kërkesa është shumë e madhe." });
+    // Fastify's own refusals (malformed JSON, wrong content type) are the request's fault, not the database's.
+    if (error.statusCode >= 400 && error.statusCode < 500)
+      return reply.code(error.statusCode).send({ error: "Formati i kërkesës është i pavlefshëm." });
     // Never include SQL, a DSN, credentials, parameters or provider messages in responses/logs.
     return reply
       .code(503)

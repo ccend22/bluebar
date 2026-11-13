@@ -685,6 +685,41 @@ test("only managers cancel open orders, with an audit record and safe retries", 
   }
 });
 
+test("a waiter can't add to or take from a colleague's open order, even retrying after a 409", async () => {
+  const t = await setup();
+  try {
+    await t.send("shift.open", { opening: 1000 });
+    await t.send("product.save", { name: "Espresso", price: 100, category: "Kafe" });
+    await t.send("stock.receive", { productId: 1, qty: 10 });
+    await t.send("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    const managerCookie = t.cookieOf(await t.managerLogin());
+    const version = async () => (await t.call("GET", "/api/state", { cookie: managerCookie })).json().version;
+    const other = t.cookieOf(await t.waiterLogin(2, "739105"));
+    const as = async (type, payload) =>
+      t.call("POST", "/api/commands", { cookie: other, body: { id: randomUUID(), version: await version(), type, payload } });
+    // The fast path (a plain unit) and the full path (with a note) both refuse.
+    for (const [type, payload] of [
+      ["order.add", { tableId: 1, productId: 1, waiterId: 2 }],
+      ["order.add", { tableId: 1, productId: 1, waiterId: 2, note: "pa sheqer" }],
+      ["order.remove", { tableId: 1, productId: 1 }],
+      ["order.note", { tableId: 1, note: "te dritarja" }],
+    ]) {
+      const r = await as(type, payload);
+      assert.equal(r.statusCode, 400, `${type} ${JSON.stringify(payload)}`);
+      assert.match(r.json().error, /e një kolegu/);
+    }
+    const state = (await t.call("GET", "/api/state", { cookie: managerCookie })).json().state;
+    const table = state.tables.find((x) => x.id === 1);
+    assert.equal(table.waiter, 1);
+    assert.equal(table.lines[0].qty, 1);
+    // Once they take the table, it's theirs to change.
+    assert.equal((await as("order.assign", { tableId: 1, waiterId: 2 })).statusCode, 200);
+    assert.equal((await as("order.add", { tableId: 1, productId: 1, waiterId: 2 })).statusCode, 200);
+  } finally {
+    await t.close();
+  }
+});
+
 test("a waiter can only pay off their own table, until they claim it via order.assign", async () => {
   const t = await setup();
   try {
@@ -1668,6 +1703,39 @@ test("voice orders: Gemini hears, only orderable menu ids come back, and no key 
   }
 });
 
+test("a menu photo: managers only, Gemini's rows come back cleaned, nothing is saved, no key means 503", async () => {
+  const image = `data:image/webp;base64,${Buffer.alloc(300, 1).toString("base64")}`;
+  let asked;
+  const fake = async (input) => {
+    asked = input;
+    return { products: [{ name: " Espresso ", price: 100, category: "Kafe" }, { name: "Birrë Korça", price: 249.6, category: "Pije" }, { name: "", price: 50, category: "x" }, { name: "Falas", price: 0, category: "x" }] };
+  };
+  const t = await setup({ menuPhoto: fake });
+  try {
+    assert.equal((await t.call("POST", "/api/products/from-photo", { body: { image } })).statusCode, 401);
+    const cookie = t.cookieOf(await t.managerLogin());
+    assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: { image: "data:text/html;base64,AAAA" } })).statusCode, 400);
+    const r = await t.call("POST", "/api/products/from-photo", { cookie, body: { image } });
+    assert.equal(r.statusCode, 200);
+    assert.deepEqual(r.json(), { products: [{ name: "Espresso", price: 100, category: "Kafe" }, { name: "Birrë Korça", price: 250, category: "Pije" }] });
+    assert.equal(asked.mime, "image/webp");
+    assert.equal(asked.image, Buffer.alloc(300, 1).toString("base64"));
+    assert.equal((await t.call("GET", "/api/state", { cookie })).json().state.products.length, 0, "nothing saved until the manager presses Ruaj");
+    assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: { text: "Espresso 100", note: "vetëm kafet" } })).statusCode, 200);
+    assert.deepEqual(asked, { text: "Espresso 100", note: "vetëm kafet" });
+    assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: {} })).statusCode, 400, "a photo or text");
+  } finally {
+    await t.close();
+  }
+  const none = await setup({ menuPhoto: null });
+  try {
+    const cookie = none.cookieOf(await none.managerLogin());
+    assert.equal((await none.call("POST", "/api/products/from-photo", { cookie, body: { image } })).statusCode, 503);
+  } finally {
+    await none.close();
+  }
+});
+
 test("a language DeepL is slow on once is tried again, so the other four aren't lost", async () => {
   let germanTries = 0;
   const flaky = async (texts, lang) => {
@@ -1865,6 +1933,47 @@ test("the state goes out gzipped to browsers that take it, and plain to everyone
     assert.equal(zipped.headers["content-encoding"], "gzip");
     assert.ok(zipped.rawPayload.length < plain.rawPayload.length / 2, "smaller on the wire");
     assert.deepEqual(JSON.parse(gunzipSync(zipped.rawPayload)), plain.json(), "same state once unzipped");
+  } finally {
+    await t.close();
+  }
+});
+
+test("Rezervimet: a table isn't booked twice at once, the venue's slots are the only times, waiters book but don't set slots", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (cookie, type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const day = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const book = (cookie, over) => cmd(cookie, "reservation.save", { name: "Arta", phone: "069 123 4567", guests: 4, table: 1, date: day, start: "19:00", ...over });
+    // No slots: a start time only, holding the table two hours.
+    assert.equal((await book(ana, {})).statusCode, 200, "a waiter takes a booking");
+    assert.equal((await book(ana, { end: "21:00" })).statusCode, 400, "no slots, no end time");
+    const clash = await book(ana, { name: "Besi", start: "20:30" });
+    assert.equal(clash.statusCode, 400);
+    assert.match(clash.json().error, /Arta.*19:00/);
+    assert.equal((await book(ana, { name: "Besi", start: "21:00" })).statusCode, 200, "free again after two hours");
+    assert.equal((await book(ana, { name: "Dea", table: 2, start: "20:00" })).statusCode, 200, "another table is free");
+    assert.equal((await book(ana, { name: "Ema", table: null })).statusCode, 200, "a table can be chosen later");
+    assert.equal((await book(ana, { phone: "abc" })).statusCode, 400);
+    // The venue's slots.
+    assert.equal((await cmd(ana, "reservation.slots", { slots: [{ start: "12:00", end: "14:00" }] })).statusCode, 403, "slots are the manager's");
+    assert.equal((await cmd(boss, "reservation.slots", { slots: [{ start: "22:00", end: "01:00" }, { start: "19:00", end: "21:00" }] })).statusCode, 200);
+    assert.equal((await book(ana, { name: "Fatos", table: 3, start: "18:00", end: "20:00" })).statusCode, 400, "not one of the slots");
+    assert.equal((await book(ana, { name: "Fatos", table: 3, start: "22:00", end: "01:00" })).statusCode, 200, "a slot past midnight");
+    const { state } = (await t.call("GET", "/api/state", { cookie: ana })).json();
+    assert.deepEqual(state.reservationSlots, [{ start: "19:00", end: "21:00" }, { start: "22:00", end: "01:00" }]);
+    assert.deepEqual(state.reservations.map((r) => `${r.name} ${r.table} ${r.start}${r.end ? `-${r.end}` : ""}`),
+      ["Arta 1 19:00", "Ema null 19:00", "Dea 2 20:00", "Besi 1 21:00", "Fatos 3 22:00-01:00"]);
+    assert.equal(state.reservations[0].by, "Arben K");
+    const arta = state.reservations[0];
+    assert.equal((await cmd(ana, "reservation.save", { ...arta, guests: 5 })).statusCode, 200, "an edit keeps its pre-slot time");
+    assert.equal((await cmd(ana, "reservation.save", { ...arta, guests: 6, end: "21:00" })).statusCode, 200, "edited into a slot");
+    assert.equal((await cmd(ana, "reservation.delete", { id: arta.id })).statusCode, 200);
+    assert.equal((await t.call("GET", "/api/state", { cookie: boss })).json().state.reservations.length, 4);
   } finally {
     await t.close();
   }

@@ -7,7 +7,7 @@ import { unit } from "./text.js";
 
 const press = { type: "spring", stiffness: 520, damping: 22 };
 
-// A printed form stepper: [−] n [+].
+// A rounded stepper: [−] n [+].
 export function Stepper({ value, onChange, min = 1, t }) {
   return (
     <span className="stepper">
@@ -22,14 +22,14 @@ export function Stepper({ value, onChange, min = 1, t }) {
   );
 }
 
-// The quantity box at the start of every ruled line: tapping it writes the dish onto the
-// check, and the number is stamped into the box.
+// The add button on the dish's corner: tapping it puts the dish on the order, and then
+// shows how many are on it.
 function QtyBox({ count, name, onPress, t }) {
   return (
     <button className={clsx("qty-box", count > 0 && "filled")} aria-label={`${t.add} ${name}${count ? ` (${t.inOrder(count)})` : ""}`} onClick={onPress}>
       <AnimatePresence initial={false} mode="popLayout">
         {count > 0 ? (
-          <m.span key={count} className="qty-mark" initial={{ scale: 1.9, rotate: -14, opacity: 0 }} animate={{ scale: 1, rotate: -4, opacity: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={press}>
+          <m.span key={count} className="qty-mark" initial={{ scale: 1.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={press}>
             {count}
           </m.span>
         ) : (
@@ -42,8 +42,8 @@ function QtyBox({ count, name, onPress, t }) {
   );
 }
 
-// One dish as a ruled line of the pad. Opened, the line unfolds into a slip right where
-// it is (a shared layout animation), with extras as form checkboxes, a note and the quantity.
+// One dish as a card: name, description and price beside its photo. Opened, the card unfolds
+// right where it is (a shared layout animation), with extras, a note and the quantity.
 export function Line({ product: p, photo, open, onToggle, canOrder, count, onQuickAdd, onAdd, t, tr }) {
   // In the guest's language, the translation the server wrote when the product was saved
   // (DeepL); without one, the manager's Albanian, marked lang="sq" for a phone's own translator.
@@ -52,21 +52,19 @@ export function Line({ product: p, photo, open, onToggle, canOrder, count, onQui
   const textLang = name === p.name ? "sq" : undefined;
   return (
     <m.li layout="position" className={clsx("line", !p.available && "sold-out", open && "open")} id={`line-${p.id}`}>
-      <div className="line-row">
-        {canOrder && p.available ? (
-          <QtyBox count={count} name={name} t={t} onPress={() => (p.extras.length ? !open && onToggle() : onQuickAdd())} />
-        ) : (
-          <span className="qty-box blank" aria-hidden="true" />
-        )}
+      <div className={clsx("line-row", photo && !open && "with-photo")}>
         <button className="line-body" aria-expanded={open} onClick={onToggle}>
           <span className="line-text">
             <strong lang={textLang}>{name}</strong>
             {description && !open && <span className="line-desc" lang={textLang}>{description}</span>}
+            <span className="line-price">{t.money(p.price)}</span>
             {!p.available && <span className="line-sold">{t.soldOut}</span>}
           </span>
-          {photo && !open && <m.img layoutId={`photo-${p.id}`} className="line-photo" src={photo} alt="" loading="lazy" width="64" height="64" />}
-          <span className="line-price">{t.money(p.price)}</span>
+          {photo && !open && <m.img layoutId={`photo-${p.id}`} className="line-photo" src={photo} alt="" loading="lazy" width="104" height="104" />}
         </button>
+        {canOrder && p.available && !open && (
+          <QtyBox count={count} name={name} t={t} onPress={() => (p.extras.length ? onToggle() : onQuickAdd())} />
+        )}
       </div>
       <AnimatePresence initial={false}>
         {open && (

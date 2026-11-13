@@ -1,6 +1,12 @@
 export const money = (n) =>
   new Intl.NumberFormat("sq-AL", { maximumFractionDigits: 0 }).format(n) +
   " Lek";
+// How long since a moment, the way staff say it: "12 min", "3 orë 5 min".
+export const since = (from) => {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(from)) / 60000));
+  const h = Math.floor(minutes / 60);
+  return h ? `${h} orë ${minutes % 60} min` : `${minutes} min`;
+};
 // "1 produkt", "3 produkte": the number with the word that goes with it.
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 // A table's own name when the manager gave it one ("VIP"), else "Tavolina 03". Takes the
@@ -9,6 +15,26 @@ export function tableName(t, tables) {
   const row = typeof t === "object" ? t : tables?.find((x) => x.id === Number(t));
   return row?.label || `Tavolina ${String(row?.id ?? t).padStart(2, "0")}`;
 }
+// Rezervimet: a reservation's time as minutes from its day's midnight. One with only a start
+// time holds its table for two hours; a slot past midnight ("22:00–01:00") ends the next day.
+// ponytail: fixed 2 h hold, make it a venue setting if a place needs another length.
+const minutes = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const span = (r) => {
+  const start = minutes(r.start);
+  const end = r.end ? minutes(r.end) : start + 120;
+  return [start, end <= start ? end + 1440 : end];
+};
+// The reservation already holding r's table at r's time, if any.
+export function reservationClash(reservations, r) {
+  if (r.table == null) return null;
+  const [start, end] = span(r);
+  return reservations.find((x) => {
+    if (x.id === r.id || x.table !== r.table || x.date !== r.date) return false;
+    const [s, e] = span(x);
+    return s < end && start < e;
+  }) || null;
+}
+export const reservationTime = (r) => (r.end ? `${r.start}–${r.end}` : r.start);
 export const total = (lines) =>
   lines.reduce((sum, p) => sum + p.price * p.qty, 0);
 export function initialState() {
@@ -148,7 +174,7 @@ export function configIssues(state, agent = null, now = Date.now()) {
       for (const z of zones) {
         const s = routeStation(state, d, z);
         const example = state.products.find((p) => (p.department || "Tjetër") === d)?.name;
-        if (!s) error("Produktet", `${d} në zonën "${z}" nuk ka stacion (p.sh. ${example}).`);
+        if (!s) error("Stacionet", `${d} në zonën "${z}" nuk ka stacion (p.sh. ${example}).`);
         else if (!s.active) error("Stacionet", `${d} në zonën "${z}" shkon te ${name(s)}, që është joaktiv dhe pa rezervë aktive.`);
       }
   }

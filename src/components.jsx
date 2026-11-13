@@ -155,6 +155,30 @@ const paths = {
       <path d="M4 6h.01M4 12h.01M4 18h.01" />
     </>
   ),
+  calendar: (
+    <>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+    </>
+  ),
+  sparkle: (
+    <>
+      <path d="M10 3.5l1.6 4.4a3 3 0 0 0 1.8 1.8l4.4 1.6-4.4 1.6a3 3 0 0 0-1.8 1.8L10 19.1l-1.6-4.4a3 3 0 0 0-1.8-1.8L2.2 11.3l4.4-1.6a3 3 0 0 0 1.8-1.8z" />
+      <path d="M18.5 2.5v4M16.5 4.5h4" />
+    </>
+  ),
+  clipboard: (
+    <>
+      <rect x="5" y="4.5" width="14" height="17" rx="2.5" />
+      <rect x="9" y="2.5" width="6" height="4" rx="1.2" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M7 17.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.46 3.75 3.75 0 0 1-.5 7.5" />
+      <path d="M12 21v-9M8.5 15.5 12 12l3.5 3.5" />
+    </>
+  ),
 };
 export function Icon({ name, size = 20, ...props }) {
   return (

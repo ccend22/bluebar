@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { bill, money, pendingUnits, tableName } from "./domain.js";
+import { bill, money, pendingUnits, since, tableName } from "./domain.js";
 import { Badge, Empty, Icon, SectionHeading } from "./components.jsx";
 
 // Porositë: open orders as a compact list, and the chosen one beside it as the receipt it will
@@ -25,8 +25,7 @@ export function Orders({ state, onEdit, onSend, onPay, onPrint }) {
     if (slips.some((k) => !k.doneAt)) return <Badge>Në përgatitje</Badge>;
     return <Badge tone="green">{slips.length ? "Gati" : "Dërguar"}</Badge>;
   };
-  const minutes = (t) =>
-    t.occupiedSince ? `${Math.max(0, Math.round((Date.now() - new Date(t.occupiedSince)) / 60000))} min` : "";
+  const minutes = (t) => (t.occupiedSince ? since(t.occupiedSince) : "");
   const choose = (t) => (matchMedia("(max-width: 900px)").matches ? onEdit(t) : setChosen(t.id));
 
   if (!open.length)

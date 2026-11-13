@@ -5,7 +5,7 @@ import { createManager, issueSession } from "./auth.js";
 import { verifyEmptyDatabase } from "./verify.js";
 import { buildApp } from "./app.js";
 import { applyCommand } from "./commands.js";
-import { initialState } from "../src/domain.js";
+import { configIssues, drawer, initialState, posOf, shiftFor } from "../src/domain.js";
 test("PostgreSQL schema, transactions, price snapshots, stock, shifts and retry keys", async () => {
   const db = new PGlite();
   const query = (sql, params) =>
@@ -161,4 +161,59 @@ test("tables.save confirms several new/edited/moved tables at once, all or nothi
     applyCommand(s, "tables.save", { tables: [{ area: "Tarraca", shape: "Rreth" }, { area: "Salla", shape: "Trekëndësh" }] }),
   );
   assert.throws(() => applyCommand(s, "tables.save", { tables: [] }));
+});
+test("two tills in two zones, a bar station in each: tickets, bills and drawers stay with their own", () => {
+  let s = { ...initialState(), openShifts: [], departments: [] };
+  const run = (type, payload, actor = { role: "manager", name: "boss" }) => {
+    const r = applyCommand(s, type, payload, actor);
+    s = r.state;
+    return r.result;
+  };
+  // Tables 1-8 are Salla, 9-12 Tarraca (the seed).
+  run("pos.save", { id: 1, name: "Bari brenda", areas: ["Salla"] });
+  run("pos.save", { name: "Bari jashtë", areas: ["Tarraca"] });
+  run("department.create", { name: "Bar" });
+  run("department.create", { name: "Kuzhinë" });
+  run("product.save", { name: "Kafe X", price: 100, category: "Kafe", department: "Bar" });
+  run("product.save", { name: "Pica X", price: 700, category: "Ushqim", department: "Kuzhinë" });
+  const kafe = s.products.find((p) => p.name === "Kafe X").id, pica = s.products.find((p) => p.name === "Pica X").id;
+  run("stock.receive", { productId: kafe, qty: 50 });
+  run("stock.receive", { productId: pica, qty: 50 });
+  run("station.save", { name: "Banaku brenda", departments: ["Bar"], areas: ["Salla"] });
+  run("station.save", { name: "Banaku jashtë", departments: ["Bar"], areas: ["Tarraca"], backupId: 1 });
+  run("station.save", { name: "Kuzhina", departments: ["Kuzhinë"], areas: [] });
+  const waiter = s.waiters[0].id;
+  const order = (tableId, ...products) => {
+    for (const productId of products) run("order.add", { tableId, productId, waiterId: waiter });
+    const tickets = run("order.send", { tableId }).tickets;
+    return Object.fromEntries(tickets.map((k) => [k.department, [k.station, k.posId]]));
+  };
+  // A till without an open shift takes no orders on its tables.
+  assert.throws(() => run("order.add", { tableId: 9, productId: kafe, waiterId: waiter }), /[Tt]urn/);
+  run("shift.open", { posId: 1, opening: 1000 });
+  run("shift.open", { posId: 2, opening: 500 });
+  assert.deepEqual(order(1, kafe, pica), { Bar: [1, 1], Kuzhinë: [3, 1] });
+  assert.deepEqual(order(9, kafe, pica), { Bar: [2, 2], Kuzhinë: [3, 2] });
+  run("order.pay", { tableId: 1, method: "Cash", received: 800 });
+  run("order.pay", { tableId: 9, method: "Kartë" });
+  assert.deepEqual([drawer(s, shiftFor(s, 1)).expected, drawer(s, shiftFor(s, 2)).expected], [1800, 500]);
+  // The outside bar is off: the inside bar makes its drinks, the bill stays outside.
+  run("station.toggle", { id: 2 });
+  assert.deepEqual(order(10, kafe), { Bar: [1, 2] });
+  run("station.toggle", { id: 2 });
+  // The guests move inside: the ticket follows the table, the inside till collects.
+  run("order.move", { tableId: 10, toTableId: 2 });
+  assert.equal(s.tickets.at(-1).table, 2);
+  run("order.pay", { tableId: 2, method: "Cash", received: 100 });
+  assert.equal(drawer(s, shiftFor(s, 1)).expected, 1900);
+  run("shift.close", { posId: 2, counted: 500 });
+  assert.throws(() => run("order.add", { tableId: 9, productId: kafe, waiterId: waiter }));
+  run("order.add", { tableId: 1, productId: kafe, waiterId: waiter });
+  assert.equal(s.products.find((p) => p.id === kafe).stock, 47, "one stock for both tills: three sold, the open one only reserved");
+  // A new zone no till or bar station claims: the first till's, and flagged under Stacionet.
+  run("table.save", { area: "Kopshti", shape: "Rreth", seats: 2 });
+  const garden = s.tables.find((t) => t.area === "Kopshti");
+  assert.equal(posOf(s, garden), 1);
+  assert.deepEqual(order(garden.id, kafe, pica), { Bar: [null, 1], Kuzhinë: [3, 1] });
+  assert.ok(configIssues(s).some((i) => i.level === "error" && i.group === "Stacionet" && i.text.includes('Bar në zonën "Kopshti"')));
 });

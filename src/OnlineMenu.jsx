@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { plural, tableName } from "./domain.js";
+import { money, plural, tableName } from "./domain.js";
 import { createPortal } from "react-dom";
 import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo, translateMenu, fetchMenuI18n, saveMenuI18n } from "./api.js";
 import { ACCENTS } from "./menu/accents.js";
 import { Icon } from "./components.jsx";
+import "./menu/fonts.css";
 
 const menuUrl = (table, key) => `${window.location.origin}/menu/${venueSlug}${table ? `?t=${table}&k=${key}` : ""}`;
 
 // The photo is shrunk in the browser (longest side 1000px, WebP, JPEG where the browser
 // can't write WebP), so a phone photo of several MB becomes ~100 KB before it is sent.
-async function shrink(file, { size = 1000, alpha = false } = {}) {
+export async function shrink(file, { size = 1000, alpha = false } = {}) {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, size / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
@@ -191,8 +192,43 @@ function TranslationFixes() {
   );
 }
 
+// The top of the guest menu as a phone shows it, drawn from the unsaved choices so the
+// manager sees the colour, logo and welcome line before saving.
+function MenuPreview({ name, logo, initials, tagline, accent, state }) {
+  const shown = state.products.filter((p) => p.menuVisible !== false);
+  const categories = state.categories.filter((c) => shown.some((p) => p.category === c)).slice(0, 3);
+  // Headings and lines in menu order, as many as the phone holds.
+  const rows = categories.flatMap((c) => [{ head: c }, ...shown.filter((p) => p.category === c)]).slice(0, 7);
+  return (
+    <figure className="menu-preview" style={{ "--ink-brand": accent }}>
+      <div className="mp-phone" aria-hidden="true">
+        <header className="mp-masthead">
+          <span className="mp-logo">{logo ? <img src={logo} alt="" /> : <b>{initials}</b>}</span>
+          <strong>{name}</strong>
+          <p className={tagline ? "" : "mp-placeholder"}>{tagline || "Rreshti i mirëseardhjes"}</p>
+          <span className="mp-boxes">
+            <span><small>Tavolina</small> 04</span>
+            <span className="lang">Shqip</span>
+          </span>
+        </header>
+        <span className="mp-tabs">{categories.map((c, i) => <span key={c} className={i ? "" : "on"}>{c}</span>)}</span>
+        <ul className="mp-lines">
+          {rows.map((p) => p.head ? <li key={p.head} className="mp-head">{p.head}</li> : (
+            <li key={p.id}>
+              <span className="mp-name">{p.name}</span>
+              <span className="mp-price">{money(p.price)}</span>
+              <span className="mp-qty">+</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <figcaption>Si e sheh klienti</figcaption>
+    </figure>
+  );
+}
+
 // Cilësimet → Menuja online → the menu's identity: what a guest sees at the top.
-function MenuIdentity({ venueName }) {
+function MenuIdentity({ venueName, state }) {
   const [brand, setBrand] = useState(null);
   const [tagline, setTagline] = useState("");
   const [rate, setRate] = useState("");
@@ -222,11 +258,11 @@ function MenuIdentity({ venueName }) {
   const initials = venueName.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
     <>
-    <section className="panel menu-identity" style={{ "--accent": ACCENTS[brand.accent].hex }}>
+    <section className="panel menu-identity identity-panel">
+      <div className="identity-form">
       <h2>Identiteti i menusë</h2>
       <p className="helper">Çfarë sheh klienti në krye të menusë: logoja, emri, një rresht mirëseardhjeje dhe ngjyra e lokalit.</p>
       <div className="identity-row">
-        <span className="identity-logo">{brand.logo ? <img src={brand.logo} alt="Logoja" /> : <b>{initials}</b>}</span>
         <div className="product-photo-actions">
           <label className={`button-like ${busy ? "disabled" : ""}`}>
             {brand.logo ? "Ndrysho logon" : "Ngarko logon"}
@@ -253,7 +289,7 @@ function MenuIdentity({ venueName }) {
           )}
         </div>
       </div>
-      <p className="helper">Pa logo, menuja tregon inicialet e lokalit ({initials}) me ngjyrën e zgjedhur.</p>
+      <p className="helper">{brand.logo ? "Logoja ruhet sapo e ngarkoni." : `Pa logo, menuja tregon inicialet e lokalit (${initials}) me ngjyrën e zgjedhur.`}</p>
       <label className="field">
         <span>Rreshti i mirëseardhjes</span>
         <input value={tagline} maxLength={90} placeholder="p.sh. Kafe dhe kuzhinë mesdhetare që nga 2012" onChange={(e) => setTagline(e.target.value)} />
@@ -274,6 +310,8 @@ function MenuIdentity({ venueName }) {
         </button>
       </div>
       {noteFor("identity")}
+      </div>
+      <MenuPreview name={venueName} logo={brand.logo} initials={initials} tagline={tagline.trim()} accent={ACCENTS[brand.accent].hex} state={state} />
     </section>
     <section className="panel menu-identity lang-panel">
       <h2>Gjuhët dhe çmimet</h2>
@@ -410,7 +448,7 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
               : "Tani klientët vetëm e shohin menunë."}
         </p>
       </section>
-      <MenuIdentity venueName={venue?.name || "BlueBar"} />
+      <MenuIdentity venueName={venue?.name || "BlueBar"} state={state} />
       <TranslationFixes />
       <section className="panel">
         <div className="online-menu-head">

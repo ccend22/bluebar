@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test src/domain.test.js src/productSetup.test.js src/voice.test.js server/*.test.js",
+    "test:vision": "node --test scripts/vision-state.test.js scripts/vision-next.test.js",
+    "vision:next": "node scripts/vision-preview.mjs --port 5187",
     "dev:web": "vite --host 127.0.0.1",
     "api": "node --env-file-if-exists=.env server/index.js",
     "db:migrate": "node --env-file-if-exists=.env server/migrate.js",

@@ -34,29 +34,70 @@ ${menu}`;
 // Gemini 2.x takes a thinking budget, 3.x a thinking level.
 const QUICK = (model) => (/^gemini-2/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "minimal" });
 
+// One structured Gemini answer: parts in, JSON matching the schema out.
+async function gemini(key, model, fetchImpl, parts, schema, timeout) {
+  const ask = (thinking) =>
+    fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: schema, ...(thinking && { thinkingConfig: thinking }) },
+      }),
+      signal: AbortSignal.timeout(timeout),
+    });
+  let response = await ask(QUICK(model));
+  // A model that doesn't take that setting: ask again with its default (slower, still right).
+  if (response.status === 400) response = await ask(null);
+  if (!response.ok) {
+    // Google's reason (quota, region, key…) for the server log; the user sees only the status.
+    const reason = await response.json().then((b) => b.error?.message, () => "");
+    throw Object.assign(new Error(`Gemini ${response.status}: ${String(reason || "").slice(0, 300)}`), { status: response.status });
+  }
+  const out = (await response.json()).candidates?.[0]?.content?.parts || [];
+  return JSON.parse(out.map((p) => p.text || "").join(""));
+}
+
 export function geminiVoice(key, { model = process.env.GEMINI_MODEL || "gemini-3.5-flash", fetchImpl = fetch } = {}) {
   if (!key) return null;
-  return async ({ audio, mime, products }) => {
+  return ({ audio, mime, products }) => {
     const menu = products.map((p) => `${p.id}: ${p.name}`).join("\n");
-    const ask = (thinking) =>
-      fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: "POST",
-        headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: instructions(menu) }, { inline_data: { mime_type: mime, data: audio } }] }],
-          generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: SCHEMA, ...(thinking && { thinkingConfig: thinking }) },
-        }),
-        signal: AbortSignal.timeout(20000),
-      });
-    let response = await ask(QUICK(model));
-    // A model that doesn't take that setting: ask again with its default (slower, still right).
-    if (response.status === 400) response = await ask(null);
-    if (!response.ok) {
-      // Google's reason (quota, region, key…) for the server log; the waiter sees only the status.
-      const reason = await response.json().then((b) => b.error?.message, () => "");
-      throw Object.assign(new Error(`Gemini ${response.status}: ${String(reason || "").slice(0, 300)}`), { status: response.status });
-    }
-    const parts = (await response.json()).candidates?.[0]?.content?.parts || [];
-    return JSON.parse(parts.map((p) => p.text || "").join(""));
+    return gemini(key, model, fetchImpl, [{ text: instructions(menu) }, { inline_data: { mime_type: mime, data: audio } }], SCHEMA, 20000);
   };
+}
+
+// Produktet → "Shto shumë" → "Nga një foto": a photo of a printed menu (or a board) read into
+// rows for the import table, which the manager checks before anything is saved.
+const MENU_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    products: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { name: { type: "STRING" }, price: { type: "NUMBER" }, category: { type: "STRING" } },
+        required: ["name", "price", "category"],
+      },
+    },
+  },
+  required: ["products"],
+};
+
+const MENU_INSTRUCTIONS = `This is a menu from a bar, café or restaurant in Albania: a photo of it, or its text copied from somewhere.
+List every item on it with its price, in the order they appear.
+- "name": the item's name exactly as written (keep the menu's language and spelling; fix only obvious OCR-style slips).
+- "price": the price as a number, in Lek. "1.200" or "1,200" is 1200. If an item has two sizes or prices, list it twice
+  with the size in the name ("Birrë Korça 0.33", "Birrë Korça 0.5").
+- "category": the heading the item is listed under ("Kafe", "Pije freskuese", "Pica"…); if there is none, a short sensible one in Albanian.
+Leave out anything with no readable price, and descriptions, addresses, opening hours. Never invent items or prices.
+If it is not a menu or nothing is readable, return "products": [].`;
+
+export function geminiMenuPhoto(key, { model = process.env.GEMINI_MODEL || "gemini-3.5-flash", fetchImpl = fetch } = {}) {
+  if (!key) return null;
+  // note: the manager's own hint ("only the drinks", "prices are in euro").
+  return ({ image, mime, text, note }) =>
+    gemini(key, model, fetchImpl, [
+      { text: MENU_INSTRUCTIONS + (note ? `\n\nThe manager adds: ${note}` : "") },
+      image ? { inline_data: { mime_type: mime, data: image } } : { text: `The menu:\n${text}` },
+    ], MENU_SCHEMA, 45000);
 }

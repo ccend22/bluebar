@@ -17,7 +17,7 @@ async function request(path, options = {}) {
     response = await fetch(`/api${path}`, {
       ...options,
       headers,
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(options.timeout ?? 20000),
     });
   } catch {
     throw new ApiError(
@@ -104,3 +104,5 @@ export const fetchReport = (params) =>
   request(`/reports?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null))}`);
 // The waiter's spoken order (a WAV, base64): what was heard and which products.
 export const voiceOrder = (audio, mime) => request("/voice-order", { method: "POST", body: JSON.stringify({ audio, mime }) });
+// Gemini reads a whole menu in up to ~45 s, longer than the usual wait.
+export const readMenuPhoto = (input) => request("/products/from-photo", { method: "POST", body: JSON.stringify(input), timeout: 50000 });

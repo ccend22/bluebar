@@ -116,10 +116,11 @@ export function Stations({ state, device, update, onPrint, time, tillOf }) {
     (here === "all" ? state.pointsOfSale : [{ id: here }]).every((k) => printerFor(state.printers, k.id, d));
   const departments = [...state.departments, "Tjetër"];
   // With stations, this device shows its own stations' tickets (and those offered to
-  // them); a device that picked none sees everything, like a manager's overview.
+  // them); a device that picked none sees everything, like a manager's overview. A ticket
+  // no station covers (a new zone, say) shows on every screen rather than on none.
   const mine = device.stationIds.filter((id) => stationOf(id));
   const tickets = useStations
-    ? state.tickets.filter((k) => !mine.length || mine.includes(k.station) || mine.includes(k.transferTo))
+    ? state.tickets.filter((k) => !mine.length || !k.station || mine.includes(k.station) || mine.includes(k.transferTo))
     : state.tickets.filter((k) => here === "all" || tillOf(k) === here);
   const tabs = useStations
     ? [...new Set(tickets.map((k) => k.station))].map((id) => ({ key: id, label: stationOf(id)?.name || "Pa stacion" }))

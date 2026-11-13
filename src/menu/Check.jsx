@@ -88,7 +88,6 @@ export function CheckContent({ lines: live, productOf, total: liveTotal, setQty,
         <h2>{t.check}</h2>
         <div className="form-boxes">
           {table && <span className="form-box"><small>{t.table}</small>{String(table).padStart(2, "0")}</span>}
-          <span className="form-box"><small>{t.time}</small>{clock(Date.now())}</span>
         </div>
       </header>
       {lines.length ? (

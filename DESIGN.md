@@ -11,6 +11,8 @@ colors:
   surface: "#ffffff"
   ink: "#1d1d1f"
   ink-app: "#202428"
+  amber: "#835615"
+  red: "#a3322a"
   muted: "#697078"
   line: "#dfe4e8"
   occupied-green: "#27654f"
@@ -31,20 +33,17 @@ colors:
   lp-faint: "#8b96a1"
   lp-line: "#e2e7ec"
   lp-live: "#3ccf8e"
-  menu-paper: "#eef4ee"
-  menu-paper-hi: "#f7faf6"
-  menu-rule: "#c3d5c8"
-  menu-rule-strong: "#5f7f6b"
-  menu-label: "#4a6857"
-  menu-ink: "#24302a"
-  menu-ink-soft: "#4f6157"
-  menu-carbon: "#3d4a86"
-  menu-stamp-green: "#2f7d4f"
-  menu-stamp-red: "#b3261e"
+  menu-paper: "#f6f7f9"
+  menu-surface: "#ffffff"
+  menu-line: "#e4e8ec"
+  menu-line-strong: "#cfd6dd"
+  menu-ink: "#111d26"
+  menu-ink-soft: "#5b6670"
+  menu-faint: "#8b95a0"
+  menu-ok: "#1f7a4a"
+  menu-danger: "#b3261e"
   menu-ink-brand: "#0867c9"
   menu-ink-brand-press: "#0057ad"
-  menu-table: "#dfe7df"
-  menu-print-white: "#ffffff"
 typography:
   app-body:
     fontFamily: "SF Pro Text, -apple-system, BlinkMacSystemFont, system-ui, Segoe UI, sans-serif"
@@ -74,52 +73,43 @@ typography:
     fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace"
     fontSize: "14px"
     lineHeight: 1.45
-  menu-masthead:
-    fontFamily: "Barlow Condensed, Arial Narrow, system-ui, sans-serif"
-    fontSize: "38px"
+  menu-title:
+    fontFamily: "Bricolage Grotesque, Figtree, system-ui, sans-serif"
+    fontSize: "30px"
     fontWeight: 700
-    lineHeight: 1
-    letterSpacing: "0.01em"
+    lineHeight: 1.05
+    letterSpacing: "-0.03em"
   menu-sheet-title:
-    fontFamily: "Barlow Condensed, Arial Narrow, system-ui, sans-serif"
-    fontSize: "28px"
+    fontFamily: "Bricolage Grotesque, Figtree, system-ui, sans-serif"
+    fontSize: "26px"
     fontWeight: 700
-    letterSpacing: "0.03em"
+    letterSpacing: "-0.03em"
   menu-category:
-    fontFamily: "Barlow Condensed, Arial Narrow, system-ui, sans-serif"
+    fontFamily: "Bricolage Grotesque, Figtree, system-ui, sans-serif"
     fontSize: "23px"
     fontWeight: 700
-    letterSpacing: "0.03em"
-  menu-tab:
-    fontFamily: "Barlow Condensed, Arial Narrow, system-ui, sans-serif"
-    fontSize: "17px"
-    fontWeight: 600
-    letterSpacing: "0.05em"
-  menu-figure:
-    fontFamily: "Barlow Condensed, Arial Narrow, system-ui, sans-serif"
-    fontSize: "19px"
-    fontWeight: 600
-    fontFeature: "\"tnum\""
-  menu-form-label:
-    fontFamily: "Barlow Condensed, Arial Narrow, system-ui, sans-serif"
-    fontSize: "13px"
-    fontWeight: 600
-    letterSpacing: "0.08em"
+    letterSpacing: "-0.025em"
   menu-item:
-    fontFamily: "Barlow, system-ui, -apple-system, Segoe UI, sans-serif"
+    fontFamily: "Bricolage Grotesque, Figtree, system-ui, sans-serif"
     fontSize: "17px"
-    fontWeight: 600
-    lineHeight: 1.25
+    fontWeight: 650
+    lineHeight: 1.2
+    letterSpacing: "-0.015em"
+  menu-price:
+    fontFamily: "Bricolage Grotesque, Figtree, system-ui, sans-serif"
+    fontSize: "16px"
+    fontWeight: 700
+    fontFeature: "\"tnum\""
   menu-body:
-    fontFamily: "Barlow, system-ui, -apple-system, Segoe UI, sans-serif"
-    fontSize: "17px"
+    fontFamily: "Figtree, system-ui, -apple-system, Segoe UI, sans-serif"
+    fontSize: "16px"
     fontWeight: 400
-    lineHeight: 1.35
+    lineHeight: 1.4
   menu-small:
-    fontFamily: "Barlow, system-ui, -apple-system, Segoe UI, sans-serif"
+    fontFamily: "Figtree, system-ui, -apple-system, Segoe UI, sans-serif"
     fontSize: "14px"
     fontWeight: 400
-    lineHeight: 1.35
+    lineHeight: 1.4
 rounded:
   pill: "9999px"
   app-card: "16px"
@@ -128,19 +118,18 @@ rounded:
   lp-icon: "12px"
   lp-panel: "24px"
   lp-close: "32px"
-  menu-photo: "3px"
-  menu-box: "6px"
-  menu-qty: "7px"
-  menu-field: "8px"
-  menu-button: "9px"
-  menu-logo: "14px"
+  menu-check: "8px"
+  menu-input: "12px"
+  menu-control: "14px"
+  menu-logo: "18px"
+  menu-card: "20px"
+  menu-sheet: "26px"
 spacing:
   lp-wrap: "1180px"
   lp-gutter: "20px"
   lp-section: "clamp(80px, 10vw, 136px)"
-  menu-gutter: "18px"
-  menu-qty-column: "62px"
-  menu-column: "560px"
+  menu-gutter: "16px"
+  menu-column: "600px"
 components:
   button-primary:
     backgroundColor: "{colors.action-blue}"
@@ -177,70 +166,59 @@ components:
     backgroundColor: "{colors.lp-blue}"
     textColor: "#ffffff"
     rounded: "{rounded.lp-close}"
-  menu-stamp-button:
+  menu-button:
     backgroundColor: "{colors.menu-ink-brand}"
-    textColor: "{colors.menu-print-white}"
-    typography: "{typography.menu-figure}"
-    rounded: "{rounded.menu-button}"
-    padding: "0 16px"
+    textColor: "#ffffff"
+    rounded: "{rounded.menu-control}"
+    padding: "0 18px"
     height: "52px"
-  menu-stamp-button-active:
+  menu-button-active:
     backgroundColor: "{colors.menu-ink-brand-press}"
-  menu-form-box:
-    backgroundColor: "{colors.menu-paper-hi}"
-    textColor: "{colors.menu-ink}"
-    rounded: "{rounded.menu-box}"
-    padding: "5px 12px"
-    height: "52px"
-  menu-tab:
-    backgroundColor: "{colors.menu-paper}"
-    textColor: "{colors.menu-ink-soft}"
-    typography: "{typography.menu-tab}"
-    padding: "13px 10px 11px"
-  menu-tab-active:
-    textColor: "{colors.menu-ink-brand}"
-  menu-line:
-    backgroundColor: "{colors.menu-paper}"
+  menu-card:
+    backgroundColor: "{colors.menu-surface}"
     textColor: "{colors.menu-ink}"
     typography: "{typography.menu-item}"
-    height: "72px"
-  menu-line-open:
-    backgroundColor: "{colors.menu-paper-hi}"
-  menu-qty-box:
-    backgroundColor: "{colors.menu-paper-hi}"
+    rounded: "{rounded.menu-card}"
+    padding: "14px"
+    height: "104px"
+  menu-add:
+    backgroundColor: "{colors.menu-surface}"
     textColor: "{colors.menu-ink-brand}"
-    rounded: "{rounded.menu-qty}"
-    size: "42px"
-  menu-line-photo:
-    rounded: "{rounded.menu-photo}"
-    size: "58px"
-  menu-stepper:
-    backgroundColor: "{colors.menu-paper-hi}"
-    textColor: "{colors.menu-ink-brand}"
-    rounded: "{rounded.menu-field}"
-    height: "44px"
-  menu-stub:
-    backgroundColor: "{colors.menu-paper-hi}"
-    textColor: "{colors.menu-ink}"
-    padding: "8px 18px"
-    height: "66px"
-    width: "{spacing.menu-column}"
+    rounded: "{rounded.pill}"
+    size: "40px"
+  menu-add-filled:
+    backgroundColor: "{colors.menu-ink-brand}"
+    textColor: "#ffffff"
+  menu-tab:
+    backgroundColor: "transparent"
+    textColor: "{colors.menu-ink-soft}"
+    rounded: "{rounded.pill}"
+    padding: "9px 15px"
+  menu-tab-active:
+    backgroundColor: "{colors.menu-ink-brand}"
+    textColor: "#ffffff"
+  menu-order-bar:
+    backgroundColor: "{colors.menu-ink-brand}"
+    textColor: "#ffffff"
+    rounded: "{rounded.menu-card}"
+    height: "62px"
   menu-sheet:
-    backgroundColor: "{colors.menu-paper-hi}"
+    backgroundColor: "{colors.menu-surface}"
     textColor: "{colors.menu-ink}"
+    rounded: "{rounded.menu-sheet}"
     width: "{spacing.menu-column}"
 ---
 
 # BlueBar design
 
-BlueBar has three worlds, kept apart on purpose. The app (everything behind sign-in) is **Operate**: light, Apple-derived, quiet. The public landing at "/" is **Persuade**: "the bar at night", night navy bands around real BlueBar screens. Tokens prefixed `lp-` belong to the landing only and never enter the app; app tokens never appear on the landing, though BlueBar Blue (#0867c9) is shared by value as the brand. The guest menu at "/menu/<business>", opened from a table's QR code, is **Operate** for guests: the venue's own guest-check pad (comanda). Tokens prefixed `menu-` belong to the guest menu only; it uses no app or `lp-` tokens, and neither of them uses `menu-` tokens. The frontmatter is normative for all three.
+BlueBar has three worlds, kept apart on purpose. The app (everything behind sign-in) is **Operate**: light, Apple-derived, quiet. The public landing at "/" is **Persuade**: "the bar at night", night navy bands around real BlueBar screens. Tokens prefixed `lp-` belong to the landing only and never enter the app; app tokens never appear on the landing, though BlueBar Blue (#0867c9) is shared by value as the brand. The guest menu at "/menu/<business>", opened from a table's QR code, is **Operate** for guests in the landing's light Salla look, carrying the venue's colour. Tokens prefixed `menu-` belong to the guest menu only; it uses no app or `lp-` tokens, and neither of them uses `menu-` tokens. Staff sign-in and sign-up wear the Salla look too (`.onboard-salla` in src/style.css), light or dark. The frontmatter is normative for all three.
 
 # App (Operate)
 
 Mode: Operate. Simple, practical restaurant POS. No external fonts or heavy UI libraries. Motion is functional only: press feedback (scale .97), ≤200ms colour transitions and the payment dialog entrance; hover styles apply to hover-capable pointers only; reduced motion is respected.
 
 ## Shared system
-Apple-derived (awesome-design-md/apple): SF/system sans, ink #1d1d1f on parchment #f5f5f7, one Action Blue (#0066cc) for actions, selection and focus, pill CTAs/tabs/chips/search, 18px cards and 11px controls, hairline borders, no card shadows, frosted sticky top bar and blurred dialog backdrop, green occupied/positive states, amber attention states and red errors. Status always has a text label. Shared fields, search, badges, section headings and empty states in src/components.jsx. Consistent authored SVG icons; no runtime icon library. Visible keyboard focus, skip link, native form validation and a native modal dialog for payment review. Amounts use tabular numerals. Dates have explicit Albanian month names and 24-hour time.
+Apple-derived (awesome-design-md/apple): SF/system sans, ink #1d1d1f on parchment #f4f6f8, one Action Blue (#0867c9, hover #0077ed) for actions, selection and focus, pill CTAs/tabs/chips/search, 16px cards and 10px controls, hairline borders, no card shadows, frosted sticky top bar and blurred dialog backdrop, green occupied/positive states, amber (#835615) attention states and one red (#a3322a) for errors, all through the variables at the top of src/style.css. Status always has a text label. Shared fields, search, badges, section headings and empty states in src/components.jsx. Consistent authored SVG icons; no runtime icon library. Visible keyboard focus, skip link, native form validation and a native modal dialog for payment review. Amounts use tabular numerals. Dates have explicit Albanian month names and 24-hour time.
 
 ## Navigation and layout
 White persistent left navigation on desktop, with six visible icon/text destinations on mobile. Main page title, description and contextual action use a consistent hierarchy. Management pages pair working lists with supporting forms on wide screens and stack on smaller screens. Data tables turn into labeled records on phones. Search and filters offer recovery from empty results.
@@ -259,7 +237,7 @@ Persistent demo disclosure. Roles come from the server session (both a 6-digit P
 All six pages checked at 1440, 820 and 390px without document overflow. Browser flows verified for cash/change, cards, product edit/create, stock entry, staff creation, shift block/close/reopen, reload persistence and no-result recovery. Physical printing and production backend remain outside the prototype.
 
 ## Known drift (app)
-The Shared system prose above predates the build and is not repaired here; the frontmatter wins. The app ground is #f4f6f8 (not #f5f5f7) and Action Blue is #0867c9 (not #0066cc); the primary button hovers to #0077ed. Card radius is 16px and control radius 10px (not 18px / 11px). #f5f5f7 still appears as two one-off values in src/style.css.
+Card radius is 16px and control radius 10px; inner tiles and dialogs also use 12px and 14px, not yet reduced to tokens. Body ink is both #1d1d1f and #202428. The base button's hover and pressed greys (#f4f4f4, #ebebeb) are neutral, outside the cool palette.
 
 # Landing (Persuade): "The bar at night"
 
@@ -335,152 +313,70 @@ A bar after the doors open: night navy bands for the hero, voice ordering and ge
 - No implying every printer works without configuration, or that fiscalization works without a connected BlueBill account.
 - No app parchment (#f4f6f8) or guest-menu `menu-` tokens on the landing. BlueBar Blue is shared by value with the app on purpose: it is the brand.
 
-# Guest menu (Operate, public): "The venue's guest-check pad"
+# Guest menu (Operate, public): the venue's menu in the Salla look
 
-Source: menu.html, src/menu/ (menu.css holds every token and component style, fonts.css the faces, accents.js the venue inks). Everything below applies to the guest menu only. Surface brief: .impeccable/surfaces/src-menu-main-jsx.md.
+Source: menu.html, src/menu/ (menu.css holds every token and component style, fonts.css the faces, accents.js the venue colours). Everything below applies to the guest menu only. The Identiteti preview in the app (`.mp-*` in src/style.css) mirrors these values by hand; change both together. The earlier "Comanda" guest-check pad (mint paper, Barlow Condensed) is retired; .impeccable/surfaces/src-menu-main-jsx.md still describes it.
 
 ## Overview
 
-**Creative North Star: "The Comanda"**
-
-Ordering is filling in the waiter's guest check. The menu is printed on the venue's own ruled pad: mint paper ruled in form green, a header printed in the venue's ink, form labels in condensed caps, and the guest's basket is the check itself. A guest taps a quantity box and the number is stamped into it; opens a line and it unfolds into a slip; tears the check off to send it and keeps the carbon copy. It refuses the delivery-app list with a floating cart and a modal.
-
-Paper, rules and ink, literal and quiet. The venue's brand colour is the only ink that prints the pad's own marks (header, quantities, totals, actions); the photos are small prints pasted onto the lines, not the page's colour.
-
-**Key Characteristics:**
-- Light only (`color-scheme: light` in CSS and meta, theme-color menu-paper). A user rule: no dark variant.
-- Mint pad paper, hairline rules, form-green labels, the header printed in the venue's ink
-- Barlow Condensed caps for everything printed on the form; Barlow for what is written or read
-- Unnumbered ruled lines with a quantity box column and a ruled price column
-- Small photos pasted in with a white print border and a slight tilt
-- The check docked as a stub at the bottom; it rises as a sheet and tears off when sent
-- Carbon copies stamped with the order's status
-- Springs from motion; reduced motion follows the user's setting
+The landing's light Salla look carrying the venue's own colour: cool paper, white dish cards with the photo on the right, Bricolage Grotesque for names and prices, Figtree for reading. The venue's colour marks only what can be tapped. Light only (`color-scheme: light` in CSS and meta, theme-color menu-paper); a user rule: no dark variant.
 
 ## Colors
 
-Pad paper and form green, one venue ink, carbon blue for copies, and two stamp inks for status.
-
-### Primary
-- **Venue Ink** (menu-ink-brand): set at load from the venue's chosen accent (src/menu/accents.js: blue, terracotta, olive, plum, teal, amber, each AA with white text); blue is the default. It prints the masthead (logo stamp border, venue name, the heavy rule under it), the active tab and its underline, the quantity number and filled box border, checked form boxes, stepper glyphs, the stub label and count, sheet titles, the check total, the stamp button, the toast action, the notice's dashed border, focus ring (3px at 45%), selection (22%) and caret. **Venue Ink Press** (menu-ink-brand-press): the stamp button pressed.
-
-### Status
-- **Stamp Green** (menu-stamp-green): the DËRGUAR stamp and the success toast's mark. **Stamp Red** (menu-stamp-red): NUK U PRANUA and MBARUAR stamps, the rejection reason, the send error and the error toast. A waiting order (NË PRITJE) is stamped in Form Ink Soft. These stay out of the venue's ink so the three states read apart at a glance.
-- **Carbon** (menu-carbon): every carbon copy is written in it, like the blue under-sheet of a real pad.
-
-### Neutral
-- **Pad Paper** (menu-paper): page, lines, tab strip, the sheet backdrop wash (at 72%, 2px blur).
-- **Paper Highlight** (menu-paper-hi): form boxes, quantity boxes, steppers, checkboxes, the open line, the stub, sheets, toasts.
-- **Rule** (menu-rule): line rules, column rules, the stepper's inner rules, skeletons, disabled glyphs, the blank quantity box.
-- **Rule Strong** (menu-rule-strong): form-box and quantity-box borders, the tab strip's bottom rule, the dashed write-line, copy separators, the sold-out strike-through and the empty box's plus. Lines and marks only, never text.
-- **Label Green** (menu-label): small printed form labels (TAVOLINA, ORA, SASIA, SHTESA, column heads, category counts); darker than the rules so 11–13px caps stay readable (about 5.5:1).
-- **Form Ink** (menu-ink): written text, category headings and the 2px rule under them, the check's column rule and double total rule. **Form Ink Soft** (menu-ink-soft): descriptions, tagline, idle tabs, hints, footer.
-- **Print White** (menu-print-white): the logo stamp's ground, photo print borders, text on venue ink.
-- **Table** (menu-table): on screens 640px and wider, the surface the pad lies on.
-
-### Named Rules
-**The Venue Ink Rule.** The venue's colour prints the pad's own marks and what you can act on. Status never borrows it; stamps keep their own inks.
-
-**The Rule Is Not Text Rule.** Rule Strong draws lines and boxes; small labels use Label Green, body text Form Ink.
+- **Venue Colour** (menu-ink-brand): set at load from the venue's chosen accent (src/menu/accents.js: blue, terracotta, olive, plum, teal, amber, each AA with white text); blue is the default. It fills the active category pill, the add button once a dish is on the order, checked extras, the main button and the order bar; it inks the logo initials, actionable pills, stepper glyphs, the toast action, the search and note focus border, focus ring (3px at 45%), selection (22%) and caret. **Venue Colour Press** (menu-ink-brand-press): the main button pressed. **Brand soft** (10% of the venue colour on white): the notice, the add button on a card without a photo, pressed pills, the toast action.
+- **Paper** (menu-paper): page, sticky tab strip (88% with a 12px blur), photo placeholders, note inputs, stepper track, hover and press washes.
+- **Surface** (menu-surface): cards, pills, search, sheets, toasts, the language menu.
+- **Line** (menu-line) for every hairline; **Line Strong** (menu-line-strong) for the checkbox border, the sheet grabber and disabled stepper glyphs.
+- **Ink** (menu-ink): names, headings, prices, totals. **Ink Soft** (menu-ink-soft): descriptions, tagline, idle tabs, labels, hints, the footer. **Faint** (menu-faint): placeholders, category counts and sold-out names only; too light for text that must be read.
+- **OK** (menu-ok): the accepted badge and the success toast's mark. **Danger** (menu-danger): sold out, rejected, the rejection reason, send errors. Status never borrows the venue colour.
 
 ## Typography
 
-**Form Font:** Barlow Condensed 600/700 (self-hosted woff2, OFL, latin + latin-ext for ë and ç), fallback Arial Narrow, system-ui
-**Body Font:** Barlow 400/500/600 (self-hosted, same files), fallback system-ui
+**Display:** Bricolage Grotesque 650–800 (self-hosted variable woff2, shared with the landing), negative tracking. **Body:** Figtree (same). Sentence case throughout; no uppercase labels.
 
-**Character:** The condensed caps are what the printer put on the pad; Barlow is the handwriting-free voice of what is read: names, descriptions, notes.
-
-### Hierarchy
-- **Masthead** (menu-masthead, uppercase): the venue name in venue ink; the initials in the logo stamp use the same face at 30px.
-- **Sheet title** (menu-sheet-title, uppercase, venue ink): POROSIA, POROSITË E MIA.
-- **Category** (menu-category, uppercase, form ink): category headings, with the item count beside them in 14px Label Green.
-- **Tab** (menu-tab, uppercase): category tabs.
-- **Figure** (menu-figure, tabular): prices, check amounts. Form-box values are 21px, the quantity number 25px/700, stepper value 20px/700, stub total 24px/700, check total 30px/700; the stamp button is 19px/700 uppercase.
-- **Form label** (menu-form-label, uppercase): legends, column heads, write-line labels. In form boxes it is 11px; MBARUAR is 12px/700.
-- **Item** (menu-item): dish names on lines and on the check.
-- **Body** (menu-body): root text, extras, note inputs (17px, so iOS never zooms on focus). Slip description 16px/1.45; tagline 15px.
-- **Small** (menu-small): one-line clamped descriptions, extras under check lines, hints.
+- **Title** (menu-title): the venue name, 36px from 640px up; the logo initials are 25px/800.
+- **Sheet title** (menu-sheet-title), **Category** (menu-category, with the item count beside it in 14px Faint).
+- **Item** (menu-item): dish names. **Price** (menu-price, tabular). Order bar count and total 18px/700, check total 28px/700, check amounts 16px/650, stepper value 18px/700.
+- **Body** (menu-body): root text; inputs are 16px so iOS never zooms on focus. **Small** (menu-small): two-line clamped descriptions, hints.
 
 All numbers use tabular numerals. Headings balance.
 
-### Named Rules
-**The Printed Form Rule.** If the printer put it on the pad (labels, headings, column heads, figures, stamps, buttons), it is Barlow Condensed in caps; if a person reads or writes it, it is Barlow in sentence case.
-
 ## Layout
 
-One column (menu-column), the pad, with gutter menu-gutter. The masthead is a two-column grid: the 66px logo stamp spans two rows beside the venue name and tagline, then a row of ruled form boxes across the full width (TAVOLINA with the table zero-padded, ORA, POROSITË E MIA with a count once something was sent, GJUHA SQ/EN). Safe-area insets are honoured top and bottom.
+One column (menu-column) with gutter menu-gutter, safe-area insets honoured top and bottom. The header is a two-column grid: the 64px logo tile beside the venue name and tagline, then a row of 40px pills (table zero-padded, "my orders" with a count once something was sent, the language menu pushed right), then the search field. Below it the category pills stick to the top, scroll sideways without a scrollbar, and centre the active pill by scrolling only the strip; the active pill follows the last category heading that passed under it.
 
-Below it the tab strip sticks to the top: paper ground, a strong bottom rule, scrolls sideways without a scrollbar, and centres the active tab by scrolling only itself. The active tab follows the last category heading that passed under it.
+Each category is a heading over a grid of dish cards, 10px apart. The page reserves bottom room for the order bar when it shows.
 
-**Lines.** Each category is a heading over a 2px form-ink rule, then unnumbered ruled lines (a line number tells a guest nothing): the quantity column (menu-qty-column, ruled off on its right) with a 42px box | name and one-line description | a 58px pasted photo | the price column, 82px, ruled off on its left. Minimum line height 72px. The page reserves bottom room for the stub when it shows.
+## Elevation and shapes
 
-**Desktop (640px and wider):** the pad lies on the table (menu-table), 28px from the top, with a 4px radius and a paper shadow.
+White surfaces on paper with one soft shadow (`0 1px 2px rgba(17,29,38,.05), 0 8px 24px -14px rgba(17,29,38,.22)`): cards and the logo tile. The add button, order bar, sheet, language menu and toasts lift more, each with its own shadow; the order bar's and main button's are tinted with the venue colour. Sheets rise over a 38% ink scrim.
 
-## Elevation & Depth
-
-Flat paper with rules. Depth is physical and sparse: things pasted onto the paper, and paper lying on paper.
-
-### Shadow Vocabulary
-- **Pasted print** (`0 1px 2px rgba(36,48,42,.18), 0 4px 10px -6px rgba(36,48,42,.35)`): line photos. The slip photo lifts more (`0 2px 4px rgba(36,48,42,.15), 0 14px 28px -14px rgba(36,48,42,.45)`).
-- **Sheet** (`0 -1px 0` rule-strong, `0 -18px 40px -24px rgba(36,48,42,.45)`): the check rising over the pad.
-- **Toast** (`0 12px 30px -12px rgba(36,48,42,.45)`).
-- **Pad on the table** (`0 1px 3px rgba(36,48,42,.12), 0 28px 60px -28px rgba(36,48,42,.45)`): desktop only.
-- **Stamp button** (`inset 0 0 0 2px` white at 28%, `inset 0 0 0 4px` venue ink): an inner printed border, not a lift.
-
-### Named Rules
-**The Paper Wash Rule.** A sheet rises over a light paper wash (pad paper at 72%, 2px blur), never a dark scrim.
-
-## Shapes
-
-Printed-form geometry: square-ish boxes with small radii. Photos 3px with a white print border (3px on lines, 5px on the slip), tilted −1.5° (1.2° on even lines, −1° on the slip). Form boxes 6px, quantity box 7px, stepper, notice and error 8px, stamp button 9px, toasts 10px, logo stamp 14px. Stamps tilt (MBARUAR −2°, copy stamps −6°). The stub and the sheet have square corners and a perforated top edge: 14px repeat of 4.5px half-holes, 8px tall. The masthead closes with a 6px double rule in venue ink (two 2px rules with a 2px gap), like the printed head of a pad. The check total sits under a 3px double rule in form ink.
+Radii: pills, tabs, add button, stepper and badges fully round; cards, order bar and skeletons 20px (menu-card); sheet 26px on top; logo 18px; photos, search, notice and main button 14px; note inputs and errors 12px; toasts and the language menu 16px; checkboxes 8px.
 
 ## Components
 
-### Masthead
-The venue's logo in a white stamp (66px, 2px venue-ink border, radius menu-logo; the initials when there is no logo, nothing invented), the name, the manager's tagline, and the ruled form-box row. Form boxes (menu-form-box) carry an 11px label over a 21px value; actionable ones are in venue ink and tint 10% on press. The language box holds SQ/EN keys; the pressed one is filled with venue ink.
+- **Dish card** (menu-card): name, two-line description and price beside a 104px photo; minimum 104px tall. The **add button** (menu-add, 40px) sits on the photo's corner, or at the card's right edge on a brand-soft ground when there is no photo; tapping it adds the dish and it fills with the venue colour and the count (scale 1.6 → 1, spring 520/22). A dish with extras opens instead. **Sold out:** name and price in Faint, photo greyscale at 55%, a red "sold out" badge, no add button.
+- **Card opened:** unfolds in place (height spring), the photo travelling into a 4:3 print (shared layoutId): description, extras as 48px rows with a 24px checkbox, a note input, then the stepper beside the main button "Shto · <total>", and a close link. One card open at a time.
+- **Main button** (menu-button): venue colour, white 700 16px, presses to 0.97 and Venue Colour Press (110ms). **Stepper:** a round track on Paper with two 40px white keys.
+- **Category pills** (menu-tab): the filled pill (menu-tab-active) slides to the one being read (layoutId "tab-ink", spring 500/40).
+- **Language menu:** a pill that opens a 16px-radius list with 44px rows; the chosen one in venue colour.
+- **Order bar** (menu-order-bar): floats at the bottom once something is on the order: count tile, "order" with the table under it, the total rolling through NumberFlow, a chevron. Slides up on a spring (420/40), presses to 0.98, opens the check.
+- **Sheets** (menu-sheet): the check and "my orders" rise in a native dialog, max 92dvh. The grabber drags it: down follows the finger, up barely gives; it closes past 140px or on a fast flick; Escape and taps on the scrim close it too. The check: lines with a stepper (down to zero removes), name with extras and note, amount; an order note; the total; the wide main button and a hint. **Sending** lifts the whole sheet away upward (−115vh, −3°, 450ms ease-in) while it still shows what was sent; then a toast confirms.
+- **My orders:** newest first: order number and time, a status badge (accepted in OK, rejected in Danger, waiting neutral), the rejection reason, the lines.
+- **Toasts:** Sonner, unstyled: a white 16px-radius slip, top centre, with an OK or Danger mark and a brand-soft action.
+- **Icons:** one authored SVG stroke set (src/menu/icons.jsx), 24px grid, 2px round strokes, currentColor.
 
-### Tab strip
-Category tabs (menu-tab); the active one turns venue ink and a 3px underline (rounded top) slides under it (motion layoutId "tab-ink", spring 500/40).
+## Motion and libraries
 
-### Line
-A dish as a ruled line (menu-line). **Quantity box** (menu-qty-box): a plus in Rule Strong when empty; tapping it writes the dish onto the check, and the count is stamped in (25px venue ink, scale 1.9 → 1 with a −4° tilt, spring 520/22) and the border turns venue ink. A dish with extras opens instead. Tapping the rest of the line opens it. **Sold out:** name struck through in Rule Strong, photo greyscale at 55%, price in Form Ink Soft, a red MBARUAR stamp under the name, and a dashed blank quantity box. Lines that cannot be ordered (no table key) show the same blank box.
-
-### Slip (signature)
-An open line unfolds in place into a slip (height spring 380/36), the row's photo travelling into a 4:3 print up to 300px wide (shared layoutId). Inside, aligned past the quantity column: the description, extras as form checkboxes (24px, 5px radius, ruled rows of 46px; checked fills with venue ink and a white check), a note on a dashed write-line (solid venue ink on focus), then the stepper beside the stamp button "Shto · <total>", and a "Mbyll artikullin" link. Only one line is open at a time.
-
-### Stamp button and stepper
-**Stamp button** (menu-stamp-button): venue ink, white caps, inner printed border; presses to 0.97 and Venue Ink Press (110ms). **Stepper** (menu-stepper): a ruled box, [−] value [+], 42px keys with venue-ink glyphs, inner rules around the value; disabled keys fade to Rule.
-
-### Check stub
-Docked flush at the bottom, full pad width (menu-stub), once anything is written on the check: perforated top edge, "POROSIA" with the table under it in venue ink, a ruled SASIA box, the total rolling through NumberFlow, and a chevron. It slides up on a spring (420/40) and presses to 0.98. Tapping it opens the check.
-
-### Check sheet
-The check rises as pad paper (menu-sheet) in a native dialog, max 92dvh, over the paper wash. Its perforated top edge is the drag handle: down follows the finger, up barely gives; it closes past 140px or on a fast flick, otherwise springs back; Escape and taps on the wash close it too. Inside: POROSIA with TAVOLINA and ORA boxes; columns SASIA | ARTIKULLI | ÇMIMI over a 2px form-ink rule; each line a stepper (down to zero removes it), the name with extras and note, and a NumberFlow amount; an order note write-line; GJITHSEJ under a double rule with the total in venue ink; the wide stamp button "Dërgo porosinë" and a hint. **Sending** tears the whole sheet off, perforated edge and all, upward (−115vh, −3°, 450ms ease-in) while it still shows what was written; then a toast confirms.
-
-### Carbon copies
-"Porositë e mia" is a sheet of carbon copies, newest first, each in Carbon: "POROSIA Nr. <order number> · <time>", a rubber stamp in its status ink (DËRGUAR, NË PRITJE, NUK U PRANUA; 2px border, −6°, 88% opacity), the rejection reason in red, the lines, dashed separators, and GJITHSEJ DERI TANI with a note that the bill is the final price.
-
-### Toasts
-Sonner, unstyled and dressed as pad slips: paper highlight, 1.5px Rule Strong border (Stamp Red for errors), a stamp-green or red mark, an outlined venue-ink action (POROSITË E MIA after sending). Top centre. They report send success and staff decisions wherever the guest is on the page.
-
-### Icons
-One authored SVG stroke set (src/menu/icons.jsx): 24px grid, 2px round strokes, currentColor.
-
-### Motion and libraries
-Chosen through pick-ui-library: motion (springs, layout, drag; LazyMotion with domMax loaded asynchronously, so the menu paints before motion arrives), @number-flow/react (rolling totals), sonner (toasts), clsx. All motion is springs except the tear. MotionConfig reducedMotion="user" drops transforms for users who ask; the sheet then fades instead of sliding, and CSS transitions and the skeleton pulse switch off.
+motion (springs, layout, drag; LazyMotion with domMax loaded asynchronously, so the menu paints before motion arrives), @number-flow/react, sonner, clsx. All motion is springs except the send. MotionConfig reducedMotion="user" drops transforms; the sheet then fades, and CSS transitions and the skeleton pulse switch off.
 
 ## Do's and Don'ts
 
-### Do:
-- **Do** put every dish on a ruled line with its quantity box and price column; keep lines working with and without a photo.
-- **Do** print the pad's marks in the venue's ink and status in stamp inks.
-- **Do** set printed form text in Barlow Condensed caps and read text in Barlow.
-- **Do** open lines in place as slips; keep the photo continuous through the shared layout.
-- **Do** keep the check as paper: a docked stub, a sheet held by its perforated edge, torn off to send.
-
-### Don't:
-- **Don't** add a dark mode or a dark scrim.
-- **Don't** number the lines, or use emoji or colour gradients (the perforation is a radial-gradient mask, not a colour fade).
-- **Don't** use Rule Strong for text, or the venue's ink for status.
-- **Don't** open a dish in a modal popup or float a cart over the page.
-- **Don't** use app or `lp-` tokens here.
+- **Do** keep every dish working with and without a photo.
+- **Do** keep the venue colour for what can be tapped, and status in OK and Danger.
+- **Do** open dishes in place; keep the photo continuous through the shared layout.
+- **Don't** add a dark mode.
+- **Don't** use emoji, colour gradients or uppercase labels.
+- **Don't** set readable text in Faint.
+- **Don't** open a dish in a modal popup.
+- **Don't** use app or `lp-` tokens here; the faces and BlueBar Blue are shared with the landing by value.

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { bill, DENOMINATIONS, drawer, money, posOf, shiftFor, total, plural } from "./domain.js";
+import { bill, DENOMINATIONS, drawer, money, posOf, shiftFor, since, total, plural } from "./domain.js";
 import { fetchShiftReport } from "./api.js";
 import { Badge, Field, Icon, SectionHeading } from "./components.jsx";
 
@@ -10,11 +10,6 @@ const date = (v) => {
 };
 const time = (v) => new Date(v).toLocaleTimeString("sq-AL", { hour: "2-digit", minute: "2-digit", hour12: false });
 const amount = (n) => new Intl.NumberFormat("sq-AL", { maximumFractionDigits: 0 }).format(n);
-const elapsed = (from) => {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(from)) / 60000));
-  const h = Math.floor(minutes / 60);
-  return h ? `${h} orë ${minutes % 60} min` : `${minutes} min`;
-};
 const signed = (n) => (n > 0 ? `+${money(n)}` : money(n));
 
 // The printed / previewed shift report, from GET /api/shifts/:id/report.
@@ -247,7 +242,7 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices, history }) {
           <h2>Turni #{state.shift.id}</h2>
           <p>
             Hapur {time(state.shift.opened)}
-            {state.shift.openedBy ? ` nga ${state.shift.openedBy}` : ""} · {elapsed(state.shift.opened)}
+            {state.shift.openedBy ? ` nga ${state.shift.openedBy}` : ""} · {since(state.shift.opened)}
           </p>
         </div>
         {/* Closing is blocked while orders are open, so it only leads when nothing is. */}
