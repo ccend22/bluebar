@@ -1,12 +1,13 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
-import { bill, COURSES, invoicePos, money, posOf, printerFor, ticketPos, total, plural, tableName } from "./domain.js";
+import { bill, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
 import { AiImport, ProductImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
+import { Finance } from "./Finance.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
@@ -19,7 +20,8 @@ import { OrderHistory } from "./OrderHistory.jsx";
 import { PaymentForm, RefundForm } from "./PaymentDialog.jsx";
 import { WaiterPatternEditor } from "./PatternPad.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
-import { arrange, collisions, sizeFor, spanOf } from "./floorGeometry.js";
+import { RoomEditor } from "./RoomEditor.jsx";
+import { arrange, collisions } from "./floorGeometry.js";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { Reports } from "./Reports.jsx";
 import { Orders } from "./Orders.jsx";
@@ -36,7 +38,6 @@ import {
   Field,
   SectionHeading,
   TableSymbol,
-  TableShapePicker,
   DepartmentTag,
   BrandMark,
 } from "./components.jsx";
@@ -44,6 +45,8 @@ import "./style.css";
 
 // On a phone the manager's nav is a bottom tab bar: these stay as tabs, the rest
 // open from "Më shumë".
+// The manager's navigation in sections, each named above its first page.
+const NAV_GROUPS = { Tavolinat: "Shërbimi", Faturat: "Shitjet dhe financat", Inventari: "Magazina", Kamarierët: "Ekipi dhe sistemi" };
 const MOBILE_TABS = ["Tavolinat", "Porositë", "Faturat", "Turnet"];
 const pages = [
   {
@@ -73,6 +76,10 @@ const pages = [
     description: "Çdo pagesë e regjistruar, çdo faturë lehtësisht e gjendshme.",
   },
   {
+    name: "Raportet",
+    icon: "chart",
+    description: "Financat, llogaritë, shitjet dhe shpenzimet.",
+  },  {
     name: "Inventari",
     icon: "stock",
     description: "Kontrolloni gjendjen dhe mbani stokun gati për shërbim.",
@@ -92,11 +99,8 @@ const pages = [
     icon: "clock",
     description: "Nga fondi fillestar te numërimi përfundimtar i arkës.",
   },
-  {
-    name: "Raportet",
-    icon: "chart",
-    description: "Të ardhurat, produktet dhe kamarierët më të mirë.",
-  },
+
+
   {
     name: "Cilësimet",
     icon: "settings",
@@ -360,16 +364,11 @@ function App({ user, onLogout, onUserChange }) {
     [report, setReport] = useState(null),
     [cancelling, setCancelling] = useState(false),
     [deleteConfirmId, setDeleteConfirmId] = useState(null),
-    [floorEditing, setFloorEditing] = useState(false),
     [floorSelected, setFloorSelected] = useState(null),
-    [floorSaving, setFloorSaving] = useState(false),
     // Table management works on an unsaved draft — new tables, edited area/shape/seats,
     // moved/resized tables — shown live everywhere and saved with one "Konfirmo".
-    [tableEdits, setTableEdits] = useState({}),
-    [tableLayout, setTableLayout] = useState({}),
-    [tablesAdded, setTablesAdded] = useState([]),
-    [newTable, setNewTable] = useState({ area: "", shape: "Drejtkëndësh", seats: 4, count: 1 }),
-    [leaving, setLeaving] = useState(() => new Set()),
+    // Ndrysho sallën: changes not yet confirmed, by table id (each a whole table.save row).
+    [roomDraft, setRoomDraft] = useState({}),
     [orderMode, setOrderMode] = useState("summary"),
     [fiscalizeChoice, setFiscalizeChoice] = useState(false),
     [ticketPrint, setTicketPrint] = useState(null),
@@ -403,7 +402,48 @@ function App({ user, onLogout, onUserChange }) {
     document.body.classList.add("order-open");
     return () => document.body.classList.remove("order-open");
   }, [selected, page, manageTables]);
+  // A soft ripple from where a button was pressed, everywhere in the app. Drawn in a clipping
+  // layer of its own, so a button's badge or position is never touched; skipped for anyone who
+  // asked for less motion.
+  useEffect(() => {
+    const press = (e) => {
+      const button = e.target.closest?.(".app button:not(:disabled):not(.pattern-dot):not(.fp-handle)");
+      if (!button || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (getComputedStyle(button).position === "static") button.style.position = "relative";
+      const box = button.getBoundingClientRect();
+      const size = Math.max(box.width, box.height) * 2.2;
+      const layer = document.createElement("span");
+      layer.className = "ripple-layer";
+      const wave = document.createElement("span");
+      wave.className = "ripple";
+      Object.assign(wave.style, { width: `${size}px`, height: `${size}px`, left: `${e.clientX - box.left - size / 2}px`, top: `${e.clientY - box.top - size / 2}px` });
+      layer.append(wave);
+      button.append(layer);
+      setTimeout(() => layer.remove(), 650);
+    };
+    document.addEventListener("pointerdown", press);
+    return () => document.removeEventListener("pointerdown", press);
+  }, []);
   const notify = (text, tone = "success") => setNotice({ text, tone });
+  // A notice fades out by itself: a few seconds, longer with a button on it ("Printo faturën")
+  // or when it is a problem, and not while the pointer or the keyboard is on it.
+  const [noticeLeaving, setNoticeLeaving] = useState(false);
+  const noticeHeld = useRef(false);
+  useEffect(() => {
+    if (!notice) return;
+    setNoticeLeaving(false);
+    const ms = notice.tone === "error" ? 10000 : notice.tickets || receipt || report ? 7000 : 4000;
+    let fade, gone;
+    const wait = () => {
+      fade = setTimeout(() => {
+        if (noticeHeld.current) return wait();
+        setNoticeLeaving(true);
+        gone = setTimeout(() => setNotice(null), 300);
+      }, ms);
+    };
+    wait();
+    return () => (clearTimeout(fade), clearTimeout(gone));
+  }, [notice]);
   // An order's messages name its table: with several tables open, "out of stock" alone
   // doesn't say where.
   const tableLabel = (payload) =>
@@ -420,11 +460,12 @@ function App({ user, onLogout, onUserChange }) {
     }
   };
   const nav = (p) => {
-    if (!leaveTableDraft()) return;
+    if (!leaveRoomDraft()) return;
     // The page cross-fades into the next one where the browser can (the navigation stays put);
     // otherwise, and for anyone asking for less motion, it just swaps.
     if (p !== page && document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches)
-      document.startViewTransition(() => flushSync(() => showPage(p)));
+      // A transition cut short (another tap, the tab hidden) is not an error: the page has changed.
+      document.startViewTransition(() => flushSync(() => showPage(p))).ready.catch(() => {});
     else showPage(p);
     setTimeout(() => heading.current?.focus(), 0);
   };
@@ -444,95 +485,25 @@ function App({ user, onLogout, onUserChange }) {
     setTicketPrint(null);
     setManageTables(false);
     setReport(null);
-    setFloorEditing(false);
     setFloorSelected(null);
     setOrderMode("summary");
   };
-  const tableFields = (t) => ({ label: t.label || "", area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats });
-  const draftCount = {
-    added: tablesAdded.length,
-    edited: Object.keys(tableEdits).length,
-    moved: Object.keys(tableLayout).filter((id) => !tableEdits[id]).length,
-  };
-  const draftDirty = draftCount.added + draftCount.edited + draftCount.moved > 0;
-  const discardTableDraft = () => {
-    setTableEdits({});
-    setTableLayout({});
-    setTablesAdded([]);
-    setEditor(null);
-  };
-  // false = the manager chose to stay and keep their unsaved tables.
-  const leaveTableDraft = () => {
-    if (draftDirty && !window.confirm("Ndryshimet e tavolinave nuk janë ruajtur. T'i hedh poshtë?")) return false;
-    discardTableDraft();
+  const draftTable = (id, patch) =>
+    setRoomDraft((draft) => {
+      const t = state.tables.find((x) => x.id === id);
+      const saved = { label: t.label || "", area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats, posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation };
+      const next = { ...saved, ...draft[id], ...patch };
+      // Changed back by hand: nothing pending for it any more.
+      const { [id]: _, ...rest } = draft;
+      return Object.keys(saved).every((k) => saved[k] === next[k]) ? rest : { ...draft, [id]: next };
+    });
+  // false = the manager chose to stay and keep the changes they haven't confirmed.
+  const leaveRoomDraft = () => {
+    if (Object.keys(roomDraft).length && !window.confirm("Ndryshimet e sallës nuk janë konfirmuar. T'i hedh poshtë?")) return false;
+    setRoomDraft({});
     return true;
   };
-  // Only differences from the saved table are kept, so undoing a change by hand
-  // (clicking the old shape again) leaves nothing pending.
-  const editTable = (id, patch) =>
-    setTableEdits((edits) => {
-      const saved = tableFields(state.tables.find((t) => t.id === id));
-      const merged = { ...saved, ...edits[id], ...patch };
-      const { [id]: _, ...rest } = edits;
-      return Object.keys(saved).every((k) => saved[k] === merged[k]) ? rest : { ...edits, [id]: merged };
-    });
-  const changeFloorLayout = (id, patch) =>
-    setTableLayout((layout) => {
-      const t = state.tables.find((x) => x.id === id);
-      return {
-        ...layout,
-        [id]: { posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation, ...layout[id], ...patch },
-      };
-    });
-  const addDraftTable = () => {
-    const area = newTable.area.trim();
-    if (!area) return notify("Vendosni zonën e tavolinës.", "error");
-    const { shape, seats, count } = newTable;
-    // The whole batch at once; each card's entrance is staggered so the eye can count them.
-    setTablesAdded((added) => [...added, ...Array.from({ length: count }, (_, i) => ({ key: crypto.randomUUID(), area, shape, seats, delay: i }))]);
-    // The next batch starts from one table again: a second zone shouldn't inherit "6".
-    setNewTable((t) => ({ ...t, count: 1 }));
-    // New cards land after every saved table: bring them into view so the entrance is seen.
-    setTimeout(() => [...document.querySelectorAll(".table-admin-card.new")].pop()?.scrollIntoView({ behavior: "smooth", block: "center" }));
-  };
-  // A card plays its exit before it leaves the grid (or, for a delete the server refuses, comes back).
-  const vanish = (id, remove) => {
-    setLeaving((l) => new Set(l).add(id));
-    setTimeout(async () => {
-      await remove();
-      setLeaving((l) => {
-        const n = new Set(l);
-        n.delete(id);
-        return n;
-      });
-    }, 220);
-  };
-  async function saveTableDraft() {
-    if (Object.values(tableEdits).some((e) => !e.area.trim()))
-      return notify("Çdo tavolinë duhet të ketë një zonë.", "error");
-    const ids = [...new Set([...Object.keys(tableEdits), ...Object.keys(tableLayout)])].map(Number);
-    const tables = [
-      ...ids
-        .map((id) => state.tables.find((t) => t.id === id))
-        .filter(Boolean)
-        .map((t) => {
-          const fields = { ...tableFields(t), ...tableEdits[t.id] };
-          return { id: t.id, ...fields, area: fields.area.trim(), ...tableLayout[t.id] };
-        }),
-      ...tablesAdded.map(({ area, shape, seats }) => ({ area, shape, seats })),
-    ];
-    const parts = [
-      draftCount.added && `${draftCount.added} ${draftCount.added === 1 ? "tavolinë e re" : "tavolina të reja"}`,
-      draftCount.edited && `${draftCount.edited} ${draftCount.edited === 1 ? "e ndryshuar" : "të ndryshuara"}`,
-      draftCount.moved && `${draftCount.moved} ${draftCount.moved === 1 ? "e zhvendosur" : "të zhvendosura"}`,
-    ].filter(Boolean);
-    setFloorSaving(true);
-    if (await update("tables.save", { tables }, `U ruajt: ${parts.join(" · ")}.`)) {
-      discardTableDraft();
-      setFloorSelected(null);
-    }
-    setFloorSaving(false);
-  }
+
   // Porositë opens the full order window only when asked ("Ndrysho porosinë"); paying from
   // its receipt selects the table without it.
   const [orderWindow, setOrderWindow] = useState(false);
@@ -557,11 +528,19 @@ function App({ user, onLogout, onUserChange }) {
       ),
     ];
   // The floor plan shows the unsaved draft (shape, size, position) as if it were saved.
-  const floorTables = activeTables.map((t) => ({ ...t, ...tableEdits[t.id], ...tableLayout[t.id] }));
+  const floorTables = activeTables.map((t) => ({ ...t, ...roomDraft[t.id] }));
   // Tables (by id) that claim a cell another table also claims.
-  const floorClashes = [...new Set(collisions(floorTables).flat())];
+  // Rooms of their own (the manager's choice): every zone is its own room, shown one at a time,
+  // and tables only clash with tables in the same room.
+  const separateRooms = state.separateRooms === true;
+  const room = separateRooms ? (areas.includes(area) && area !== "Të gjitha" ? area : areas[1]) : area;
+  const floorClashes = [
+    ...new Set((separateRooms ? areas.slice(1).flatMap((a) => collisions(floorTables.filter((t) => t.area === a))) : collisions(floorTables)).flat()),
+  ];
   const table = activeTables.find((t) => t.id === selected),
     occupied = activeTables.filter((t) => t.lines.length).length;
+  // Today's reservations by table, written on the floor.
+  const reservedToday = tableReservations(state.reservations);
   // Not counted (an espresso, a cocktail): always available, never low.
   const available = (p) =>
     p.trackStock === false ? Infinity : p.stock -
@@ -894,7 +873,7 @@ function App({ user, onLogout, onUserChange }) {
         Kalo te përmbajtja
       </a>
       <div
-        className={`app ${page === "Tavolinat" && !manageTables ? "floor-app" : ""}`}
+        className={`app ${page === "Tavolinat" ? "floor-app" : ""}`}
         inert={!!database.pending && !database.busy && !database.syncingOrders}
       >
         <aside className="sidebar">
@@ -909,8 +888,9 @@ function App({ user, onLogout, onUserChange }) {
             {pages
               .filter((p) => role === "Menaxher" || ["Tavolinat", "Porositë", "Repartet", "Rezervimet"].includes(p.name))
               .map((p) => (
+                <React.Fragment key={p.name}>
+                {role === "Menaxher" && NAV_GROUPS[p.name] && <span className="nav-group" aria-hidden="true">{NAV_GROUPS[p.name]}</span>}
                 <button
-                  key={p.name}
                   className={role === "Menaxher" && !MOBILE_TABS.includes(p.name) ? "nav-extra" : undefined}
                   aria-current={page === p.name ? "page" : undefined}
                   onClick={() => {
@@ -927,6 +907,7 @@ function App({ user, onLogout, onUserChange }) {
                     <span className="nav-count guest" aria-label="Porosi të reja nga menuja">{state.guestOrders.length + state.guestAlerts.length}</span>
                   )}
                 </button>
+                </React.Fragment>
               ))}
             {role === "Menaxher" && (
               <button
@@ -1037,7 +1018,8 @@ function App({ user, onLogout, onUserChange }) {
           )}
           <main id="main">
             <fieldset className="workspace-controls" disabled={database.busy} aria-busy={database.busy} aria-label="Hapësira e punës">
-            <div className="title-row">
+            {/* Raportet carries its own header, with its tabs beside the title. */}
+            <div className={`title-row ${page === "Raportet" ? "sr-only" : ""}`}>
               <div>
                 <h1 ref={heading} tabIndex={-1}>
                   {page}
@@ -1057,33 +1039,7 @@ function App({ user, onLogout, onUserChange }) {
                       Shto produkt
                     </button>
                   </>
-                ) : page === "Tavolinat" && role === "Menaxher" ? (
-                  manageTables ? (
-                    <button
-                      onClick={() => {
-                        if (!leaveTableDraft()) return;
-                        setFloorEditing(false);
-                        setFloorSelected(null);
-                        setManageTables(false);
-                        setSelected(null);
-                      }}
-                    >
-                      <Icon name="tables" size={18} />
-                      Shiko sallën
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setManageTables(true);
-                        setSelected(null);
-                        setEditor(null);
-                      }}
-                    >
-                      <Icon name="edit" size={18} />
-                      Menaxho sallën
-                    </button>
-                  )
-                ) : (
+                ) : page === "Tavolinat" ? null : (
                   <span className="date">
                     <Icon name="clock" size={16} />
                     {longDate(new Date())}
@@ -1146,8 +1102,13 @@ function App({ user, onLogout, onUserChange }) {
               <div
                 // With a table's popup open the page is behind it: the notice floats above, or a
                 // refused add ("Pa stok", "Turni është i mbyllur"…) would look like nothing happened.
-                className={`notice ${notice.tone} ${((page === "Tavolinat" || page === "Porositë") && table) || (page === "Produktet" && editor) ? "floating" : ""}`}
+                // On Tavolinat it always floats, so the room never moves under it.
+                className={`notice ${notice.tone} ${page === "Tavolinat" || (page === "Porositë" && table) || (page === "Produktet" && editor) ? "floating" : ""} ${noticeLeaving ? "leaving" : ""}`}
                 role={notice.tone === "error" ? "alert" : "status"}
+                onPointerEnter={() => (noticeHeld.current = true)}
+                onPointerLeave={() => (noticeHeld.current = false)}
+                onFocus={() => (noticeHeld.current = true)}
+                onBlur={() => (noticeHeld.current = false)}
               >
                 <Icon
                   name={notice.tone === "error" ? "info" : "check"}
@@ -1187,377 +1148,26 @@ function App({ user, onLogout, onUserChange }) {
 
             {page === "Tavolinat" &&
               (manageTables ? (
-                <div className="management-layout table-management-layout">
-                  <section className="panel table-management-panel">
-                    <SectionHeading
-                      title="Tavolinat e lokalit"
-                      description={`${plural(state.tables.length, "tavolinë", "tavolina")} · ${activeTables.length} aktive`}
-                    >
-                      <div className="floor-edit-actions">
-                        {floorEditing ? (
-                          <button onClick={() => (setFloorEditing(false), setFloorSelected(null))}>
-                            <Icon name="tables" size={17} />
-                            Lista e tavolinave
-                          </button>
-                        ) : (
-                          <button onClick={() => setFloorEditing(true)} disabled={!activeTables.length}>
-                            <Icon name="location" size={17} />
-                            Vendos tavolinat në sallë
-                          </button>
-                        )}
-                        <button className="primary" onClick={() => setEditor({})}>
-                          <Icon name="plus" size={18} />
-                          Shto tavolina
-                        </button>
-                      </div>
-                    </SectionHeading>
-                    {floorEditing ? (
-                      <div className="floor-management">
-                        {floorClashes.length > 0 ? (
-                          <div className="notice warning floor-clash">
-                            <Icon name="info" size={16} />
-                            <span>
-                              {floorClashes.length} tavolina mbivendosen: {floorClashes.map((id) => String(id).padStart(2, "0")).join(", ")}.
-                            </span>
-                            <button
-                              onClick={() => {
-                                for (const [id, patch] of Object.entries(arrange(floorTables)))
-                                  changeFloorLayout(Number(id), patch);
-                              }}
-                            >
-                              Rregullo automatikisht
-                            </button>
-                          </div>
-                        ) : (
-                          <p className="floor-edit-hint">
-                            <Icon name="info" size={16} />
-                            Tërhiqni tavolinat në një kuti të lirë. Zgjidhni një tavolinë për ta rrotulluar ose zmadhuar; kutia e kuqe tregon që vendi është i zënë.
-                          </p>
-                        )}
-                        <FloorPlan
-                          tables={floorTables}
-                          editing
-                          selected={floorSelected}
-                          onSelectTable={(t) => setFloorSelected(t?.id ?? null)}
-                          onLayoutChange={changeFloorLayout}
-                        />
-                        {floorSelected && (
-                          <div className="floor-selected-tools">
-                            <span>{tableName(floorSelected, floorTables)} · {floorTables.find((t) => t.id === floorSelected)?.shape}</span>
-                            <button onClick={() => setEditor({ id: floorSelected })}>
-                              Ndrysho formën dhe vendet
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : state.tables.length || tablesAdded.length ? (
-                      <div className="table-admin-grid">
-                        {[...state.tables]
-                          .sort((a, b) => a.id - b.id)
-                          .map((saved) => ({ ...saved, ...tableEdits[saved.id] }))
-                          .map((t) => (
-                            <article
-                              className={`table-admin-card ${t.active ? "" : "inactive"} ${editor?.id === t.id ? "editing" : ""} ${tableEdits[t.id] ? "drafted" : ""} ${leaving.has(t.id) ? "leaving" : ""}`}
-                              key={t.id}
-                            >
-                              <div className="table-admin-head">
-                                <div>
-                                  <small>{t.label ? `Tavolina ${String(t.id).padStart(2, "0")}` : "Tavolina"}</small>
-                                  <strong>{t.label || String(t.id).padStart(2, "0")}</strong>
-                                </div>
-                                {tableEdits[t.id] ? (
-                                  <Badge tone="amber">E ndryshuar</Badge>
-                                ) : (
-                                  <Badge tone={t.active ? "green" : ""}>
-                                    {t.active ? "Aktive" : "Joaktive"}
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="table-admin-visual">
-                                <TableSymbol shape={t.shape} />
-                                <span className="sr-only">
-                                  Forma {t.shape || "Drejtkëndësh"}
-                                </span>
-                              </div>
-                              <div className="table-admin-zone">
-                                <Icon name="location" size={15} />
-                                <span>
-                                  {t.area} · {t.seats} vende
-                                </span>
-                              </div>
-                              <div className="table-admin-actions">
-                                <button
-                                  aria-label={`Ndrysho tavolinën ${t.id}`}
-                                  onClick={() => setEditor({ id: t.id })}
-                                >
-                                  <Icon name="edit" size={17} />
-                                  Ndrysho
-                                </button>
-                                <button
-                                  className="subtle-button"
-                                  disabled={t.active && t.lines.length > 0}
-                                  aria-describedby={
-                                    t.active && t.lines.length > 0
-                                      ? `table-help-${t.id}`
-                                      : undefined
-                                  }
-                                  onClick={() =>
-                                    update(
-                                      "table.toggle",
-                                      { id: t.id },
-                                      t.active
-                                        ? "Tavolina u çaktivizua."
-                                        : "Tavolina u aktivizua.",
-                                    )
-                                  }
-                                >
-                                  <Icon name="power" size={17} />
-                                  {t.active ? "Çaktivizo" : "Aktivizo"}
-                                </button>
-                              </div>
-                              {t.active && t.lines.length > 0 && (
-                                <small
-                                  className="table-admin-help"
-                                  id={`table-help-${t.id}`}
-                                >
-                                  Ka porosi të hapura
-                                </small>
-                              )}
-                              {(() => {
-                                const hasHistory = state.invoices.some((inv) => inv.table === t.id);
-                                const blocked = t.lines.length > 0 || hasHistory;
-                                if (deleteConfirmId === t.id)
-                                  return (
-                                    <div className="table-admin-actions">
-                                      <button className="text-button" onClick={() => setDeleteConfirmId(null)}>
-                                        Anulo
-                                      </button>
-                                      <button
-                                        className="danger-button"
-                                        onClick={() =>
-                                          vanish(t.id, async () => {
-                                            if (await update("table.delete", { id: t.id }, "Tavolina u fshi."))
-                                              setDeleteConfirmId(null);
-                                          })
-                                        }
-                                      >
-                                        Fshi përfundimisht
-                                      </button>
-                                    </div>
-                                  );
-                                // An open order is already explained above (for the
-                                // toggle button); only the history case needs its own note.
-                                return (
-                                  <>
-                                    <button
-                                      className="text-button table-admin-delete"
-                                      disabled={blocked}
-                                      aria-describedby={
-                                        t.lines.length > 0
-                                          ? `table-help-${t.id}`
-                                          : hasHistory
-                                            ? `table-delete-help-${t.id}`
-                                            : undefined
-                                      }
-                                      onClick={() => setDeleteConfirmId(t.id)}
-                                    >
-                                      Fshi tavolinën
-                                    </button>
-                                    {hasHistory && t.lines.length === 0 && (
-                                      <small className="table-admin-help" id={`table-delete-help-${t.id}`}>
-                                        Ka histori faturash; përdorni çaktivizimin
-                                      </small>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                            </article>
-                          ))}
-                        {tablesAdded.map((t, n) => (
-                          <article className={`table-admin-card drafted new ${leaving.has(t.key) ? "leaving" : ""}`} key={t.key} style={{ "--delay": `${t.delay * 45}ms` }}>
-                            <div className="table-admin-head">
-                              <div>
-                                <small>Tavolinë e re</small>
-                                <strong>+{n + 1}</strong>
-                              </div>
-                              <Badge tone="amber">E re</Badge>
-                            </div>
-                            <div className="table-admin-visual">
-                              <TableSymbol shape={t.shape} />
-                            </div>
-                            <div className="table-admin-zone">
-                              <Icon name="location" size={15} />
-                              <span>
-                                {t.area} · {t.seats} vende
-                              </span>
-                            </div>
-                            <div className="table-admin-actions">
-                              <button
-                                className="subtle-button"
-                                aria-label={`Hiq tavolinën e re ${n + 1}`}
-                                onClick={() => vanish(t.key, () => setTablesAdded((added) => added.filter((x) => x.key !== t.key)))}
-                              >
-                                <Icon name="close" size={17} />
-                                Hiq
-                              </button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    ) : (
-                      <Empty icon="tables" title="Ende pa tavolina">
-                        Shtoni tavolinën e parë për të nisur sallën.
-                      </Empty>
-                    )}
-                    {draftDirty && (
-                      <div className="draft-bar" role="status">
-                        <span>
-                          <b>Pa ruajtur:</b>{" "}
-                          {[
-                            draftCount.added && `${draftCount.added} ${draftCount.added === 1 ? "e re" : "të reja"}`,
-                            draftCount.edited && `${draftCount.edited} ${draftCount.edited === 1 ? "e ndryshuar" : "të ndryshuara"}`,
-                            draftCount.moved && `${draftCount.moved} ${draftCount.moved === 1 ? "e zhvendosur" : "të zhvendosura"}`,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                        <button onClick={discardTableDraft} disabled={floorSaving}>
-                          Anulo
-                        </button>
-                        <button className="primary" onClick={saveTableDraft} disabled={floorSaving}>
-                          <Icon name="check" size={17} />
-                          {floorSaving ? "Po ruhet…" : "Konfirmo"}
-                        </button>
-                      </div>
-                    )}
-                  </section>
-                  <aside className="management-aside">
-                    {editor && (() => {
-                      const editing = editor.id && state.tables.find((t) => t.id === editor.id);
-                      const values = editing ? { ...tableFields(editing), ...tableEdits[editing.id] } : newTable;
-                      const change = (patch) => {
-                        if (!editing) return setNewTable((v) => ({ ...v, ...patch }));
-                        editTable(editing.id, patch);
-                        // A bar only reads as a counter when it's wide: give the preview
-                        // (and the save) bar proportions, and square it again when leaving Bar.
-                        // Same cells, new proportions — so a shape change can never collide.
-                        const current = { ...editing, ...tableEdits[editing.id], ...tableLayout[editing.id] };
-                        if (patch.shape && (patch.shape === "Bar") !== (current.shape === "Bar")) {
-                          const { cols, rows } = spanOf(current);
-                          changeFloorLayout(editing.id, sizeFor(patch.shape, cols, rows));
-                        }
-                      };
-                      return (
-                        <section className="panel editor-panel">
-                          <SectionHeading
-                            title={editing ? `Tavolina ${String(editing.id).padStart(2, "0")}` : "Tavolina të reja"}
-                            description={
-                              editing
-                                ? "Ndryshimi shfaqet menjëherë; ruhet kur shtypni Konfirmo."
-                                : "Shtoni sa të doni, pastaj Konfirmo një herë."
-                            }
-                          >
-                            <button className="icon-button" onClick={() => setEditor(null)} aria-label="Mbyll formularin e tavolinës">
-                              <Icon name="close" size={18} />
-                            </button>
-                          </SectionHeading>
-                          <form
-                            key={editor.id || "new"}
-                            className="stack-form"
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              editing ? setEditor(null) : addDraftTable();
-                            }}
-                          >
-                            {editing && (
-                              <Field
-                                label="Emri (opsional)"
-                                name="label"
-                                value={values.label}
-                                onChange={(e) => change({ label: e.target.value })}
-                                placeholder={`p.sh. VIP · bosh = ${String(editing.id).padStart(2, "0")}`}
-                                maxLength={20}
-                              />
-                            )}
-                            <Field
-                              label="Zona"
-                              name="area"
-                              list="table-areas"
-                              value={values.area}
-                              onChange={(e) => change({ area: e.target.value })}
-                              placeholder="p.sh. Salla"
-                              maxLength={40}
-                              autoFocus={!editing}
-                            />
-                            <datalist id="table-areas">
-                              {[...new Set(state.tables.map((t) => t.area))].map((a) => (
-                                <option key={a} value={a} />
-                              ))}
-                            </datalist>
-                            <TableShapePicker value={values.shape} onChange={(shape) => change({ shape })} />
-                            <div className="field">
-                              <span>Numri i vendeve</span>
-                              <div className="quantity seats-stepper">
-                                <button type="button" aria-label="Një vend më pak" disabled={values.seats <= 1} onClick={() => change({ seats: values.seats - 1 })}>
-                                  −
-                                </button>
-                                <span>{values.seats}</span>
-                                <button type="button" aria-label="Një vend më shumë" disabled={values.seats >= 12} onClick={() => change({ seats: values.seats + 1 })}>
-                                  +
-                                </button>
-                              </div>
-                            </div>
-                            {!editing && (
-                              <div className="field">
-                                <span>Sa tavolina</span>
-                                <div className="quantity seats-stepper">
-                                  <button type="button" aria-label="Një tavolinë më pak" disabled={values.count <= 1} onClick={() => change({ count: values.count - 1 })}>
-                                    −
-                                  </button>
-                                  <span>{values.count}</span>
-                                  <button type="button" aria-label="Një tavolinë më shumë" disabled={values.count >= 20} onClick={() => change({ count: values.count + 1 })}>
-                                    +
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                            {editing ? (
-                              <div className="actions">
-                                {(tableEdits[editing.id] || tableLayout[editing.id]) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setTableEdits(({ [editing.id]: _, ...rest }) => rest);
-                                      setTableLayout(({ [editing.id]: _, ...rest }) => rest);
-                                    }}
-                                  >
-                                    Rikthe
-                                  </button>
-                                )}
-                                <button className="primary">Mbaro</button>
-                              </div>
-                            ) : (
-                              <button className="primary">
-                                <Icon name="plus" size={17} />
-                                {values.count > 1 ? `Shto ${values.count} tavolina` : "Shto tavolinën"}{tablesAdded.length ? ` (${tablesAdded.length} gati)` : ""}
-                              </button>
-                            )}
-                          </form>
-                        </section>
-                      );
-                    })()}
-                    <div className="info-note">
-                      <Icon name="tables" />
-                      <div>
-                        <strong>Çaktivizim, jo fshirje</strong>
-                        <p>
-                          Një tavolinë me fatura të lidhura nuk fshihet kurrë;
-                          çaktivizimi e heq nga salla pa prekur historikun.
-                        </p>
-                      </div>
-                    </div>
-                  </aside>
-                </div>
+                <RoomEditor
+                  state={state}
+                  tables={floorTables}
+                  update={update}
+                  notify={notify}
+                  refresh={database.refresh}
+                  area={room}
+                  onRoom={setArea}
+                  selected={floorSelected}
+                  onSelect={setFloorSelected}
+                  onDone={() => {
+                    if (!leaveRoomDraft()) return;
+                    setFloorSelected(null);
+                    setManageTables(false);
+                    setSelected(null);
+                  }}
+                  draft={roomDraft}
+                  onDraft={draftTable}
+                  onDiscard={() => setRoomDraft({})}
+                />
               ) : (
                 <>
                 <GuestOrders state={state} user={user} update={update} />
@@ -1602,10 +1212,10 @@ function App({ user, onLogout, onUserChange }) {
                   >
                       <div className="toolbar floor-toolbar">
                         <div className="tabs" aria-label="Filtro zonën">
-                          {areas.map((a) => (
+                          {(separateRooms ? areas.slice(1) : areas).map((a) => (
                             <button
                               key={a}
-                              aria-pressed={area === a}
+                              aria-pressed={room === a}
                               onClick={() => setArea(a)}
                             >
                               {a}
@@ -1620,6 +1230,7 @@ function App({ user, onLogout, onUserChange }) {
                             </button>
                           ))}
                         </div>
+                        <div className="floor-toolbar-end">
                         <ChoiceField
                           compact
                           label="Gjendja"
@@ -1627,26 +1238,42 @@ function App({ user, onLogout, onUserChange }) {
                           value={status}
                           onChange={setStatus}
                         />
+                        {role === "Menaxher" && (
+                          <button
+                            onClick={() => {
+                              setManageTables(true);
+                              setSelected(null);
+                              setEditor(null);
+                            }}
+                          >
+                            <Icon name="edit" size={18} />
+                            Ndrysho sallën
+                          </button>
+                        )}
+                        </div>
                       </div>
                     {role === "Menaxher" && floorClashes.length > 0 && (
                       <div className="notice warning floor-clash">
                         <Icon name="info" size={16} />
                         <span>Disa tavolina mbivendosen në sallë.</span>
                         <button
-                          onClick={() => {
-                            setManageTables(true);
-                            setFloorEditing(true);
-                            setSelected(null);
-                          }}
+                          onClick={() =>
+                            update("table.layout", {
+                              tables: Object.entries(arrange(floorTables)).map(([id, patch]) => {
+                                const t = floorTables.find((x) => x.id === Number(id));
+                                return { id: t.id, posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation, ...patch };
+                              }),
+                            }, "Tavolinat u rregulluan.")
+                          }
                         >
-                          Rregullo sallën
+                          Rregullo automatikisht
                         </button>
                       </div>
                     )}
                     {(() => {
                       const visible = activeTables.filter(
                         (t) =>
-                          (area === "Të gjitha" || t.area === area) &&
+                          (room === "Të gjitha" || t.area === room) &&
                           (status === "Të gjitha" ||
                             Boolean(t.lines.length) === (status === "Të zëna")),
                       );
@@ -1654,6 +1281,9 @@ function App({ user, onLogout, onUserChange }) {
                         <FloorPlan
                           tables={visible}
                           waiters={state.waiters}
+                          reservations={reservedToday}
+                          look={state.floorStyle}
+                          texture={state.floorTexture}
                           editing={false}
                           selected={selected}
                           onSelectTable={(t) => t && selectTable(t)}
@@ -1663,7 +1293,7 @@ function App({ user, onLogout, onUserChange }) {
                           icon="tables"
                           title={state.tables.length ? "Nuk ka tavolina në këtë filtër" : "Shtoni tavolinën e parë"}
                           action={
-                            !state.tables.length ? (role === "Menaxher" && <button className="primary" onClick={() => { setManageTables(true); setEditor({}); }}>Shto tavolinë</button>) : <button
+                            !state.tables.length ? (role === "Menaxher" && <button className="primary" onClick={() => setManageTables(true)}>Ndërto sallën</button>) : <button
                               onClick={() => {
                                 setArea("Të gjitha");
                                 setStatus("Të gjitha");
@@ -2737,7 +2367,7 @@ function App({ user, onLogout, onUserChange }) {
                 onPrintReport={printShiftReport}
               />
             )}
-            {page === "Raportet" && <Reports state={state} />}
+            {page === "Raportet" && <Finance state={state} notify={notify} sales={<Reports state={state} />} />}
             {page === "Cilësimet" && (
               <>
               {/* One topic at a time instead of ten panels on one page: a side list on wide screens,

@@ -192,6 +192,7 @@ export function Icon({ name, size = 20, ...props }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      data-icon={name}
       {...props}
     >
       {paths[name] || paths.info}

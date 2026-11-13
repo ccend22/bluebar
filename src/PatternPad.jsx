@@ -106,7 +106,9 @@ export function PatternPad({ label = "Pattern", onComplete, disabled = false }) 
     gesture.current = null;
     if (board.current.hasPointerCapture(event.pointerId)) board.current.releasePointerCapture(event.pointerId);
     setPointer(null);
-    if (current.moved && pathRef.current.length >= 4) finish();
+    // A drawn line is an attempt, whole or not: too short starts over and says why. A tap only
+    // picks a dot, for drawing dot by dot and finishing with "Përfundo".
+    if (current.moved) finish();
   };
 
   return (

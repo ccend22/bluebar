@@ -35,6 +35,15 @@ export function reservationClash(reservations, r) {
   }) || null;
 }
 export const reservationTime = (r) => (r.end ? `${r.start}–${r.end}` : r.start);
+// Today's reservation each table is still waiting for or holding: the earliest one not yet
+// over, by table id. What the floor writes on a table.
+export function tableReservations(reservations = [], now = new Date()) {
+  const date = now.toLocaleDateString("sv-SE"), minute = now.getHours() * 60 + now.getMinutes();
+  const held = new Map();
+  for (const r of reservations)
+    if (r.table != null && r.date === date && span(r)[1] > minute && !held.has(r.table)) held.set(r.table, r);
+  return held;
+}
 export const total = (lines) =>
   lines.reduce((sum, p) => sum + p.price * p.qty, 0);
 export function initialState() {

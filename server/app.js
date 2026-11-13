@@ -10,8 +10,9 @@ import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
+import { accounts, finance } from "./finance.js";
 import { deeplTranslator, LANGS } from "./translate.js";
-import { geminiVoice, geminiMenuPhoto } from "./voice.js";
+import { geminiVoice, geminiMenuPhoto, geminiFurniture } from "./voice.js";
 import { verifyLuxHotelToken } from "./luxhotel.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
@@ -81,6 +82,8 @@ export function buildApp({
   voice = geminiVoice(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
   // A photo of a printed menu → rows for "Shto shumë" (null: no reading menus from photos).
   menuPhoto = geminiMenuPhoto(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
+  // A photo of the venue's table or floor → its drawing for the 3D floor (null: no drawing from photos).
+  furniture = geminiFurniture(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY),
   // A LuxHotel (Firebase) ID token → the LuxHotel account it proves; throws when it doesn't.
   luxhotel = (token) => verifyLuxHotelToken(token, process.env.LUXHOTEL_PROJECT_ID || process.env.VITE_LUXHOTEL_PROJECT_ID),
 }) {
@@ -109,6 +112,13 @@ export function buildApp({
     "DELETE /api/venue/menu-logo": "menu.logoRemove",
     "POST /api/venue/menu/translate": "menu.translate",
     "PUT /api/venue/menu/i18n": "menu.translationFix",
+    "POST /api/accounts": "account.add",
+    "PUT /api/accounts/:id": "account.edit",
+    "DELETE /api/accounts/:id": "account.delete",
+    "POST /api/accounts/moves": "account.move",
+    "POST /api/expenses": "expense.add",
+    "PUT /api/expenses/:id": "expense.edit",
+    "DELETE /api/expenses/:id": "expense.delete",
     "PUT /api/products/:id/photo": "product.photo",
     "DELETE /api/products/:id/photo": "product.photoRemove",
     "PUT /api/integrations/bluebill": "fiscal.connect",
@@ -128,7 +138,7 @@ export function buildApp({
     const type = AUDITED[`${request.method} ${request.routeOptions?.url}`];
     if (!type || reply.statusCode >= 400 || !request.db) return payload;
     const id = request.params?.id;
-    const target = id === undefined ? {} : type.startsWith("waiter.") ? { waiterId: Number(id) } : { productId: Number(id) };
+    const target = id === undefined ? {} : type.startsWith("waiter.") ? { waiterId: Number(id) } : type.startsWith("expense.") ? { expenseId: id } : type.startsWith("account.") ? { accountId: Number(id) } : { productId: Number(id) };
     const body = request.body && typeof request.body === "object" ? request.body : {};
     await request.db.query(
       "INSERT INTO bluebar.commands(id, payload_hash, type, result, actor, payload) VALUES($1, '', $2, '{}'::jsonb, $3, $4)",
@@ -162,7 +172,8 @@ export function buildApp({
     if (request.method === "GET" && path.startsWith("/api/menu/")) return;
     // Product photos on staff screens: an <img> can't send the app's header, so this one
     // read-only route names its business in the URL (?b=) and still needs a staff session.
-    if (request.method === "GET" && path.startsWith("/api/product-photo/")) {
+    // The 3D floor's drawings are <image>s too, and work the same way.
+    if (request.method === "GET" && (path.startsWith("/api/product-photo/") || path.startsWith("/api/floor-asset/"))) {
       requireDb();
       request.venue = await resolveVenue(pool, new URL(request.url, "http://x").searchParams.get("b") || "bluebar");
       request.db = tenantPool(pool, request.venue.schema_name);
@@ -703,6 +714,84 @@ export function buildApp({
     }
     return { heard: String(out?.heard || "").slice(0, 500), items: [...items].map(([id, qty]) => ({ id, qty })) };
   });
+  // The 3D floor (Menaxho sallën). "Nga një foto": Gemini draws the venue's own table or floor
+  // from a photo; the manager looks at the drawing, then saves it as a floor asset. A table
+  // wears one (dining_tables.sprite), the room's floor is one (control.floor_texture).
+  const assetId = (request) => {
+    const id = request.params?.id ?? request.body?.assetId;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id || "")) throw new AppError("Vizatimi nuk u gjet.", 404);
+    return id;
+  };
+  const pictureBody = (extra, required) => ({ body: { type: "object", additionalProperties: false, required, properties: {
+    kind: { type: "string", enum: ["table", "floor"] }, ...extra,
+  } } });
+  const drawBudget = throttle(20, 10 * 60_000);
+  app.post("/api/floor/draw", {
+    preValidation: session("manager"),
+    bodyLimit: 2_000_000,
+    schema: pictureBody({ image: { type: "string", maxLength: 1_900_000, pattern: "^data:image/(jpeg|png|webp);base64," } }, ["kind", "image"]),
+  }, async (request) => {
+    if (!furniture) throw new AppError("Vizatimi nga foto nuk është konfiguruar në server (GEMINI_API_KEY).", 503);
+    if (!drawBudget(request.venue.slug)) throw new AppError("Shumë foto për pak kohë. Prisni disa minuta.", 429);
+    const [head, image] = request.body.image.split(",");
+    try {
+      const out = await furniture({ image, mime: head.slice(5, head.indexOf(";")), kind: request.body.kind });
+      return { image: `data:${out.mime};base64,${out.image}` };
+    } catch (e) {
+      console.error("floor/draw:", e.message);
+      throw new AppError(`Vizatimi nuk u bë${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
+    }
+  });
+  app.post("/api/floor/assets", {
+    preValidation: session("manager"),
+    bodyLimit: 900_000,
+    schema: pictureBody({ name: { type: "string", minLength: 1, maxLength: 40 }, dataUrl: { type: "string", maxLength: 850_000 } }, ["kind", "name", "dataUrl"]),
+  }, async (request) => {
+    const { kind, name, dataUrl } = request.body;
+    const { type, data } = readPhoto(dataUrl, { png: true, max: 600_000 });
+    if (Number((await request.db.query("SELECT count(*) FROM bluebar.floor_assets")).rows[0].count) >= 40)
+      throw new AppError("Deri në 40 vizatime. Fshini një që nuk përdoret.", 400);
+    const id = randomUUID();
+    await request.db.query("INSERT INTO bluebar.floor_assets(id, kind, name, type, data) VALUES($1,$2,$3,$4,$5)", [id, kind, name.trim() || "Pa emër", type, data]);
+    // A new floor is laid at once; a table drawing waits to be given to a table.
+    if (kind === "floor") await request.db.query("UPDATE bluebar.control SET floor_texture = $1 WHERE id = 1", [id]);
+    await bumpRevision(request.db);
+    return { id };
+  });
+  app.get("/api/floor-asset/:id", { preValidation: session() }, async (request, reply) => {
+    const asset = (await request.db.query("SELECT type, data FROM bluebar.floor_assets WHERE id=$1", [assetId(request)])).rows[0];
+    if (!asset) throw new AppError("Vizatimi nuk u gjet.", 404);
+    // A drawing never changes under its id.
+    reply.header("Cache-Control", "private, max-age=31536000, immutable").type(asset.type);
+    return Buffer.from(asset.data);
+  });
+  app.delete("/api/floor/assets/:id", { preValidation: session("manager") }, async (request) => {
+    // Tables wearing it and the floor go back to the standard look (ON DELETE SET NULL).
+    await request.db.query("DELETE FROM bluebar.floor_assets WHERE id=$1", [assetId(request)]);
+    await bumpRevision(request.db);
+    return { ok: true };
+  });
+  const assetChoice = { body: { type: "object", additionalProperties: false, required: ["assetId"], properties: { assetId: { type: ["string", "null"], maxLength: 36 } } } };
+  const chosenAsset = async (request, kind) => {
+    if (request.body.assetId === null) return null;
+    const id = assetId({ body: request.body });
+    if (!(await request.db.query("SELECT 1 FROM bluebar.floor_assets WHERE id=$1 AND kind=$2", [id, kind])).rows.length) throw new AppError("Vizatimi nuk u gjet.", 404);
+    return id;
+  };
+  app.put("/api/floor/tables/:id/sprite", { preValidation: session("manager"), schema: assetChoice }, async (request) => {
+    // "all": every table in the room wears it.
+    const all = request.params.id === "all", table = Number(request.params.id);
+    const done = (all || Number.isInteger(table)) &&
+      (await request.db.query("UPDATE bluebar.dining_tables SET sprite=$2 WHERE $3 OR id=$1 RETURNING id", [all ? 0 : table, await chosenAsset(request, "table"), all])).rows.length;
+    if (!done) throw new AppError("Tavolina nuk ekziston.", 404);
+    await bumpRevision(request.db);
+    return { ok: true };
+  });
+  app.put("/api/floor/texture", { preValidation: session("manager"), schema: assetChoice }, async (request) => {
+    await request.db.query("UPDATE bluebar.control SET floor_texture=$1 WHERE id=1", [await chosenAsset(request, "floor")]);
+    await bumpRevision(request.db);
+    return { ok: true };
+  });
   // Produktet → "Importo me AI": a menu photo (or its pasted text) goes to Gemini, the rows come
   // back for the import table; nothing is saved until the manager presses "Ruaj".
   const menuPhotoBudget = throttle(30, 10 * 60_000);
@@ -1025,6 +1114,101 @@ export function buildApp({
     ).rows[0];
     return pay ? history(request.db, pay.table_id, Number(pay.id)) : [];
   });
+  // Financat: a period's income and spending (server/finance.js), and the expenses themselves.
+  const period = { type: "object", additionalProperties: false, required: ["from", "to"], properties: {
+    from: { type: "string", format: "date-time" }, to: { type: "string", format: "date-time" },
+  } };
+  app.get("/api/finance", { preValidation: session("manager"), schema: { querystring: period } }, async (request) =>
+    finance(request.db, request.query));
+  const expense = (r) => ({
+    id: r.id, spentAt: new Date(r.spent_at).toISOString(), amount: r.amount, category: r.category,
+    method: r.method, status: r.status, note: r.note, by: r.created_by,
+  });
+  app.get("/api/expenses", { preValidation: session("manager"), schema: { querystring: period } }, async (request) => ({
+    expenses: (await request.db.query(
+      "SELECT * FROM bluebar.expenses WHERE spent_at >= $1 AND spent_at < $2 ORDER BY spent_at DESC, created_at DESC LIMIT 1000",
+      [request.query.from, request.query.to],
+    )).rows.map(expense),
+  }));
+  const expenseBody = { body: { type: "object", additionalProperties: false, required: ["spentAt", "amount", "category", "method", "status"], properties: {
+    spentAt: { type: "string", format: "date-time" },
+    amount: { type: "integer", minimum: 1, maximum: 100000000 },
+    category: { type: "string", minLength: 1, maxLength: 40, pattern: "\\S" },
+    method: { type: "string", enum: ["Cash", "Bankë"] },
+    status: { type: "string", enum: ["aprovuar", "pritje"] },
+    note: { type: "string", maxLength: 200 },
+  } } };
+  const expenseId = (request) => {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(request.params.id)) throw new AppError("Shpenzimi nuk ekziston.", 404);
+    return request.params.id;
+  };
+  app.post("/api/expenses", { preValidation: session("manager"), schema: expenseBody }, async (request) => {
+    const b = request.body;
+    const row = (await request.db.query(
+      `INSERT INTO bluebar.expenses(id, spent_at, amount, category, method, status, note, created_by)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [randomUUID(), b.spentAt, b.amount, b.category.trim(), b.method, b.status, (b.note || "").trim(), request.user.name || null],
+    )).rows[0];
+    return { expense: expense(row) };
+  });
+  app.put("/api/expenses/:id", { preValidation: session("manager"), schema: expenseBody }, async (request) => {
+    const b = request.body;
+    const row = (await request.db.query(
+      `UPDATE bluebar.expenses SET spent_at=$2, amount=$3, category=$4, method=$5, status=$6, note=$7 WHERE id=$1 RETURNING *`,
+      [expenseId(request), b.spentAt, b.amount, b.category.trim(), b.method, b.status, (b.note || "").trim()],
+    )).rows[0];
+    if (!row) throw new AppError("Shpenzimi nuk ekziston.", 404);
+    return { expense: expense(row) };
+  });
+  app.delete("/api/expenses/:id", { preValidation: session("manager") }, async (request) => {
+    const gone = (await request.db.query("DELETE FROM bluebar.expenses WHERE id=$1 RETURNING id", [expenseId(request)])).rows.length;
+    if (!gone) throw new AppError("Shpenzimi nuk ekziston.", 404);
+    return { ok: true };
+  });
+  // Llogaritë financiare: the accounts, their balances, and money moved by hand.
+  app.get("/api/accounts", { preValidation: session("manager") }, async (request) => ({ accounts: await accounts(request.db) }));
+  const accountBody = { body: { type: "object", additionalProperties: false, required: ["name", "group", "kind"], properties: {
+    name: { type: "string", minLength: 1, maxLength: 40, pattern: "\\S" },
+    group: { type: "string", enum: ["own", "partner"] },
+    kind: { type: "string", enum: ["cash", "bank", "card", "other"] },
+    opening: { type: "integer", minimum: -100000000, maximum: 100000000 },
+    receives: { type: ["string", "null"], enum: ["Cash", "Bankë", null] },
+  } } };
+  // One account per payment method: giving it to this one takes it from any other.
+  const saveAccount = async (db, id, b) => {
+    if (b.receives) await db.query("UPDATE bluebar.money_accounts SET receives = NULL WHERE receives = $1 AND id IS DISTINCT FROM $2", [b.receives, id]);
+    const values = [b.name.trim(), b.group, b.kind, b.opening ?? 0, b.receives ?? null];
+    return id
+      ? (await db.query("UPDATE bluebar.money_accounts SET name=$2, grp=$3, kind=$4, opening=$5, receives=$6 WHERE id=$1 RETURNING id", [id, ...values])).rows[0]
+      : (await db.query("INSERT INTO bluebar.money_accounts(name, grp, kind, opening, receives) VALUES($1,$2,$3,$4,$5) RETURNING id", values)).rows[0];
+  };
+  app.post("/api/accounts", { preValidation: session("manager"), schema: accountBody }, async (request) => saveAccount(request.db, null, request.body));
+  app.put("/api/accounts/:id", { preValidation: session("manager"), schema: accountBody }, async (request) => {
+    const row = await saveAccount(request.db, Number(request.params.id) || 0, request.body);
+    if (!row) throw new AppError("Llogaria nuk ekziston.", 404);
+    return row;
+  });
+  app.delete("/api/accounts/:id", { preValidation: session("manager") }, async (request) => {
+    const gone = (await request.db.query("DELETE FROM bluebar.money_accounts WHERE id=$1 RETURNING id", [Number(request.params.id) || 0])).rows.length;
+    if (!gone) throw new AppError("Llogaria nuk ekziston.", 404);
+    return { ok: true };
+  });
+  app.post("/api/accounts/moves", { preValidation: session("manager"), schema: { body: { type: "object", additionalProperties: false, required: ["amount"], properties: {
+    from: { type: ["integer", "null"] }, to: { type: ["integer", "null"] },
+    amount: { type: "integer", minimum: 1, maximum: 100000000 },
+    note: { type: "string", maxLength: 200 },
+  } } } }, async (request) => {
+    const { from = null, to = null, amount, note = "" } = request.body;
+    if (from === null && to === null) throw new AppError("Zgjidhni një llogari.", 400);
+    if (from === to) throw new AppError("Zgjidhni dy llogari të ndryshme.", 400);
+    await request.db.query(
+      "INSERT INTO bluebar.money_moves(id, from_account, to_account, amount, note, created_by) VALUES($1,$2,$3,$4,$5,$6)",
+      [randomUUID(), from, to, amount, note.trim(), request.user.name || null],
+    ).catch((e) => {
+      throw e.code === "23503" ? new AppError("Llogaria nuk ekziston.", 404) : e;
+    });
+    return { ok: true };
+  });
   app.get("/api/reports", {
     preValidation: session("manager"),
     schema: {
@@ -1333,6 +1517,8 @@ export function buildApp({
                 "reservation.save",
                 "reservation.delete",
                 "reservation.slots",
+                "floor.style",
+                "floor.rooms",
               ],
             },
             payload: { type: "object" },

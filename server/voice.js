@@ -101,3 +101,41 @@ export function geminiMenuPhoto(key, { model = process.env.GEMINI_MODEL || "gemi
       image ? { inline_data: { mime_type: mime, data: image } } : { text: `The menu:\n${text}` },
     ], MENU_SCHEMA, 45000);
 }
+
+// The room (Ndrysho sallën → "Pamja nga foto"): the venue's own table, or its floor, drawn
+// from a photo by Gemini's image model. GEMINI_IMAGE_MODEL picks the model.
+// A table comes back on flat green, which the browser cuts away (src/RoomEditor.jsx).
+const DRAW = {
+  table: `Redraw the table and its chairs from this photo as one clean 3D-rendered asset for a floor plan.
+- View: straight from above (top-down, bird's-eye), with soft depth: the tabletop's edge and the chairs' seats and backs shaded so they read as solid objects. The table square to the frame, its chairs evenly around it.
+- Keep the real materials, colours and shapes from the photo: the tabletop, the legs, the style of the chairs.
+- If several tables are visible, draw only the main one with its own chairs. If the photo shows only chairs, draw them around a simple matching table.
+- Soft even light. No shadow on the ground, no people, nothing on the table, no text.
+- The whole object visible and centred, with a small margin around it.
+- Background: one flat pure green, exactly #00FF00, everywhere outside the object.`,
+  floor: `From this photo of a bar, cafe or restaurant, make one seamless square texture tile of its floor material (wood planks, tiles, stone, terrazzo, concrete...).
+Seen straight from above, evenly lit, the pattern at a small scale so it can repeat. No furniture, no shadows, no perspective, no text, no border.
+If no floor is visible, use the room's dominant material and colours.`,
+};
+export function geminiFurniture(key, { model = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image", fetchImpl = fetch } = {}) {
+  if (!key) return null;
+  return async ({ image, mime, kind }) => {
+    const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: DRAW[kind] }, { inline_data: { mime_type: mime, data: image } }] }],
+        generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "1:1" } },
+      }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!response.ok) {
+      const reason = await response.json().then((b) => b.error?.message, () => "");
+      throw Object.assign(new Error(`Gemini ${response.status}: ${String(reason || "").slice(0, 300)}`), { status: response.status });
+    }
+    const parts = (await response.json()).candidates?.[0]?.content?.parts || [];
+    const picture = parts.map((p) => p.inlineData || p.inline_data).find(Boolean);
+    if (!picture?.data) throw new Error("Gemini returned no picture");
+    return { mime: picture.mimeType || picture.mime_type || "image/png", image: picture.data };
+  };
+}

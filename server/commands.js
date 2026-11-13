@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { addItem, bill, checkout, closeShift, COURSES, DENOMINATIONS, drawer, findLine, lineDetails, newLineKey, pendingUnits, posOf, readDetails, reservationClash, reservationTime, routeStation, shiftFor, tableName, tableShift, unitPrice } from "../src/domain.js";
-import { cellsOf, centerOf, footprint, freeSpot, sizeFor } from "../src/floorGeometry.js";
+import { openSpot, rectOf, sizeFor } from "../src/floorGeometry.js";
 // Why stock changes by hand. Losses are counted as such in the reports.
 export const LOSSES = ["Humbje", "Thyerje", "Skadim"];
 export const STOCK_REASONS = [...LOSSES, "Korrigjim numërimi", "Konsum i brendshëm"];
@@ -67,8 +67,7 @@ const printerHost = (v) => {
 // A new table lands on the first free block of cells (same geometry the floor plan
 // uses), so tables added one after another fill the room instead of piling up.
 function firstOpenSlot(tables, table) {
-  const block = freeSpot(footprint(table), tables.map((t) => cellsOf(t)));
-  return block ? centerOf(block) : { posX: 50, posY: 50 };
+  return openSpot(table, tables.map((t) => rectOf(t)));
 }
 const TABLE_SHAPES = ["Rreth", "Katror", "Drejtkëndësh", "Bar", "Oval"];
 const shape = (v) => {
@@ -560,6 +559,18 @@ export function applyCommand(state, type, payload, actor = null) {
           .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start)),
       };
       result = { id: reservation.id };
+      break;
+    }
+    // Tavolinat drawn as a rendered plan ("3d") or as plain cards ("flat"): the manager's choice.
+    case "floor.style": {
+      if (p.style !== "3d" && p.style !== "flat") fail("Zgjidhni pamjen e sallës.");
+      next = { ...state, floorStyle: p.style };
+      break;
+    }
+    // Every zone laid out as a room of its own, or all zones in one room.
+    case "floor.rooms": {
+      if (typeof p.separate !== "boolean") fail("Zgjidhni si ndahet salla.");
+      next = { ...state, separateRooms: p.separate };
       break;
     }
     case "reservation.delete": {
@@ -1071,9 +1082,11 @@ export function applyCommand(state, type, payload, actor = null) {
       const slot = existing
         ? null
         : firstOpenSlot(
-            state.tables.filter((t) => t.active),
+            // With rooms of their own, only the new table's own room counts.
+            state.tables.filter((t) => t.active && (!state.separateRooms || t.area === area)),
             { shape: shapeValue, width: p.width ?? defaultWidth, height: p.height ?? defaultHeight, rotation: 0 },
           );
+      if (!existing && !slot && p.posX === undefined) fail("Nuk ka më vend në sallë: lëvizni ose zvogëloni disa tavolina.");
       // Its own name (optional, short enough for the floor plan); undefined keeps the old one.
       const label = p.label === undefined ? existing?.label || "" : p.label === null ? "" : p.label;
       if (typeof label !== "string" || label.trim().length > 20) fail("Emri i tavolinës: deri 20 shkronja.");
@@ -1082,6 +1095,8 @@ export function applyCommand(state, type, payload, actor = null) {
       const row = {
         id: existing?.id || nextId(state.tables),
         label: label.trim(),
+        // Its 3D drawing is set on the floor editor (PUT /api/floor/tables/:id/sprite), not here.
+        sprite: existing?.sprite ?? null,
         area,
         shape: shapeValue,
         active: existing?.active ?? true,

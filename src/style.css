@@ -726,14 +726,45 @@ main {
 .floor-scroll-hint {
   display: none;
 }
+/* Ndrysho sallën: the room lifts off the page in BlueBar blue, a fine dot grid appears on its
+   floor to place by, and a dark pill says the room is being changed. Tables go anywhere. */
 .floor-plan.editing {
   cursor: default;
-  /* Visible slots while arranging: tables snap to these lines on drag and cannot be
-     resized past one cell, so the grid shown here is the grid actually in effect. */
-  background-image:
-    linear-gradient(to right, var(--line-strong) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--line-strong) 1px, transparent 1px);
-  background-size: 12.5% 20%;
+  overflow: visible;
+  isolation: isolate;
+  outline: 1.5px solid rgba(8, 103, 201, 0.85);
+  outline-offset: 5px;
+  box-shadow: 0 0 0 11px rgba(8, 103, 201, 0.07), 0 24px 60px -24px rgba(8, 60, 120, 0.45);
+  transition: box-shadow 300ms var(--ease-out), outline-offset 300ms var(--ease-out);
+}
+.floor-plan.editing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(circle, rgba(8, 103, 201, 0.32) 1.1px, transparent 1.6px);
+  background-size: calc(100% / 32) calc(100% / 20);
+  pointer-events: none;
+}
+.floor-plan.editing::before {
+  content: "Po ndryshoni sallën";
+  position: absolute;
+  top: -17px;
+  left: 50%;
+  z-index: 6;
+  padding: 6px 14px 6px 26px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 14px 50%, #5fb0ff 0 3.5px, transparent 4.5px), rgba(18, 24, 32, 0.88);
+  box-shadow: 0 6px 18px rgba(10, 20, 30, 0.3);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
 }
 .fp-empty {
   position: absolute;
@@ -755,13 +786,6 @@ main {
     0 8px 20px -12px rgba(20, 30, 40, 0.35);
   cursor: pointer;
   touch-action: manipulation;
-  container-type: inline-size;
-}
-/* A one-cell table in a short room is ~50px wide: "1,350 Lek" doesn't fit and the
-   live dot runs into the number. Drop the currency and tuck the dot into the corner. */
-@container (max-width: 64px) {
-  .fp-cur { display: none; }
-  .fp-table .fp-live-dot { top: 4px; right: 4px; width: 6px; height: 6px; }
 }
 .floor-plan:not(.editing) .fp-table:focus-visible {
   outline: 2px solid var(--blue);
@@ -890,6 +914,18 @@ main {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   letter-spacing: -0.02em;
+}
+/* Today's reservation on its table: the hour, and who for while the table is still free. */
+.fp-res {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--amber);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .fp-handle {
   position: absolute;
@@ -1172,6 +1208,9 @@ main {
 .notice .icon-button {
   margin-left: auto;
 }
+/* Leaving by itself: a short fade upward. */
+.notice { transition: opacity 280ms var(--ease-out), transform 280ms var(--ease-out); }
+.notice.leaving { opacity: 0; transform: translateY(-6px); }
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -2996,8 +3035,9 @@ footer > span:last-child {
   /* Fit the 16:10 room inside whatever space is left, instead of stretching it, but never
      below a readable, tappable size: with banners or new guest orders above it, the page
      scrolls instead of shrinking the tables. */
-  .floor-app .floor-plan-viewport { flex: 1; min-height: 360px; overflow: hidden; container-type: size; display: grid; place-items: center; }
-  .floor-app .floor-plan { width: min(100cqw, 160cqh); height: auto; aspect-ratio: 16 / 10; }
+  .floor-app .floor-plan-viewport { flex: 1; min-height: 360px; overflow: hidden; display: grid; place-items: center; }
+  .floor-app .floor-plan { width: var(--fit-w, 100%); height: var(--fit-h, auto); aspect-ratio: auto; }
+  .floor-app .floor > .floor-plan-viewport { place-items: start center; }
   .floor-app .order { position: static; display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .floor-app .order-heading { flex-shrink: 0; }
   .floor-app .order-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
@@ -6641,4 +6681,560 @@ html:has(.onboard-salla[data-theme="dark"]) { background: #0d1c26; }
   .reservation-actions { grid-column: 1 / -1; }
   .reservation-actions button { flex: 1; }
   .reservation-day-picker input, .slot-list input { font-size: 16px; }
+}
+
+/* ---- Tavolinat in 3D (src/FloorPlan.jsx, look "3d"; the manager's choice) ----
+   A rendered plan seen from above: a plank floor (or the venue's own, --floor, drawn from a
+   photo) inside pale walls, wooden tables laid with plates, a dark stone bar. State reads from
+   the label on each table and the glow under it: green for taken, amber for reserved.
+   The flat look is the classic cards further up (.fp-table). */
+.floor-plan.look-3d {
+  border: 9px solid #f6f5f2;
+  border-radius: 6px;
+  background-color: #ece1cb;
+  background-image: var(--floor, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='72'%3E%3Crect width='192' height='24' fill='%23ece1cb'/%3E%3Crect y='24' width='192' height='24' fill='%23e5d7bc'/%3E%3Crect y='48' width='192' height='24' fill='%23efe6d3'/%3E%3Cpath d='M0 23.5H192M0 47.5H192M0 71.5H192M132 0V24M44 24V48M164 48V72M70 48V72' stroke='%23b99e74' stroke-opacity='.45'/%3E%3Cpath d='M8 9H120M30 33H180M12 58H60M90 62H150' stroke='%23c9b28a' stroke-opacity='.35' stroke-width='.7'/%3E%3C/svg%3E"));
+  background-size: var(--floor-size, 192px 72px);
+  box-shadow: 0 0 0 1px rgba(20, 30, 40, 0.14), inset 0 0 0 1px rgba(20, 30, 40, 0.1), inset 0 2px 10px rgba(60, 40, 20, 0.18), 0 10px 30px -18px rgba(20, 30, 40, 0.4);
+}
+.floor-plan.look-3d[style*="--floor"] { --floor-size: 25% 40%; }
+/* The table's space is the target; the tabletop and its chairs are drawn inside it, so a
+   third of a cell of floor always separates two tables. */
+.look-3d .fp-table,
+.look-3d .fp-table.occupied,
+.look-3d .fp-table.selected { border: 0; background: none; box-shadow: none; outline: none; border-radius: 14%; }
+.look-3d .fp-table.shape-round, .look-3d .fp-table.shape-oval { border-radius: 50%; }
+.look-3d .fp-table.shape-bar::after { display: none; }
+/* Taken or reserved: a soft glow on the floor under the table, seen across the room. */
+.look-3d .fp-table.occupied { background: radial-gradient(closest-side, rgba(39, 130, 90, 0.45), rgba(39, 130, 90, 0.16) 72%, transparent); }
+.look-3d .fp-table.reserved { background: radial-gradient(closest-side, rgba(214, 150, 40, 0.45), rgba(214, 150, 40, 0.14) 72%, transparent); }
+/* A solid wooden tabletop: real grain, a bevelled edge catching the light, a soft shadow. */
+.fp-top {
+  position: absolute;
+  inset: 16%;
+  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(255, 236, 205, 0.22), transparent 45%, rgba(70, 40, 15, 0.16)), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.17' numOctaves='4' seed='11'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .24 0 0 0 0 .1 1.5 0 0 0 -.5'/%3E%3C/filter%3E%3Cfilter id='h'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.003 0.06' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .93 0 0 0 0 .8 1.2 0 0 0 -.62'/%3E%3C/filter%3E%3Crect width='360' height='180' fill='%23c8925c'/%3E%3Crect width='360' height='180' filter='url(%23h)'/%3E%3Crect width='360' height='180' filter='url(%23g)'/%3E%3C/svg%3E") center / 280px 140px;
+  box-shadow:
+    inset 0 0 0 1px rgba(98, 60, 28, 0.7),
+    inset 2px 2px 0 rgba(255, 236, 205, 0.4),
+    inset -2px -3px 0 rgba(98, 60, 28, 0.28),
+    0 2px 3px rgba(40, 25, 10, 0.32),
+    0 14px 22px -8px rgba(40, 25, 10, 0.45);
+  transition: translate 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+  pointer-events: none;
+}
+.fp-table.shape-round .fp-top, .fp-table.shape-oval .fp-top { border-radius: 50%; }
+/* The bar: a dark stone counter with a wooden lip. */
+.fp-table.shape-bar .fp-top {
+  inset: 6% 4% 40%;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #8a5a32 0 16%, #3f454b 16% 100%);
+  box-shadow: inset 0 0 0 1.5px #262a2e, inset 0 -6px 10px rgba(0, 0, 0, 0.25), 0 3px 4px rgba(0, 0, 0, 0.3), 0 14px 18px -8px rgba(0, 0, 0, 0.45);
+}
+@media (hover: hover) and (pointer: fine) {
+  .look-3d:not(.editing) .fp-table:hover .fp-top { translate: 0 -2px; box-shadow: inset 0 0 0 1px rgba(98, 60, 28, 0.7), inset 2px 2px 0 rgba(255, 236, 205, 0.4), inset -2px -3px 0 rgba(98, 60, 28, 0.28), 0 5px 8px rgba(40, 25, 10, 0.3), 0 20px 26px -10px rgba(40, 25, 10, 0.5); }
+}
+.look-3d.editing .fp-table:active .fp-top { translate: 0 -3px; }
+/* A chair seen from above: a round upholstered seat tucked under the table's edge and a curved
+   wooden back with pale slats, facing the room. */
+.fp-chair {
+  position: absolute;
+  width: var(--chair);
+  aspect-ratio: 1 / 1.12;
+  transform: translate(-50%, -50%) rotate(var(--turn)) translateY(-34%);
+  pointer-events: none;
+}
+.fp-chair::before {
+  content: "";
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  top: 0;
+  height: 30%;
+  border: 2px solid #9a6534;
+  border-radius: 46% 46% 14% 14% / 80% 80% 22% 22%;
+  background: repeating-linear-gradient(90deg, #f4f1eb 0 3px, #ddd6ca 3px 4px);
+  box-shadow: 0 2px 3px rgba(40, 25, 10, 0.32);
+}
+.fp-chair::after {
+  content: "";
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 0;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' seed='2'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .22 0 0 0 0 .12 1.1 0 0 0 -.55'/%3E%3C/filter%3E%3Crect width='60' height='60' filter='url(%23f)'/%3E%3C/svg%3E"), radial-gradient(circle at 44% 38%, #e4d2b4, #c7ad86 62%, #9f8661);
+  box-shadow: inset 0 -2px 4px rgba(60, 40, 15, 0.25), 0 2px 4px rgba(40, 25, 10, 0.35);
+}
+/* A bar stool: a round cushion on a dark ring, teal and cream in turn. */
+.fp-chair.stool { aspect-ratio: 1; transform: translate(-50%, -50%) rotate(var(--turn)) translateY(-70%); }
+.fp-chair.stool::before { display: none; }
+.fp-chair.stool::after { left: 0; right: 0; background: radial-gradient(circle at 42% 38%, #5cc2ba, #1f7a73 70%); box-shadow: 0 0 0 2px #2b2f33, 0 3px 4px rgba(0, 0, 0, 0.35); }
+.fp-chair.stool:nth-of-type(even)::after { background: radial-gradient(circle at 42% 38%, #f6efe2, #cfc2aa 70%); }
+/* The chosen table: a blue ring around it. */
+.look-3d .fp-table.selected::before,
+.look-3d .fp-table:focus-visible::before { content: ""; position: absolute; inset: -4%; border: 3px solid var(--blue); border-radius: inherit; box-shadow: 0 0 0 4px rgba(8, 103, 201, 0.18); pointer-events: none; }
+/* Changed but not yet confirmed (Ndrysho sallën): yellow, in either look. */
+.floor-plan .fp-table.drafted::after { content: ""; position: absolute; inset: -3%; z-index: 1; border: 2px solid #e0a400; border-radius: 14%; background: rgba(250, 204, 21, 0.16); box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.18); pointer-events: none; }
+/* Moving a table: it glides to where it lands, and lifts while it is held. */
+.floor-plan .fp-table { transition: left 220ms var(--ease-out), top 220ms var(--ease-out), width 220ms var(--ease-out), height 220ms var(--ease-out), transform 220ms var(--ease-out); }
+.floor-plan .fp-table.dragging { z-index: 5; transition: none; cursor: grabbing; }
+.floor-plan .fp-table.dragging .fp-top { translate: 0 -5px; box-shadow: inset 0 0 0 1px rgba(98, 60, 28, 0.7), inset 2px 2px 0 rgba(255, 236, 205, 0.4), 0 10px 14px rgba(40, 25, 10, 0.25), 0 34px 44px -14px rgba(40, 25, 10, 0.5); }
+.floor-plan:not(.look-3d) .fp-table.dragging { box-shadow: 0 18px 36px -12px rgba(20, 30, 40, 0.45); }
+.floor-plan .fp-table.blocked { opacity: 0.75; }
+.floor-plan .fp-table.blocked::after { content: ""; position: absolute; inset: -3%; z-index: 1; border: 2px solid #c0392b; border-radius: 14%; background: rgba(192, 57, 43, 0.14); pointer-events: none; }
+.floor-plan .fp-table.drafted.shape-round::after, .floor-plan .fp-table.drafted.shape-oval::after { border-radius: 50%; }
+.floor-plan:not(.look-3d) .fp-table.drafted { background: #fff7d6; border-color: #e0b84a; }
+.floor-plan .fp-table .fp-body { z-index: 2; }
+.floor-plan .fp-handle { z-index: 3; }
+/* The table's label. Flat look: the classic lines straight on the card. */
+.floor-plan:not(.look-3d) .fp-tag { display: contents; }
+.floor-plan:not(.look-3d) .fp-table.occupied .fp-info { font-size: clamp(10px, calc(var(--cell, 110px) * 0.077), 13px); }
+.floor-plan:not(.look-3d) .fp-table.occupied .fp-info b { font-size: clamp(11px, calc(var(--cell, 110px) * 0.091), 15px); }
+/* The label may reach over the chairs rather than be cut short. */
+.look-3d .fp-table .fp-body { padding: 0; overflow: visible; }
+.look-3d .fp-tag {
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.28em 0.7em 0.3em;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(20, 30, 40, 0.1), 0 3px 8px rgba(20, 30, 40, 0.28);
+  color: #2b3238;
+  line-height: 1.12;
+}
+.look-3d .fp-table .fp-tag strong { color: inherit; font-size: clamp(13px, calc(var(--cell, 110px) * 0.084), 22px); font-weight: 750; letter-spacing: -0.02em; }
+.look-3d .fp-table .fp-res { color: inherit; font-size: clamp(10px, calc(var(--cell, 110px) * 0.056), 13px); font-weight: 650; }
+/* Taken: a card with the table's number on a green band, then what it owes, large, and whose
+   it is. */
+.look-3d .fp-table.occupied .fp-tag { overflow: hidden; padding: 0; gap: 0; min-width: 62%; max-width: none; white-space: nowrap; background: #fff; box-shadow: 0 0 0 1.5px #2a7a56, 0 4px 12px rgba(10, 50, 30, 0.4); }
+.look-3d .fp-table.occupied .fp-tag strong { justify-self: stretch; padding: 0.16em 0.6em; background: #2a7a56; color: #fff; text-align: center; font-size: clamp(13px, calc(var(--cell, 110px) * 0.084), 19px); }
+/* Taken: the table's number, then the waiter's name, then what it owes, each on its own line. */
+.look-3d .fp-table.occupied .fp-info { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 0.22em 0.65em 0.3em; color: #2b3238; }
+.look-3d .fp-table.occupied .fp-info b { color: #17402e; font-size: clamp(14px, calc(var(--cell, 110px) * 0.084), 18px); font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.look-3d .fp-table.occupied .fp-info b .fp-cur { font-size: 0.72em; font-weight: 600; }
+.look-3d .fp-table.occupied .fp-waiter,
+.look-3d .fp-table.occupied .fp-info > span { color: #2b3238; font-size: clamp(12px, calc(var(--cell, 110px) * 0.07), 15px); font-weight: 650; }
+.look-3d .fp-table.occupied .fp-res { padding: 0 0.6em 0.28em; color: #8a5a12; }
+.look-3d .fp-table.reserved .fp-tag { background: #fff6e6; box-shadow: 0 0 0 1.5px #d2962f, 0 3px 8px rgba(120, 80, 20, 0.3); color: #7a4f12; }
+/* The venue's own table, drawn from a photo: it replaces the drawn one. */
+.look-3d .fp-table.has-sprite { background: none; }
+.look-3d .fp-table.has-sprite.occupied { background: radial-gradient(closest-side, rgba(39, 130, 90, 0.45), transparent); }
+.fp-sprite { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 8px 10px rgba(20, 30, 40, 0.3)); pointer-events: none; -webkit-user-drag: none; }
+/* Coming into the room, the tables settle onto the floor. */
+.floor-plan:not(.editing) .fp-table { animation: fp-settle 420ms var(--ease-out) backwards; }
+@keyframes fp-settle { from { opacity: 0; translate: 0 -10px; } }
+@media (prefers-reduced-motion: reduce) {
+  .floor-plan .fp-table, .fp-top, .floor-plan.editing { animation: none; transition: none; }
+}
+/* Phones: the room becomes a grid of tiles; the tabletop fills each one. */
+@media screen and (max-width: 760px), screen and (max-height: 500px) and (pointer: coarse) {
+  .floor-app .fp-chair, .floor-app .fp-sprite { display: none; }
+  .floor-app .look-3d .fp-top { inset: 0; border-radius: 12px; }
+  .floor-app .look-3d .fp-table.has-sprite { border-radius: 12px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.17' numOctaves='4' seed='11'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .24 0 0 0 0 .1 1.5 0 0 0 -.5'/%3E%3C/filter%3E%3Cfilter id='h'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.003 0.06' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .93 0 0 0 0 .8 1.2 0 0 0 -.62'/%3E%3C/filter%3E%3Crect width='360' height='180' fill='%23c8925c'/%3E%3Crect width='360' height='180' filter='url(%23h)'/%3E%3Crect width='360' height='180' filter='url(%23g)'/%3E%3C/svg%3E") center / 280px 140px; }
+  .floor-app .look-3d .fp-table .fp-body { padding: 4px; }
+}
+
+/* ---- Ndrysho sallën (src/RoomEditor.jsx): the same big room, editable in place ---- */
+.room-edit { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; }
+.room-edit-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.room-edit-hint { margin-left: auto; color: var(--muted); font-size: 13px; }
+.room-look button { min-height: 40px; padding: 8px 16px; font-size: 13px; }
+.room-edit-inactive { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.room-edit-inactive button { min-height: 38px; padding: 6px 12px; font-size: 13px; }
+.room-edit .ai-reading, .room-edit .ai-error { margin: 0; }
+.room-edit-body { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); gap: 16px; min-height: 0; }
+.room-edit-body.with-panel { grid-template-columns: minmax(0, 1fr) 320px; }
+.room-edit-body > .floor-plan-viewport { min-width: 0; min-height: 360px; margin: 0; overflow: visible; display: grid; place-items: center; padding: 18px 10px 10px; }
+.room-edit-body .floor-plan { width: var(--fit-w, 100%); height: var(--fit-h, auto); aspect-ratio: auto; }
+.room-panel { display: grid; align-content: start; gap: 16px; padding: 18px; overflow-y: auto; }
+.room-panel h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+.room-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.room-steppers { display: flex; flex-wrap: wrap; gap: 14px; }
+.room-photo { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.room-photo .actions { display: flex; gap: 8px; }
+.room-drawing { width: 100%; max-height: 220px; object-fit: contain; border-radius: 12px; background: var(--surface-subtle); }
+.room-drawing.floor { aspect-ratio: 1; object-fit: cover; }
+.room-panel-foot { display: flex; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.room-panel-foot button { flex: 1; font-size: 13px; }
+.room-draft { margin-top: 0; }
+.subtle-button.danger { color: var(--red); }
+@media (max-width: 1050px) {
+  .room-edit-body.with-panel { grid-template-columns: minmax(0, 1fr); }
+  .room-edit-hint { display: none; }
+}
+
+/* Tavolinat: the room is the page. Its title stays for screen readers and the keyboard, out of
+   sight; "Ndrysho sallën" sits by the filters and "Mbaro" with the room's tools. */
+.floor-app .title-row { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.room-done { margin-left: 4px; }
+@media (max-width: 1500px) {
+  .room-edit-hint { display: none; }
+  .room-done { margin-left: auto; }
+}
+
+/* Tavolinat's toolbar: the zone, state and "Ndrysho sallën" controls one height, apart. */
+.floor-toolbar-end { display: flex; align-items: center; gap: 14px; }
+.floor-toolbar-end .choice-field .choice-trigger,
+.floor-toolbar-end > button { min-height: 48px; height: 48px; }
+.floor-toolbar-end > button { padding: 0 18px; border-radius: var(--radius-control); font-size: 15px; }
+.floor-toolbar-end .compact-select { gap: 12px; }
+.room-edit-tools { gap: 14px; }
+.room-edit-tools > button, .room-edit-tools > .button-like { min-height: 48px; height: 48px; padding: 0 18px; font-size: 15px; }
+.room-edit-tools .room-look { padding: 4px; }
+.room-edit-tools .room-look button { min-height: 40px; height: 40px; }
+.room-split { display: inline-flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; }
+.room-split input { width: 18px; height: 18px; accent-color: var(--blue); }
+.room-edit-tools .room-zones { padding: 4px; }
+.room-edit-tools .room-zones button { min-height: 40px; height: 40px; padding: 0 16px; font-size: 14px; }
+
+/* ---- The shared look (from Financat): a light sky wash behind every page, white cards with a
+   hairline and a soft long shadow, pill controls, and money in its own colours. ---- */
+:root {
+  --sky-wash: radial-gradient(1200px 520px at 8% -10%, #e3f0fd 0%, transparent 60%), linear-gradient(180deg, #edf4fc 0%, #f4f7fb 38%, #f6f8fb 100%);
+  --card-line: #e6edf5;
+  --card-shadow: 0 1px 2px rgba(15, 40, 80, 0.04), 0 12px 32px -20px rgba(15, 40, 80, 0.22);
+  --money-in: #13985a;
+  --money-out: #e5484d;
+  --money-wait: #e8930c;
+  --ink-strong: #0f1d2b;
+}
+body:has(.app) { background: #f6f8fb; }
+.app .workspace { background: var(--sky-wash); }
+.app .topbar { background: rgba(240, 246, 253, 0.78); border-bottom-color: rgba(15, 40, 80, 0.07); }
+.app .title-row h1 { color: var(--ink-strong); font-size: 30px; font-weight: 750; letter-spacing: -0.03em; }
+.app .title-row p { color: #5a6673; font-size: 14px; }
+.app .panel { border-color: var(--card-line); border-radius: 18px; box-shadow: var(--card-shadow); }
+.app .floor-summary { border-color: var(--card-line); border-radius: 16px; box-shadow: var(--card-shadow); }
+.app .tabs { padding: 4px; gap: 4px; border: 1px solid var(--card-line); background: rgba(255, 255, 255, 0.6); }
+.app .tabs button { min-height: 36px; padding: 0 14px; border: 0; border-radius: 9999px; color: #5a6673; font-size: 13px; }
+.app .tabs button[aria-pressed="true"] { background: #fff; color: var(--ink-strong); box-shadow: 0 1px 2px rgba(15, 40, 80, 0.08), 0 4px 12px -6px rgba(15, 40, 80, 0.25); }
+.app .sidebar nav button[aria-current] { background: linear-gradient(90deg, #e6f1fd, #f0f6fd); }
+
+/* ---- Financat (src/Finance.jsx) ---- */
+.fin { display: grid; gap: 22px; }
+.fin-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.fin-month, .fin-date { display: inline-flex; align-items: center; height: 46px; border: 1px solid var(--card-line); border-radius: 14px; background: #fff; box-shadow: var(--card-shadow); }
+.fin-month { gap: 4px; padding: 0 4px; }
+.fin-month strong { min-width: 130px; color: var(--ink-strong); font-size: 15px; text-align: center; }
+.fin-month .icon-button { min-width: 38px; min-height: 38px; border: 0; background: none; }
+.fin-date { gap: 10px; padding: 0 12px; }
+.fin-date span { color: #8a96a3; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.fin-date input { border: 0; background: none; color: var(--ink-strong); font: 600 15px/1 inherit; font-variant-numeric: tabular-nums; }
+.fin-dash { width: 14px; height: 1.5px; background: #c5cfd9; }
+.fin-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-left: 6px; }
+.fin-presets button { min-height: 36px; padding: 0 14px; border: 1px solid var(--card-line); border-radius: 9999px; background: #fff; color: #3a4652; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(15, 40, 80, 0.04); }
+.fin-presets button[aria-pressed="true"] { border-color: var(--blue); background: var(--blue); color: #fff; box-shadow: 0 6px 14px -6px rgba(8, 103, 201, 0.55); }
+.fin-tabs { display: flex; gap: 4px; margin-left: auto; padding: 4px; border: 1px solid var(--card-line); border-radius: 9999px; background: rgba(255, 255, 255, 0.6); }
+.fin-tabs button { min-height: 38px; padding: 0 16px; border: 0; border-radius: 9999px; background: none; color: #6a7683; font-size: 14px; }
+.fin-tabs button[aria-selected="true"] { background: #fff; color: var(--ink-strong); box-shadow: 0 1px 2px rgba(15, 40, 80, 0.08), 0 4px 12px -6px rgba(15, 40, 80, 0.25); }
+.fin-section { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.fin-section h2 { margin: 0; color: var(--ink-strong); font-size: 22px; font-weight: 750; letter-spacing: -0.02em; }
+.fin-section-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: #e7f6ee; color: var(--money-in); }
+.fin-section-icon.spent { background: #fdecec; color: var(--money-out); }
+.fin-chip { padding: 4px 10px; border-radius: 9999px; background: #e9eef4; color: #66727f; font-size: 12px; font-weight: 600; }
+.fin-total { margin-left: auto; color: var(--money-out); font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.fin-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.fin-card { --tint: 19, 152, 90; position: relative; display: grid; gap: 6px; padding: 18px 20px 16px; border: 1px solid var(--card-line); border-radius: 18px; background: linear-gradient(115deg, #fff 45%, rgba(var(--tint), 0.08) 100%); box-shadow: var(--card-shadow); }
+.fin-card.waiting { --tint: 232, 147, 12; }
+.fin-card.spent { --tint: 229, 72, 77; }
+.fin-card.pending { --tint: 247, 107, 21; }
+.fin-card-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 10px; border-radius: 12px; background: rgba(var(--tint), 0.12); color: rgb(var(--tint)); }
+.fin-card.spent .fin-card-icon svg { transform: rotate(90deg); }
+.fin-card h3 { margin: 0; color: #6f7b88; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.fin-card strong { padding-bottom: 10px; border-bottom: 1px solid rgba(15, 40, 80, 0.07); color: rgb(var(--tint)); font-size: 28px; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.fin-card small { color: #7b8794; font-size: 12px; }
+.fin-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); overflow: hidden; border: 1px solid var(--card-line); border-radius: 18px; background: #fff; box-shadow: var(--card-shadow); }
+.fin-panels > section { min-width: 0; padding: 22px 22px 20px; }
+.fin-panels > section + section { border-left: 1px solid #edf1f6; }
+.fin-net { display: flex; flex-direction: column; gap: 6px; }
+.fin-net h3, .fin-panel-title { margin: 0; color: #6f7b88; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.fin-panel-title { display: flex; align-items: center; gap: 8px; color: var(--ink-strong); font-size: 14px; letter-spacing: 0; text-transform: none; }
+.fin-panel-title svg { color: var(--blue); }
+.fin-net > strong { font-size: 44px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.fin-net > p { margin: 0 0 auto; color: #7b8794; font-size: 13px; }
+.fin-net dl { display: grid; gap: 4px; margin: 18px 0 0; }
+.fin-net dl div { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f3f7; font-size: 14px; }
+.fin-net dt { color: #6f7b88; }
+.fin-net dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fin-cash { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: var(--money-in); color: #fff; box-shadow: 0 10px 20px -12px rgba(19, 152, 90, 0.8); }
+.fin-cash.minus { background: var(--money-out); box-shadow: 0 10px 20px -12px rgba(229, 72, 77, 0.8); }
+.fin-cash span { font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.fin-cash b { font-size: 19px; font-variant-numeric: tabular-nums; }
+.fin .plus { color: var(--money-in); }
+.fin .minus { color: var(--money-out); }
+.fin .wait { color: var(--money-wait); }
+.fin-rows { display: grid; gap: 4px; margin: 16px 0 0; padding: 0; list-style: none; }
+.fin-rows li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto auto auto 48px; align-items: center; gap: 10px; min-height: 48px; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fin-rows li > strong { overflow: hidden; color: var(--ink-strong); font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.fin-rows li > b { color: var(--ink-strong); font-size: 14px; }
+.fin-rows li > small { color: #8a96a3; font-size: 12px; text-align: right; }
+.fin-method-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: #e7f6ee; color: var(--money-in); }
+.fin-method-icon.bank { background: #fdecef; color: #d6336c; }
+.fin-categories li { grid-template-columns: 10px minmax(0, 1fr) auto auto auto 48px; }
+.fin-categories i { width: 9px; height: 9px; border-radius: 50%; }
+.fin-empty, .fin-loading { margin: 18px 0 0; color: #7b8794; font-size: 14px; }
+.fin-loading { padding: 40px; border-radius: 18px; background: #fff; text-align: center; }
+/* Shpenzimet: the list, and the form beside it. */
+.fin-expenses { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.fin-list, .fin-form { padding: 20px 22px; border: 1px solid var(--card-line); border-radius: 18px; background: #fff; box-shadow: var(--card-shadow); }
+.fin-list .fin-section { margin: 0 0 12px; }
+.fin-list ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.fin-list li { display: grid; grid-template-columns: 86px minmax(0, 1fr) auto auto auto; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid #f0f3f7; }
+.fin-list li:last-child { border-bottom: 0; }
+.fin-list li.waiting { background: linear-gradient(90deg, rgba(232, 147, 12, 0.06), transparent 60%); }
+.fin-list time { color: #6f7b88; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fin-list li > div:first-of-type { display: grid; gap: 2px; min-width: 0; }
+.fin-list li strong { color: var(--ink-strong); font-size: 15px; }
+.fin-list li small { overflow: hidden; color: #7b8794; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.fin-list li > b { color: var(--money-out); font-size: 15px; font-variant-numeric: tabular-nums; }
+.fin-actions { display: flex; gap: 6px; }
+.fin-actions button { min-height: 36px; padding: 0 12px; font-size: 13px; }
+.fin-form { display: grid; gap: 16px; }
+.fin-form h2 { margin: 0; color: var(--ink-strong); font-size: 18px; }
+.fin-form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fin-seg { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--card-line); border-radius: 12px; background: #f6f8fb; }
+.fin-seg button { flex: 1; min-height: 38px; border: 0; border-radius: 9px; background: none; color: #5a6673; font-size: 13px; }
+.fin-seg button[aria-pressed="true"] { background: #fff; color: var(--ink-strong); box-shadow: 0 1px 2px rgba(15, 40, 80, 0.1); }
+.fin-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 1200px) {
+  .fin-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fin-panels { grid-template-columns: minmax(0, 1fr); }
+  .fin-panels > section + section { border-left: 0; border-top: 1px solid #edf1f6; }
+  .fin-tabs { margin-left: 0; }
+  .fin-expenses { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .fin-cards { grid-template-columns: minmax(0, 1fr); }
+  .fin-rows li, .fin-rows:not(.fin-categories) li { display: flex; gap: 10px; }
+  .fin-rows li > strong, .fin-method { flex: 1; }
+  .fin-rows li > span:empty { display: none; }
+  .fin-rows li > small { min-width: 40px; }
+  .fin-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .fin-list li time { grid-column: 1 / -1; }
+  .fin-actions { grid-column: 1 / -1; }
+  .fin-date input, .fin-form input { font-size: 16px; }
+}
+.fin-rows li { white-space: nowrap; }
+.fin-rows:not(.fin-categories) li { grid-template-columns: 34px minmax(0, 1fr) auto 48px; min-height: 58px; }
+.fin-method { display: grid; gap: 2px; min-width: 0; }
+.fin-method strong { color: var(--ink-strong); font-size: 15px; font-weight: 600; }
+.fin-method span { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+.fin-method em { font-style: normal; }
+.fin .fin-cash, .fin .fin-cash.minus, .fin .fin-cash.plus { color: #fff; }
+
+/* ---- The shared look, everywhere: the sidebar in sections, softer controls ---- */
+.app .sidebar { background: rgba(250, 252, 255, 0.92); border-right-color: var(--card-line); }
+.app .sidebar nav { gap: 2px; }
+.app .sidebar nav button { min-height: 42px; padding: 10px 12px; border-radius: 10px; color: #3d4955; font-size: 14px; font-weight: 500; }
+.app .sidebar nav button > svg { width: 19px; height: 19px; color: #6a7683; }
+.app .sidebar nav button[aria-current] { background: #e6f0fc; color: var(--ink-strong); font-weight: 650; }
+.app .sidebar nav button[aria-current] > svg { color: var(--blue); }
+@media (hover: hover) and (pointer: fine) { .app .sidebar nav button:not([aria-current]):hover { background: rgba(15, 40, 80, 0.04); } }
+.nav-group { display: block; margin: 18px 12px 6px; color: #8a96a3; font-size: 12.5px; font-weight: 600; }
+.app .sidebar nav > .nav-group:first-child { margin-top: 4px; }
+:where(.app) button:where(:not(.primary, .icon-button, .subtle-button)) { border-color: #dfe6ee; }
+:where(.app) button { border-radius: 12px; }
+:where(.app) button.primary { border-radius: 9999px; box-shadow: 0 6px 16px -8px rgba(8, 103, 201, 0.6); }
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), .app select, .app textarea, .app .choice-field .choice-trigger { border-color: #dfe6ee; border-radius: 12px; }
+.app .badge { border-radius: 9999px; }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .nav-group { display: none; }
+}
+/* Raportet's header: the title, and its tabs beside it. */
+.fin-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.fin-title { color: var(--ink-strong); font-size: 30px; font-weight: 750; letter-spacing: -0.03em; }
+.fin-head p { margin: 4px 0 0; color: #5a6673; font-size: 14px; }
+.fin-head .fin-tabs { margin-left: 0; }
+.room-done[aria-pressed="true"] { border-color: var(--blue) !important; background: #e6f0fc; color: var(--blue); }
+/* Llogaritë financiare. */
+.acc { display: grid; gap: 18px; }
+.acc-head, .acc-group, .acc-form { border: 1px solid var(--card-line); border-radius: 18px; background: #fff; box-shadow: var(--card-shadow); }
+.acc-head { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 18px 22px; }
+.acc-head h2 { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--ink-strong); font-size: 20px; }
+.acc-head p { margin: 4px 0 0; color: #6a7683; font-size: 14px; }
+.acc-head p b { color: var(--ink-strong); }
+.acc-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-left: auto; }
+.acc-actions button { min-height: 42px; padding: 0 16px; }
+.acc-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: #eaf2fc; color: var(--blue); }
+.acc-icon.small { width: 40px; height: 40px; border-radius: 12px; }
+.acc-form { display: grid; gap: 16px; padding: 20px 22px; }
+.acc-form h3 { margin: 0; color: var(--ink-strong); font-size: 17px; }
+.acc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.acc-group { overflow: hidden; }
+.acc-group-head { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 76px; padding: 14px 22px; border: 0 !important; border-radius: 0 !important; background: #fafcfe; text-align: left; }
+.acc-group-head > svg:last-child { transition: transform 200ms var(--ease-out); }
+.acc-group-head[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+.acc-group-name { display: grid; gap: 2px; }
+.acc-group-name strong { color: var(--ink-strong); font-size: 16px; }
+.acc-group-name em { margin-left: 6px; color: #8a96a3; font-size: 13px; font-style: normal; }
+.acc-group-name small { color: #6a7683; font-size: 13px; font-weight: 400; }
+.acc-group-sum { display: grid; justify-items: end; margin-left: auto; }
+.acc-group-sum small { color: #8a96a3; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.acc-group-sum b { color: var(--ink-strong); font-size: 18px; font-variant-numeric: tabular-nums; }
+.acc-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 18px 22px 22px; border-top: 1px solid #edf1f6; background: #f4f7fb; }
+.acc-card { --tint: 8, 103, 201; display: grid; justify-items: start; gap: 6px; min-height: 0; padding: 18px 20px 16px; border: 1px solid var(--card-line) !important; border-radius: 18px !important; background: linear-gradient(115deg, #fff 50%, rgba(var(--tint), 0.06)); box-shadow: var(--card-shadow); text-align: left; }
+.acc-card.cash { --tint: 19, 152, 90; }
+.acc-card.card { --tint: 232, 147, 12; }
+.acc-card.other { --tint: 110, 86, 207; }
+.acc-card-icon { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 10px; border-radius: 12px; background: rgba(var(--tint), 0.12); color: rgb(var(--tint)); }
+.acc-card h4 { margin: 0; color: #6f7b88; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.acc-card strong { width: 100%; padding-bottom: 10px; border-bottom: 1px solid rgba(15, 40, 80, 0.07); color: var(--ink-strong); font-size: 26px; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.acc-card strong.minus, .acc .minus { color: var(--money-out); }
+.acc-card small { display: flex; justify-content: space-between; width: 100%; color: #7b8794; font-size: 12px; font-weight: 500; }
+@media (hover: hover) and (pointer: fine) { .acc-card:hover { border-color: #c9d8ea !important; transform: translateY(-1px); } }
+@media (max-width: 1200px) { .acc-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .acc-cards { grid-template-columns: minmax(0, 1fr); } .acc-actions { margin-left: 0; } }
+.app .sidebar nav button, .app .nav-sheet > button { border: 0 !important; background: transparent; box-shadow: none; }
+.app .sidebar nav button[aria-current] { background: #e6f0fc; }
+.acc-card { justify-content: stretch; align-content: start; }
+.acc-card small { gap: 10px; }
+/* Phones keep the bottom tab bar as it was: short labels under icons. */
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .app .sidebar nav button { min-height: 58px; padding: 6px 2px; border-radius: 0; font-size: 11px; font-weight: 600; }
+  .app .sidebar nav button[aria-current] { background: transparent; }
+  .floor-toolbar-end > button { padding: 0 12px; font-size: 14px; white-space: nowrap; }
+}
+@media (max-width: 760px) { .floor-toolbar-end { gap: 8px; } .floor-toolbar-end .compact-select { gap: 6px; } .floor-toolbar-end .compact-select .choice-trigger { min-width: 120px; } }
+
+/* ---- Every panel in Raportet's language ---- */
+.app .section-heading h2 { color: var(--ink-strong); font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
+.app .section-heading p { color: #6a7683; font-size: 13px; }
+.app .panel { background: linear-gradient(180deg, #fff 0%, #fff 70%, #fbfdff 100%); }
+/* KPI tiles (Turnet, Shitjet): a tinted card, an uppercase label, a large figure. */
+.app .shift-kpis > * { --tint: 8, 103, 201; padding: 18px 20px 16px; border: 1px solid var(--card-line); border-radius: 18px; background: linear-gradient(115deg, #fff 48%, rgba(var(--tint), 0.08)); box-shadow: var(--card-shadow); }
+.app .shift-kpis > :nth-child(4n + 1) { --tint: 19, 152, 90; }
+.app .shift-kpis > :nth-child(4n + 2) { --tint: 8, 103, 201; }
+.app .shift-kpis > :nth-child(4n + 3) { --tint: 232, 147, 12; }
+.app .shift-kpis > :nth-child(4n + 4) { --tint: 110, 86, 207; }
+.app .shift-kpis span { color: #6f7b88; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.app .shift-kpis strong { padding-bottom: 8px; border-bottom: 1px solid rgba(15, 40, 80, 0.07); color: rgb(var(--tint)); font-size: 26px; font-weight: 750; }
+.app .shift-kpis small { color: #7b8794; }
+/* Tables: a soft header band, rows that light up under the pointer. */
+.app table thead th, .app .responsive-table thead th { color: #6f7b88; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.app table thead tr { background: #f5f8fc; }
+.app table tbody tr { transition: background-color 160ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .app table tbody tr:hover { background: #f7fafe; } }
+/* Empty states and notes. */
+.app .empty-icon { border-radius: 16px; background: #eaf2fc; color: var(--blue); }
+.app .info-note { border: 1px solid var(--card-line); border-radius: 18px; background: linear-gradient(115deg, #fff 50%, rgba(8, 103, 201, 0.06)); box-shadow: var(--card-shadow); }
+/* Cards rise in when a page opens, one after another. */
+.app main .panel, .app .fin-card, .app .fin-panels, .app .acc-group, .app .acc-head, .app .shift-kpis > *, .app .fin-list, .app .fin-form { animation: card-rise 460ms var(--ease-out) backwards; }
+.app main .panel:nth-of-type(2), .app .fin-card:nth-child(2), .app .shift-kpis > :nth-child(2) { animation-delay: 50ms; }
+.app main .panel:nth-of-type(3), .app .fin-card:nth-child(3), .app .shift-kpis > :nth-child(3) { animation-delay: 100ms; }
+.app main .panel:nth-of-type(4), .app .fin-card:nth-child(4), .app .shift-kpis > :nth-child(4), .app .fin-panels { animation-delay: 150ms; }
+@keyframes card-rise { from { opacity: 0; transform: translateY(10px) scale(0.99); } }
+
+/* ---- Buttons that answer the hand ---- */
+/* :where() keeps all of this below any component's own rules (a pattern dot's centring, a
+   handle's turn), and the dots and handles are left out of the motion altogether. */
+:where(.app) button:where(:not(.pattern-dot, .fp-handle)), :where(.app) .button-like {
+  transition: transform 160ms var(--ease-out), box-shadow 200ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), color 160ms var(--ease-out), background-position 600ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  :where(.app) button:where(:not(:disabled, .icon-button, .fp-handle, .pattern-dot)):hover, :where(.app) .button-like:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -10px rgba(15, 40, 80, 0.45); }
+  :where(.app .sidebar nav) button:where(:not(:disabled)):hover { transform: translateX(3px); box-shadow: none; }
+}
+:where(.app) button:where(:not(:disabled, .fp-handle, .pattern-dot)):active, :where(.app) .button-like:active { transform: scale(0.96); transition-duration: 80ms; }
+/* The main buttons: a sweep of light on hover, a deeper glow. */
+:where(.app) button.primary { background-image: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.32) 50%, transparent 70%); background-size: 250% 100%; background-position: 130% 0; background-repeat: no-repeat; }
+@media (hover: hover) and (pointer: fine) {
+  :where(.app) button.primary:where(:not(:disabled)):hover { background-position: -30% 0; box-shadow: 0 10px 24px -10px rgba(8, 103, 201, 0.75); }
+}
+/* A pressed tab or pill settles in with a small pop. */
+:where(.app) button:where([aria-pressed="true"]:not(.fp-handle, .pattern-dot)), :where(.app) button[aria-selected="true"], :where(.app .sidebar nav) button[aria-current] { animation: pill-pop 260ms var(--ease-out); }
+@keyframes pill-pop { 0% { transform: scale(0.94); } 60% { transform: scale(1.02); } }
+/* Icons act out what they mean. */
+.app button svg, .app .button-like svg { transition: transform 260ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  .app button:hover > svg[data-icon="close"], .app button:hover > svg[data-icon="plus"] { transform: rotate(90deg); }
+  .app button:hover > svg[data-icon="arrow"] { transform: translateX(3px); }
+  .app button:hover > svg[data-icon="back"] { transform: translateX(-3px); }
+  .app button:hover > svg[data-icon="rotate"] { transform: rotate(-180deg); }
+  .app button:hover > svg[data-icon="check"] { transform: scale(1.18); }
+  .app button:hover > svg[data-icon="chevronDown"] { transform: translateY(2px); }
+  .app button:hover > svg[data-icon="edit"], .app .button-like:hover > svg[data-icon="edit"] { animation: icon-wiggle 420ms var(--ease-out); }
+  .app button:hover > svg[data-icon="sparkle"], .app .button-like:hover > svg[data-icon="sparkle"] { animation: icon-twinkle 700ms var(--ease-out); }
+  .app button:hover > svg[data-icon="print"] { animation: icon-bob 520ms var(--ease-out); }
+  .app .sidebar nav button:hover > svg { transform: scale(1.1); }
+}
+@keyframes icon-wiggle { 25% { transform: rotate(-12deg); } 60% { transform: rotate(9deg); } }
+@keyframes icon-twinkle { 40% { transform: scale(1.25) rotate(18deg); } 70% { transform: scale(0.95) rotate(-6deg); } }
+@keyframes icon-bob { 40% { transform: translateY(-3px); } 70% { transform: translateY(1px); } }
+/* The ripple from a press. */
+.ripple-layer { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.ripple { position: absolute; border-radius: 50%; background: currentColor; opacity: 0.16; transform: scale(0); animation: ripple 620ms var(--ease-out) forwards; }
+.app button.primary .ripple { background: #fff; opacity: 0.3; }
+@keyframes ripple { to { transform: scale(1); opacity: 0; } }
+/* Fields: a soft blue ring when focused. */
+.app input:not([type="checkbox"]):not([type="radio"]):focus, .app select:focus, .app textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(8, 103, 201, 0.12); outline: none; transition: box-shadow 160ms var(--ease-out), border-color 160ms var(--ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .app button, .app .button-like, .app button svg, .app [aria-pressed="true"], .app [aria-selected="true"], .app .sidebar nav button[aria-current],
+  .app main .panel, .app .fin-card, .app .fin-panels, .app .acc-group, .app .acc-head, .app .shift-kpis > *, .app .fin-list, .app .fin-form { animation: none !important; transition: none !important; }
+  .app button:hover, .app button:active { transform: none !important; }
+}
+
+/* ---- The table's order window in the shared look ---- */
+.app .order-modal { border-radius: 24px; box-shadow: 0 40px 100px -30px rgba(10, 30, 60, 0.5), 0 0 0 1px rgba(15, 40, 80, 0.06); }
+.app .order-modal-backdrop { background: rgba(15, 29, 43, 0.34); }
+.app .order-heading h2 { color: var(--ink-strong); font-size: 24px; font-weight: 750; letter-spacing: -0.02em; }
+.app .chip-row button { border-color: var(--card-line); background: #fff; color: #3a4652; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(15, 40, 80, 0.04); }
+.app .chip-row button[aria-pressed="true"] { border-color: var(--blue); background: var(--blue); color: #fff; box-shadow: 0 6px 14px -6px rgba(8, 103, 201, 0.55); }
+.app .menu-tile { border-color: var(--card-line); border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(15, 40, 80, 0.04), 0 8px 20px -16px rgba(15, 40, 80, 0.3); }
+.app .menu-tile.in-order { border-color: var(--blue); background: linear-gradient(180deg, #f2f8ff, #e9f2fd); box-shadow: 0 0 0 3px rgba(8, 103, 201, 0.12), 0 8px 20px -14px rgba(8, 103, 201, 0.45); }
+.app .menu-tile-photo { overflow: hidden; border-radius: 12px; }
+.app .menu-tile-photo img { transition: transform 360ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  .app .menu-tile:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(15, 40, 80, 0.05), 0 16px 30px -18px rgba(15, 40, 80, 0.45); }
+  .app .menu-tile:hover .menu-tile-photo img { transform: scale(1.05); }
+}
+.app .menu-tile-qty { animation: qty-pop 300ms var(--ease-out); }
+@keyframes qty-pop { 0% { transform: scale(0.6); } 70% { transform: scale(1.12); } }
+.app .order-bill { background: linear-gradient(180deg, #f4f8fd, #f7f9fc); }
+.app .order-footer { background: #fff; box-shadow: 0 -10px 24px -20px rgba(15, 40, 80, 0.35); }
+.app .order-footer-total strong, .app .order-footer-total b { color: var(--ink-strong); font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+
+/* ---- Payment and the other windows ---- */
+.app .payment-dialog, .app .ie-dialog, .app .lux-dialog, .app .ai-dialog { border-color: var(--card-line); border-radius: 24px; box-shadow: 0 40px 100px -30px rgba(10, 30, 60, 0.5); }
+.app .payment-dialog[open], .app .ie-dialog[open], .app .lux-dialog[open] { animation: dialog-in 240ms var(--ease-out); }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+.app .payment-dialog h2 { color: var(--ink-strong); font-weight: 750; }
+.app .dialog-icon { border-radius: 14px; background: linear-gradient(135deg, #e6f0fc, #d8e8fb); }
+.app .payment-amount { border-color: #edf1f6; }
+.app .payment-amount strong, .app .payment-amount-fill { color: var(--blue); font-weight: 800; }
+.app .change-due { border-radius: 14px; background: linear-gradient(115deg, #fff 30%, rgba(19, 152, 90, 0.1)); box-shadow: inset 0 0 0 1px rgba(19, 152, 90, 0.18); }
+.app .change-due strong { color: var(--money-in); }
+
+/* ---- Repartet: each slip a card ---- */
+.app .station-card { --tint: 8, 103, 201; padding: 18px 20px; border-color: var(--card-line); border-radius: 18px; background: linear-gradient(160deg, #fff 55%, rgba(var(--tint), 0.05)); box-shadow: var(--card-shadow); animation: card-rise 420ms var(--ease-out) backwards; transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out); }
+.app .station-card.void { --tint: 229, 72, 77; }
+.app .station-card.moving { --tint: 232, 147, 12; }
+@media (hover: hover) and (pointer: fine) { .app .station-card:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(15, 40, 80, 0.05), 0 18px 36px -20px rgba(15, 40, 80, 0.4); } }
+.app .station-card .primary { border-radius: 14px; }
+
+/* ---- Cilësimet: the topic list as a card, the open topic in soft blue ---- */
+@media (min-width: 1180px) {
+  .app .settings-layout .settings-tabs { padding: 8px; border: 1px solid var(--card-line); border-radius: 18px; background: #fff; box-shadow: var(--card-shadow); }
+  .app .settings-layout .settings-tabs button { min-height: 52px; border-radius: 12px; }
+  .app .settings-layout .settings-tabs button[aria-pressed="true"] { background: #e6f0fc; color: var(--ink-strong); box-shadow: none; }
+}
+.app .printer-card { border-color: var(--card-line); border-radius: 16px; background: linear-gradient(115deg, #fff 60%, rgba(8, 103, 201, 0.04)); box-shadow: 0 1px 2px rgba(15, 40, 80, 0.04), 0 10px 24px -20px rgba(15, 40, 80, 0.35); transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .app .printer-card:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(15, 40, 80, 0.05), 0 16px 30px -18px rgba(15, 40, 80, 0.4); } }
+.app .notice:not(.floating) { border-radius: 14px; }
+.app .config-check { border-radius: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .app .menu-tile, .app .menu-tile-photo img, .app .menu-tile-qty, .app .station-card, .app .printer-card, .app dialog[open] { animation: none !important; transition: none !important; }
+}
+/* Raportet on a phone: nothing may be wider than the screen; the tabs scroll sideways. */
+.fin, .fin > * { min-width: 0; }
+.fin-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.fin-tabs::-webkit-scrollbar { display: none; }
+.fin-tabs button { flex: none; white-space: nowrap; }
+@media (max-width: 760px) {
+  .fin-head .fin-tabs { width: 100%; }
+  .fin-bar { gap: 8px; }
+  .fin-month, .fin-date { max-width: 100%; }
+  .fin-presets { margin-left: 0; }
 }

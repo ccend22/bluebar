@@ -20,6 +20,9 @@ export async function loadState(client) {
     ", 'guest_alerts', (SELECT COALESCE(jsonb_agg(r ORDER BY r.id), '[]'::jsonb) FROM" +
     " (SELECT id, table_id, items, note, decided_at FROM bluebar.guest_orders" +
     "  WHERE status = 'accepted' AND seen_at IS NULL AND decided_at > now() - interval '6 hours') r)" +
+    // The 3D floor's drawings, without their pictures (fetched one by one, once).
+    ", 'floor_assets', (SELECT COALESCE(jsonb_agg(r ORDER BY r.created_at), '[]'::jsonb) FROM" +
+    " (SELECT id, kind, name, created_at FROM bluebar.floor_assets) r)" +
     // Reservations from yesterday on (the day before covers the venue's clock vs the database's).
     ", 'reservations', (SELECT COALESCE(jsonb_agg(r ORDER BY r.day, r.start_time), '[]'::jsonb) FROM" +
     " (SELECT id, name, phone, guests, table_id, to_char(day, 'YYYY-MM-DD') AS day, start_time, end_time, created_by" +
@@ -56,6 +59,7 @@ export async function loadState(client) {
     .map((t) => ({
       id: t.id,
       label: t.label || "",
+      sprite: t.sprite || null,
       area: t.area,
       shape: t.shape,
       active: t.active,
@@ -190,6 +194,10 @@ export async function loadState(client) {
         id: r.id, name: r.name, phone: r.phone, guests: r.guests, table: r.table_id, date: r.day, start: r.start_time, end: r.end_time, by: r.created_by,
       })),
       reservationSlots: control.reservation_slots || [],
+      floorAssets: rows("floor_assets").map((a) => ({ id: a.id, kind: a.kind, name: a.name })),
+      floorTexture: control.floor_texture || null,
+      floorStyle: control.floor_style || "3d",
+      separateRooms: control.separate_rooms === true,
       invoices,
       movements,
       printers: rows("printers")
@@ -443,6 +451,10 @@ export async function persist(client, previous, next) {
        ON CONFLICT(id) DO UPDATE SET name=$2,phone=$3,guests=$4,table_id=$5,day=$6,start_time=$7,end_time=$8`,
       [x.id, x.name, x.phone, x.guests, x.table ?? null, x.date, x.start, x.end ?? null, x.by ?? null],
     );
+  if (typeof next.separateRooms === "boolean" && next.separateRooms !== previous.separateRooms)
+    await client.query("UPDATE bluebar.control SET separate_rooms=$1 WHERE id=1", [next.separateRooms]);
+  if (next.floorStyle && next.floorStyle !== previous.floorStyle)
+    await client.query("UPDATE bluebar.control SET floor_style=$1 WHERE id=1", [next.floorStyle]);
   if (changed(previous.reservationSlots || [], next.reservationSlots || []))
     await client.query("UPDATE bluebar.control SET reservation_slots=$1 WHERE id=1", [JSON.stringify(next.reservationSlots)]);
   for (const x of previous.printers.filter((x) => !next.printers.some((y) => y.id === x.id)))

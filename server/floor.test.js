@@ -17,12 +17,19 @@ test("stored sizes read back as whole cells, including older 9%x9% tables", () =
   assert.deepEqual(footprint(table(1, 50, 50, "Drejtkëndësh", 2, 1, 90)), { cols: 1, rows: 2 });
 });
 
-test("the room fills up without two tables ever sharing a cell", () => {
+test("the room fills up without two tables ever sharing space, then says it is full", () => {
   let state = initialState();
-  const free = GRID_COLS * GRID_ROWS - state.tables.length;
-  for (let n = 0; n < free; n++)
-    state = applyCommand(state, "table.save", { area: "Salla", shape: n % 3 ? "Rreth" : "Bar" }).state;
-  assert.equal(state.tables.length, GRID_COLS * GRID_ROWS);
+  const seeded = state.tables.length;
+  let full = null;
+  for (let n = 0; n < GRID_COLS * GRID_ROWS && !full; n++) {
+    try {
+      state = applyCommand(state, "table.save", { area: "Salla", shape: n % 3 ? "Rreth" : "Bar" }).state;
+    } catch (e) {
+      full = e.message;
+    }
+  }
+  assert.match(full, /Nuk ka më vend/);
+  assert.ok(state.tables.length > seeded + 10, "the free space is used");
   assert.deepEqual(collisions(state.tables), []);
 });
 

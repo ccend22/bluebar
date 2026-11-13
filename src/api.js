@@ -106,3 +106,22 @@ export const fetchReport = (params) =>
 export const voiceOrder = (audio, mime) => request("/voice-order", { method: "POST", body: JSON.stringify({ audio, mime }) });
 // Gemini reads a whole menu in up to ~45 s, longer than the usual wait.
 export const readMenuPhoto = (input) => request("/products/from-photo", { method: "POST", body: JSON.stringify(input), timeout: 50000 });
+// The 3D floor: a drawing made from the venue's photo (Gemini takes up to a minute and a half),
+// kept as a floor asset; a table wears one ("all": every table), the room's floor is one.
+export const drawFloorAsset = (kind, image) => request("/floor/draw", { method: "POST", body: JSON.stringify({ kind, image }), timeout: 100000 });
+export const saveFloorAsset = (kind, name, dataUrl) => send("POST", "/floor/assets", { kind, name, dataUrl });
+export const deleteFloorAsset = (id) => send("DELETE", `/floor/assets/${id}`);
+export const setTableSprite = (table, assetId) => send("PUT", `/floor/tables/${table}/sprite`, { assetId });
+export const setFloorTexture = (assetId) => send("PUT", "/floor/texture", { assetId });
+// An <img> can't send the app's header, so the picture's URL names the business itself.
+export const floorAssetUrl = (id) => `/api/floor-asset/${id}?b=${venueSlug}`;
+// Financat: a period's income and spending, and the expenses the manager enters.
+const range = (from, to) => `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+export const fetchFinance = (from, to) => request(`/finance?${range(from, to)}`);
+export const fetchExpenses = (from, to) => request(`/expenses?${range(from, to)}`);
+export const saveExpense = (expense) => (expense.id ? send("PUT", `/expenses/${expense.id}`, { ...expense, id: undefined }) : send("POST", "/expenses", expense));
+export const deleteExpense = (id) => send("DELETE", `/expenses/${id}`);
+export const fetchAccounts = () => request("/accounts");
+export const saveAccount = ({ id, ...account }) => (id ? send("PUT", `/accounts/${id}`, account) : send("POST", "/accounts", account));
+export const deleteAccount = (id) => send("DELETE", `/accounts/${id}`);
+export const moveMoney = (move) => send("POST", "/accounts/moves", move);

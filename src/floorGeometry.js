@@ -58,6 +58,35 @@ export const fits = (block, taken) =>
   block.top + block.rows <= GRID_ROWS &&
   !taken.some((b) => intersects(block, b));
 
+// A table's space on the floor, in percent of the room: its footprint of cells around its
+// centre, wherever that centre is. Tables move freely (no snapping to cells); two tables never
+// share any of this space, which keeps a gap between them for a finger.
+export function rectOf(t, at = t) {
+  const { cols, rows } = footprint(t);
+  return { x: at.posX - (cols * CELL_W) / 2, y: at.posY - (rows * CELL_H) / 2, w: cols * CELL_W, h: rows * CELL_H };
+}
+const EPS = 0.01;
+const overlaps = (a, b) => a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS;
+export const rectFits = (r, taken) =>
+  r.x >= -EPS && r.y >= -EPS && r.x + r.w <= 100 + EPS && r.y + r.h <= 100 + EPS && !taken.some((b) => overlaps(r, b));
+// The nearest centre that keeps a table of this footprint inside the room.
+export function inRoom(t, at) {
+  const { cols, rows } = footprint(t);
+  const hw = (cols * CELL_W) / 2, hh = (rows * CELL_H) / 2;
+  return { posX: clamp(at.posX, hw, 100 - hw), posY: clamp(at.posY, hh, 100 - hh) };
+}
+// The first free block of cells (reading order) for this table, among tables placed anywhere:
+// its centre, or null if the room is full.
+export function openSpot(t, taken) {
+  const { cols, rows } = footprint(t);
+  for (let top = 0; top + rows <= GRID_ROWS; top++)
+    for (let left = 0; left + cols <= GRID_COLS; left++) {
+      const at = centerOf({ left, top, cols, rows });
+      if (rectFits(rectOf(t, at), taken)) return at;
+    }
+  return null;
+}
+
 // First free block (reading order) for a table of this footprint, or null if the room is full.
 export function freeSpot({ cols, rows }, taken) {
   for (let top = 0; top + rows <= GRID_ROWS; top++)
@@ -65,13 +94,13 @@ export function freeSpot({ cols, rows }, taken) {
       if (fits({ left, top, cols, rows }, taken)) return { left, top, cols, rows };
   return null;
 }
-// Pairs of tables that claim the same cell.
+// Pairs of tables whose spaces overlap.
 export function collisions(tables) {
-  const blocks = tables.map((t) => ({ id: t.id, ...cellsOf(t) }));
+  const rects = tables.map((t) => ({ id: t.id, ...rectOf(t) }));
   const pairs = [];
-  for (let i = 0; i < blocks.length; i++)
-    for (let j = i + 1; j < blocks.length; j++)
-      if (intersects(blocks[i], blocks[j])) pairs.push([blocks[i].id, blocks[j].id]);
+  for (let i = 0; i < rects.length; i++)
+    for (let j = i + 1; j < rects.length; j++)
+      if (overlaps(rects[i], rects[j])) pairs.push([rects[i].id, rects[j].id]);
   return pairs;
 }
 // Tidy the room: keep every table's size and turn, keep tables that already sit on a
@@ -83,15 +112,15 @@ export function arrange(tables) {
   const clean = (t) => ({ ...sizeFor(t.shape, spanOf(t).cols, spanOf(t).rows) });
   const pending = [];
   for (const t of [...tables].sort((a, b) => a.id - b.id)) {
-    const block = cellsOf(t);
-    if (fits(block, taken)) taken.push(block);
+    const rect = rectOf(t);
+    if (rectFits(rect, taken)) taken.push(rect);
     else pending.push(t);
   }
   for (const t of pending) {
-    const block = freeSpot(footprint(t), taken);
-    if (!block) continue;
-    taken.push(block);
-    moves[t.id] = { ...centerOf(block), ...clean(t) };
+    const at = openSpot(t, taken);
+    if (!at) continue;
+    taken.push(rectOf(t, at));
+    moves[t.id] = { ...at, ...clean(t) };
   }
   return moves;
 }

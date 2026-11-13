@@ -1978,3 +1978,106 @@ test("Rezervimet: a table isn't booked twice at once, the venue's slots are the 
     await t.close();
   }
 });
+
+test("the 3D floor: a drawing from a photo is saved, worn by a table, laid as the floor, and removed cleanly", async () => {
+  const webp = `data:image/webp;base64,${Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP"), Buffer.alloc(40, 7)]).toString("base64")}`;
+  let asked;
+  const t = await setup({ furniture: async (input) => ((asked = input), { mime: "image/png", image: "QUJD" }) });
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    assert.equal((await t.call("POST", "/api/floor/draw", { cookie: ana, body: { kind: "table", image: webp } })).statusCode, 403, "the manager's");
+    const drawn = await t.call("POST", "/api/floor/draw", { cookie: boss, body: { kind: "table", image: webp } });
+    assert.deepEqual(drawn.json(), { image: "data:image/png;base64,QUJD" });
+    assert.equal(asked.kind, "table");
+    assert.equal(asked.mime, "image/webp");
+    assert.equal((await t.call("POST", "/api/floor/assets", { cookie: boss, body: { kind: "table", name: "x", dataUrl: "data:image/webp;base64,AAAA" } })).statusCode, 400, "a real picture");
+    const table = (await t.call("POST", "/api/floor/assets", { cookie: boss, body: { kind: "table", name: "Tavolina e drurit", dataUrl: webp } })).json().id;
+    const floor = (await t.call("POST", "/api/floor/assets", { cookie: boss, body: { kind: "floor", name: "Parketi", dataUrl: webp } })).json().id;
+    assert.equal((await state()).floorTexture, floor, "a new floor is laid at once");
+    assert.equal((await t.call("PUT", "/api/floor/tables/1/sprite", { cookie: boss, body: { assetId: floor } })).statusCode, 404, "a floor is not a table");
+    assert.equal((await t.call("PUT", "/api/floor/tables/1/sprite", { cookie: boss, body: { assetId: table } })).statusCode, 200);
+    assert.equal((await state()).tables.find((x) => x.id === 1).sprite, table);
+    assert.equal((await t.call("PUT", "/api/floor/tables/all/sprite", { cookie: boss, body: { assetId: table } })).statusCode, 200);
+    assert.ok((await state()).tables.every((x) => x.sprite === table), "every table at once");
+    // Editing the table keeps its drawing.
+    const saved = await t.send("table.save", { id: 1, area: "Salla", shape: "Rreth" });
+    assert.equal(saved.state.tables.find((x) => x.id === 1).sprite, table);
+    const picture = await t.call("GET", `/api/floor-asset/${table}`, { cookie: ana });
+    assert.equal(picture.statusCode, 200, "waiters see the room too");
+    assert.equal(picture.headers["content-type"], "image/webp");
+    assert.equal((await t.call("DELETE", `/api/floor/assets/${table}`, { cookie: boss })).statusCode, 200);
+    assert.equal((await t.call("PUT", "/api/floor/texture", { cookie: boss, body: { assetId: null } })).statusCode, 200);
+    const after = await state();
+    assert.equal(after.tables.find((x) => x.id === 1).sprite, null);
+    assert.equal(after.floorTexture, null);
+    assert.deepEqual(after.floorAssets, [{ id: floor, kind: "floor", name: "Parketi" }]);
+    // The room's look is the manager's choice for the whole venue.
+    assert.equal(after.floorStyle, "3d");
+    const version = (await t.call("GET", "/api/state", { cookie: boss })).json().version;
+    assert.equal((await t.call("POST", "/api/commands", { cookie: ana, body: { id: randomUUID(), version, type: "floor.style", payload: { style: "flat" } } })).statusCode, 403);
+    assert.equal((await t.call("POST", "/api/commands", { cookie: boss, body: { id: randomUUID(), version, type: "floor.style", payload: { style: "round" } } })).statusCode, 400);
+    assert.equal((await t.call("POST", "/api/commands", { cookie: boss, body: { id: randomUUID(), version, type: "floor.style", payload: { style: "flat" } } })).statusCode, 200);
+    assert.equal((await state()).floorStyle, "flat");
+  } finally {
+    await t.close();
+  }
+});
+
+test("Financat: sales less refunds, approved and pending expenses, till cash-outs, by method and category; managers only", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie: boss, body: { id: randomUUID(), version, type, payload } });
+    };
+    await cmd("shift.open", { opening: 5000 });
+    await cmd("product.save", { name: "Espresso", price: 150, category: "Kafe", trackStock: false });
+    for (let i = 0; i < 4; i++) await cmd("order.add", { tableId: 1, productId: 1, waiterId: 1 });
+    await cmd("order.pay", { tableId: 1, method: "Cash", received: 600 });
+    await cmd("order.add", { tableId: 2, productId: 1, waiterId: 1 });
+    await cmd("order.pay", { tableId: 2, method: "Kartë" });
+    await cmd("shift.cash", { kind: "out", amount: 100, reason: "Akull" });
+    const from = new Date(Date.now() - 86400000).toISOString(), to = new Date(Date.now() + 86400000).toISOString();
+    const spentAt = new Date().toISOString();
+    const add = (body, cookie = boss) => t.call("POST", "/api/expenses", { cookie, body: { spentAt, method: "Bankë", status: "aprovuar", ...body } });
+    assert.equal((await add({ amount: 50, category: "Staff" }, ana)).statusCode, 403, "the manager's");
+    assert.equal((await add({ amount: 0, category: "Staff" })).statusCode, 400);
+    assert.equal((await add({ amount: 200, category: "Staff" })).statusCode, 200);
+    const pending = (await add({ amount: 80, category: "Utilities", method: "Cash", status: "pritje" })).json().expense;
+    const f = (await t.call("GET", `/api/finance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cookie: boss })).json();
+    assert.equal(f.income, 750);
+    assert.equal(f.spent, 300, "200 approved + 100 out of the till");
+    assert.equal(f.pending, 80);
+    assert.equal(f.net, 450);
+    assert.equal(f.netCash, 600 - 100);
+    assert.deepEqual(f.methods.map((m) => [m.method, m.income, m.spent, m.pending]), [["Cash", 600, 100, 80], ["Bankë", 150, 200, 0]]);
+    assert.deepEqual(Object.fromEntries(f.categories.map((c) => [c.name, [c.income, c.spent, c.pending]])), {
+      Kafe: [750, 0, 0], Staff: [0, 200, 0], "Nga arka": [0, 100, 0], Utilities: [0, 0, 80],
+    });
+    // Approving moves it into the spending.
+    assert.equal((await t.call("PUT", `/api/expenses/${pending.id}`, { cookie: boss, body: { ...pending, status: "aprovuar", id: undefined, by: undefined } })).statusCode, 200);
+    const after = (await t.call("GET", `/api/finance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cookie: boss })).json();
+    assert.equal(after.spent, 380);
+    assert.equal(after.pending, 0);
+    const list = (await t.call("GET", `/api/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cookie: boss })).json().expenses;
+    assert.equal(list.length, 2);
+    assert.equal((await t.call("DELETE", `/api/expenses/${pending.id}`, { cookie: boss })).statusCode, 200);
+    // Llogaritë: the till's and the bank's accounts carry their method's money; moves shift it.
+    const accts = async () => Object.fromEntries((await t.call("GET", "/api/accounts", { cookie: boss })).json().accounts.map((a) => [a.name, a.balance]));
+    assert.deepEqual(await accts(), { Arka: 600 - 100, Banka: 150 - 200 }, "cash 600 less 100 out; bank 150 less 200 spent");
+    const added = (await t.call("POST", "/api/accounts", { cookie: boss, body: { name: "Kasaforta", group: "own", kind: "cash", opening: 1000 } })).json();
+    assert.equal((await t.call("POST", "/api/accounts/moves", { cookie: boss, body: { from: 1, to: added.id, amount: 300, note: "në kasafortë" } })).statusCode, 200);
+    assert.equal((await t.call("POST", "/api/accounts/moves", { cookie: boss, body: { from: 1, to: 1, amount: 5 } })).statusCode, 400);
+    assert.deepEqual(await accts(), { Arka: 200, Banka: -50, Kasaforta: 1300 });
+    assert.equal((await t.call("GET", "/api/accounts", { cookie: ana })).statusCode, 403);
+    // Rooms of their own: a new table is placed only among its own zone's tables.
+    assert.equal((await cmd("floor.rooms", { separate: true })).statusCode, 200);
+    assert.equal((await t.call("GET", "/api/state", { cookie: boss })).json().state.separateRooms, true);
+  } finally {
+    await t.close();
+  }
+});
