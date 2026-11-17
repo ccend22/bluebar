@@ -358,14 +358,32 @@ export function PinPad({ value, onChange, onComplete, length = 6, disabled, vari
     </div>
   );
 }
-export function SectionHeading({ title, description, children }) {
+// The Raportet look everywhere: a card's title with its tinted icon tile.
+export function SectionHeading({ title, description, children, icon, tone = "" }) {
   return (
-    <div className="section-heading">
+    <div className={`section-heading ${icon ? "has-icon" : ""}`}>
+      {icon && <span className={`fin-section-icon ${tone}`}><Icon name={icon} size={18} /></span>}
       <div>
         <h2>{title}</h2>
         {description && <p>{description}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+// Raportet's summary cards, used at the top of every page: [tone, icon, label, value, note].
+// Tones: income (green), waiting (amber), spent (red), pending (orange), blue.
+export function StatCards({ items }) {
+  return (
+    <div className="fin-cards page-stats">
+      {items.map(([tone, icon, label, value, note]) => (
+        <article key={label} className={`fin-card ${tone}`}>
+          <span className="fin-card-icon"><Icon name={icon} size={20} /></span>
+          <h3>{label}</h3>
+          <strong>{value}</strong>
+          <small>{note}</small>
+        </article>
+      ))}
     </div>
   );
 }

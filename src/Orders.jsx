@@ -43,7 +43,7 @@ export function Orders({ state, onEdit, onSend, onPay, onPrint }) {
   return (
     <div className="orders-desk">
       <section className="panel orders-desk-list">
-        <SectionHeading title="Të hapura" description={`${shown.length} porosi · ${money(total)}`} />
+        <SectionHeading icon="list" title="Të hapura" description={`${shown.length} porosi · ${money(total)}`} />
         {areas.length > 2 && (
           <div className="tabs" aria-label="Filtro zonën">
             {areas.map((a) => (

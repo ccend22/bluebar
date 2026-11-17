@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  resolveExtras,
   initialState,
   addItem,
   bill,
@@ -77,4 +78,13 @@ test("each till has its own shift and drawer; stock is shared", () => {
   assert.equal(s.shifts[0].expected, 100);
   assert.deepEqual(s.openShifts.map((x) => x.posId), [1]);
   assert.throws(() => closeShift(s, 1, 5100));
+});
+
+test("options in a group are one choice; add-ons are free", () => {
+  const pizza = { name: "Picë", extras: [
+    { name: "E vogël", price: 0, group: "Madhësia" }, { name: "E madhe", price: 300, group: "Madhësia" },
+    { name: "Djathë ekstra", price: 100 }, { name: "Kërpudha", price: 80 },
+  ] };
+  assert.deepEqual(resolveExtras(pizza, ["E madhe", "Djathë ekstra", "Kërpudha"]).map((x) => x.name), ["E madhe", "Djathë ekstra", "Kërpudha"]);
+  assert.throws(() => resolveExtras(pizza, ["E vogël", "E madhe"]), /vetëm një: Madhësia/);
 });

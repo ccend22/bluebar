@@ -141,7 +141,7 @@ export function Stations({ state, device, update, onPrint, time, tillOf }) {
   return (
     <div className="management-layout">
       <section className="panel">
-        <SectionHeading
+        <SectionHeading icon="receipt"
           title="Fletët në pritje"
           description={`${queue.length} fletë për t'u përgatitur · largohen kur shtypni "Gati"`}
         />
@@ -261,7 +261,7 @@ export function Stations({ state, device, update, onPrint, time, tillOf }) {
       <aside className="management-aside">
         {useStations ? (
           <section className="panel">
-            <SectionHeading
+            <SectionHeading icon="coffee"
               title="Stacionet e kësaj pajisjeje"
               description="Zgjidhni stacionin ku ndodhet kjo pajisje."
             />
@@ -284,7 +284,7 @@ export function Stations({ state, device, update, onPrint, time, tillOf }) {
           </section>
         ) : (
           <section className="panel">
-            <SectionHeading
+            <SectionHeading icon="print"
               title="Printeri i kësaj pajisjeje"
               description="Fletët e reja të repartëve të zgjedhur printohen automatikisht këtu."
             />

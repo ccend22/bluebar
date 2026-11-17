@@ -709,7 +709,7 @@ function LinePanel({ table, line, product, update, onClose }) {
       lineKey: line.key,
       note: f.get("note") || "",
       allergy: f.get("allergy") || "",
-      extras: f.getAll("extras"),
+      extras: [...f.getAll("extras"), ...[...new Set(extras.filter((x) => x.group).map((x) => x.group))].map((g) => f.get(`extras:${g}`)).filter(Boolean)],
       ...(line.sent ? {} : { course: line.course || 0 }),
       ...(unsent ? { hold: f.get("hold") === "on" } : {}),
       ...(one ? { one: true, course: line.course || 0 } : {}),
@@ -733,7 +733,14 @@ function LinePanel({ table, line, product, update, onClose }) {
           <legend>Variante dhe shtesa</legend>
           {extras.map((x) => (
             <label key={x.name}>
-              <input type="checkbox" name="extras" value={x.name} defaultChecked={(line.extras || []).some((y) => y.name === x.name)} />
+              {/* An option of a group is one choice (radio); an add-on is a tick. */}
+              <input
+                type={x.group ? "radio" : "checkbox"}
+                name={x.group ? `extras:${x.group}` : "extras"}
+                value={x.name}
+                defaultChecked={(line.extras || []).some((y) => y.name === x.name)}
+              />
+              {x.group && <small>{x.group} · </small>}
               {x.name}
               {x.price > 0 && <small> +{money(x.price)}</small>}
             </label>

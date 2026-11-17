@@ -22,11 +22,16 @@ export function Stub({ count, total, onOpen, table, t }) {
       transition={sheetSpring}
       whileTap={{ scale: 0.98 }}
     >
+      <span className="stub-bag">
+        <Icon name="bag" size={20} />
+        <m.span key={count} className="stub-count" initial={{ scale: 1.7 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 520, damping: 18 }}>
+          <span className="sr-only">{t.qty} </span>{count}
+        </m.span>
+      </span>
       <span className="stub-label">
-        {t.check}
+        {t.orderNow}
         {table && <small>{t.table} {String(table).padStart(2, "0")}</small>}
       </span>
-      <span className="stub-count form-box"><small>{t.qty}</small><NumberFlow value={count} /></span>
       <strong className="stub-total"><NumberFlow {...t.flow(total)} /></strong>
       <Icon name="chevronDown" size={18} style={{ rotate: "180deg" }} />
     </m.button>

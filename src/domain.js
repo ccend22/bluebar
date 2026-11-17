@@ -262,7 +262,12 @@ export function resolveExtras(product, names = []) {
   if (!Array.isArray(names) || names.some((n) => typeof n !== "string")) throw Error("Shtesat janë të pavlefshme.");
   const offered = product.extras || [];
   if (names.some((n) => !offered.some((x) => x.name === n))) throw Error(`${product.name} nuk ka këtë shtesë.`);
-  return offered.filter((x) => names.includes(x.name));
+  const chosen = offered.filter((x) => names.includes(x.name));
+  // One option per group: a pizza is small or large, not both.
+  const groups = chosen.filter((x) => x.group).map((x) => x.group);
+  const twice = groups.find((g, i) => groups.indexOf(g) !== i);
+  if (twice) throw Error(`Zgjidhni vetëm një: ${twice}.`);
+  return chosen;
 }
 export const unitPrice = (product, extras) => product.price + extras.reduce((s, x) => s + x.price, 0);
 const text = (v, max, label) => {

@@ -154,3 +154,14 @@ export const store = {
     try { sessionStorage.setItem(key, JSON.stringify(value)); } catch {}
   },
 };
+
+// The menu's own words for its header, its categories and the dish's page.
+const MORE = {
+  sq: { addedToCart: "U shtua në shportë", favourite: "Të preferuarat", home: "Kreu", addToCart: "Shto në shportë", orderNow: "Porosit tani", calories: "Kalori", portion: "Porcioni", about: "Përshkrimi", all: "Të gjitha", headline: "Zgjidh & shijo.", welcome: "Mirë se erdhët", back: "Kthehu" },
+  en: { addedToCart: "Added to cart", favourite: "Favourite", home: "Home", addToCart: "Add to cart", orderNow: "Order now", calories: "Calories", portion: "Portion", about: "Description", all: "All", headline: "Pick & enjoy.", welcome: "Welcome", back: "Back" },
+  it: { addedToCart: "Aggiunto al carrello", favourite: "Preferito", home: "Inizio", addToCart: "Aggiungi", orderNow: "Ordina ora", calories: "Calorie", portion: "Porzione", about: "Descrizione", all: "Tutto", headline: "Scegli & gusta.", welcome: "Benvenuti", back: "Indietro" },
+  de: { addedToCart: "In den Warenkorb gelegt", favourite: "Favorit", home: "Start", addToCart: "In den Warenkorb", orderNow: "Jetzt bestellen", calories: "Kalorien", portion: "Portion", about: "Beschreibung", all: "Alle", headline: "Wählen & genießen.", welcome: "Willkommen", back: "Zurück" },
+  fr: { addedToCart: "Ajouté au panier", favourite: "Favori", home: "Accueil", addToCart: "Ajouter", orderNow: "Commander", calories: "Calories", portion: "Portion", about: "Description", all: "Tout", headline: "Choisir & savourer.", welcome: "Bienvenue", back: "Retour" },
+  es: { addedToCart: "Añadido al carrito", favourite: "Favorito", home: "Inicio", addToCart: "Añadir", orderNow: "Pedir ahora", calories: "Calorías", portion: "Porción", about: "Descripción", all: "Todo", headline: "Elige & disfruta.", welcome: "Bienvenidos", back: "Volver" },
+};
+for (const [l, words] of Object.entries(MORE)) Object.assign(TEXT[l], words);

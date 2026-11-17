@@ -28,7 +28,7 @@ export function BusinessNetwork({ venue }) {
     finally { setBusy(false); }
   }
   return <section className="panel">
-    <SectionHeading title="Rrjeti i lokalit" description="Vetëm këto IP lejojnë hyrjen dhe punën e kamarierëve." />
+    <SectionHeading icon="location" title="Rrjeti i lokalit" description="Vetëm këto IP lejojnë hyrjen dhe punën e kamarierëve." />
     <p className="helper">Kodi për stafin: <strong>{venue?.slug || "bluebar"}</strong></p>
     {error && <p className="notice error" role="alert">{error}</p>}
     {message && <p className="notice" role="status">{message}</p>}

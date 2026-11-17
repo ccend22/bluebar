@@ -54,7 +54,7 @@ export function NetworkPrinters({ state, update, notify }) {
   return (
     <>
       <section className="panel">
-        <SectionHeading
+        <SectionHeading icon="print"
           title="Printerët"
           description="Çdo repart printon te printeri i vet; arka printon faturën e plotë."
         >
@@ -208,11 +208,15 @@ export function NetworkPrinters({ state, update, notify }) {
       </section>
       <PrintComputer status={status} notify={notify} />
       <section className="panel">
-        <SectionHeading
+        <SectionHeading icon="print"
           title="Printim pa dritare"
-          description="Një ikonë BlueBar në desktop: faturat dhe fletët dalin direkt te printeri i kompjuterit, pa dritaren e printimit."
+          description="Për kompjuterin e arkës: faturat dalin direkt te printeri, pa dritaren e printimit."
         />
-        <DesktopInstall notify={notify} />
+        {/* Set up once per computer: the steps stay folded until needed. */}
+        <details className="panel-fold">
+          <summary>Shfaq hapat e instalimit</summary>
+          <DesktopInstall notify={notify} />
+        </details>
       </section>
     </>
   );
@@ -259,10 +263,11 @@ function PrintComputer({ status, notify }) {
 
   return (
     <section className="panel">
-      <SectionHeading
+      <SectionHeading icon="settings"
         title="Kompjuteri i printimit"
         description="Një kompjuter i lokalit, në të njëjtin rrjet me printerët, që dërgon fletët te ta."
       />
+      <div className="agent-row">
       <p className={`agent-status ${online(status) ? "on" : ""}`}>
         <span />
         {!status?.configured
@@ -271,6 +276,13 @@ function PrintComputer({ status, notify }) {
             ? `Në linjë${status.pending ? ` · ${status.pending} në radhë` : ""}`
             : `Jashtë linje${status.pending ? ` · ${status.pending} fletë presin` : ""}`}
       </p>
+      {!pairing && (
+        <button className={status?.configured ? "" : "primary"} disabled={busy} onClick={start}>
+          <Icon name="print" size={16} />
+          {status?.configured ? "Lidh një tjetër" : "Lidh një kompjuter"}
+        </button>
+      )}
+      </div>
       {pairing ? (
         <div className="pair-setup">
           <div className="tabs" aria-label="Sistemi i kompjuterit">
@@ -319,17 +331,11 @@ function PrintComputer({ status, notify }) {
           <button className="text-button" onClick={() => setPairing(null)}>Anulo</button>
         </div>
       ) : (
-        <>
-          <p className="helper">
-            {status?.configured
-              ? "Lidhja e një kompjuteri tjetër shkëput atë të mëparshmin."
-              : "Lidheni një herë: pa instalime shtesë, dhe niset vetë sa herë ndizet kompjuteri."}
-          </p>
-          <button className="primary" disabled={busy} onClick={start}>
-            <Icon name="print" size={16} />
-            {status?.configured ? "Lidh një kompjuter tjetër" : "Lidh një kompjuter"}
-          </button>
-        </>
+        <p className="helper">
+          {status?.configured
+            ? "Lidhja e një kompjuteri tjetër shkëput atë të mëparshmin."
+            : "Lidheni një herë: pa instalime shtesë, dhe niset vetë sa herë ndizet kompjuteri."}
+        </p>
       )}
     </section>
   );

@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { AnimatePresence, LazyMotion, MotionConfig } from "motion/react";
 import * as m from "motion/react-m";
 import { Toaster, toast } from "sonner";
-import { Line } from "./Line.jsx";
+import { Card, Categories, Detail } from "./Line.jsx";
 import { CheckContent, Copies, Sheet, Stub } from "./Check.jsx";
 import { useOrder } from "./useOrder.js";
 import { Icon } from "./icons.jsx";
@@ -29,6 +29,12 @@ const motionFeatures = () => import("motion/react").then((r) => r.domMax);
 // Lower case, without marks: ç → c, ë → e.
 const plain = (s) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// A category without a photo shows a drawn icon that fits its name (Albanian or English).
+const ICONS = [
+  [/ver|wine/, "wine"], [/koktej|cocktail|aperit/, "cocktail"], [/birr|beer/, "beer"], [/caj|tea|kafe|coffee/, "cup"],
+  [/pij|drink|leng|juice|uj|water/, "bottle"], [/pic|pizza/, "pizza"], [/embel|dessert|tort|cake/, "cake"],
+];
+const categoryIcon = (name) => ICONS.find(([re]) => re.test(plain(name)))?.[1] || "plate";
 
 // The language: the form's last box, written like TAVOLINA and ORA. Tapped, a slip of
 // pad paper with the six languages drops from it (from its own corner, not the centre).
@@ -48,9 +54,9 @@ function LangBox({ lang, onChange, label }) {
   }, [open]);
   return (
     <div className="form-box lang" ref={box}>
-      <button type="button" className="lang-trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="lang-trigger" aria-label={`${label}: ${LANGS[lang]}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
         <small>{label}</small>
-        <span>{LANGS[lang]}<Icon name="chevronDown" size={14} /></span>
+        <Icon name="globe" size={19} />
       </button>
       <AnimatePresence>
         {open && (
@@ -86,8 +92,8 @@ function Menu() {
     const phone = navigator.language?.slice(0, 2).toLowerCase();
     return TEXT[savedLang] ? savedLang : TEXT[phone] ? phone : "en";
   });
-  const [openId, setOpenId] = useState(null);
-  const [active, setActive] = useState("");
+  const [detailId, setDetailId] = useState(null);
+  const [cat, setCat] = useState("all");
   const [search, setSearch] = useState("");
   const [checkOpen, setCheckOpen] = useState(false);
   const [copiesOpen, setCopiesOpen] = useState(false);
@@ -140,31 +146,6 @@ function Menu() {
       .map((c) => ({ ...c, products: menu.products.filter((p) => p.category === c.name && match(p)) }))
       .filter((s) => s.products.length);
   }, [menu, search, lang]);
-  // The category being read: the last whose heading passed under the tab strip.
-  useEffect(() => {
-    if (!sections.length) return;
-    const onScroll = () => {
-      const all = [...document.querySelectorAll("[data-category]")];
-      const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
-      const passed = atEnd ? all : all.filter((el) => el.getBoundingClientRect().top <= 90);
-      setActive((passed.at(-1) || all[0])?.dataset.category || "");
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [sections]);
-  useEffect(() => {
-    // Centre the tab by scrolling only the strip: scrollIntoView would also move the page.
-    const strip = document.querySelector(".tabs");
-    const tab = strip?.querySelector(`[data-tab="${CSS.escape(active)}"]`);
-    if (tab) strip.scrollTo({ left: tab.offsetLeft - (strip.clientWidth - tab.clientWidth) / 2, behavior: "smooth" });
-  }, [active]);
-  const toggle = (id) => {
-    const next = openId === id ? null : id;
-    setOpenId(next);
-    if (next) setTimeout(() => document.getElementById(`line-${next}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 380);
-  };
-
   if (failed)
     return (
       <main className="state">
@@ -181,24 +162,40 @@ function Menu() {
       </main>
     );
   const initials = menu.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  // The categories, "All" first, each with one of its dishes' photos.
+  const bubbles = sections.map((s) => ({ key: s.name, label: tr(s, "name"), icon: categoryIcon(s.name), photo: photoUrl(s.products.find((p) => p.photo) || {}) }));
+  const half = Math.ceil(bubbles.length / 2);
+  const cats = [...bubbles.slice(0, half), { key: "all", label: t.all, all: true }, ...bubbles.slice(half)];
+  const chosen = cat === "all" || sections.some((s) => s.name === cat) ? cat : "all";
+  const shown = chosen === "all" ? sections : sections.filter((s) => s.name === chosen);
+  const detail = detailId && menu.products.find((p) => p.id === detailId);
   return (
     <>
       <div className="pad">
         <header className="masthead">
-          <span className="logo-stamp">
-            {menu.brand?.logo ? <img src={`/api/menu/${slug}/logo?v=${menu.brand.logo}`} alt="" /> : <b>{initials}</b>}
-          </span>
-          <h1>{menu.name}</h1>
-          {menu.brand?.tagline && <p className="tagline">{menu.brand.tagline}</p>}
-          <div className="form-boxes">
-            {table && <span className="form-box"><small>{t.table}</small>{String(table).padStart(2, "0")}</span>}
+          <div className="top-row">
+            <span className="logo-stamp">
+              {menu.brand?.logo ? <img src={`/api/menu/${slug}/logo?v=${menu.brand.logo}`} alt="" /> : <b>{initials}</b>}
+            </span>
+            <span className="top-where">
+              <small>{table ? t.welcome : menu.name}</small>
+              <strong>{table ? `${t.table} ${String(table).padStart(2, "0")}` : t.welcome}</strong>
+            </span>
             {order.placed.length > 0 && (
-              <button className="form-box action" onClick={() => setCopiesOpen(true)}>
-                <small>{t.copies}</small>{order.placed.length}
+              <button className="round-button" onClick={() => setCopiesOpen(true)} aria-label={t.copies}>
+                <Icon name="receipt" size={19} />
+                <span className="round-count">{order.placed.length}</span>
               </button>
             )}
             <LangBox lang={lang} onChange={setLang} label={t.language} />
+            <button className="round-button" onClick={() => setCheckOpen(true)} aria-label={t.checkOpen}>
+              <Icon name="bag" size={19} />
+              {order.count > 0 && <span className="round-count">{order.count}</span>}
+            </button>
           </div>
+          <h1>
+            {menu.name} <span>{menu.brand?.tagline || t.headline}</span>
+          </h1>
           <label className="search-line">
             <Icon name="search" size={18} />
             <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t.search} aria-label={t.search} enterKeyHint="search" />
@@ -209,45 +206,31 @@ function Menu() {
             )}
           </label>
         </header>
-        <nav className="tabs" aria-label={t.categories}>
-          {sections.map((s) => (
-            <a
-              key={s.name}
-              href={`#${encodeURIComponent(s.name)}`}
-              data-tab={s.name}
-              aria-current={active === s.name ? "true" : undefined}
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById(s.name)?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              {tr(s, "name")}
-              {active === s.name && <m.span layoutId="tab-ink" className="tab-ink" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
-            </a>
-          ))}
-        </nav>
-        <main className={`lines ${order.count ? "with-stub" : ""}`}>
+        <div className="stage">
+        {sections.length > 1 && <Categories items={cats} active={chosen} onPick={setCat} label={t.categories} />}
+        <main className={`lines ${order.count ? "with-stub" : ""}`} key={chosen}>
           {menu.ordering && (!table || (order.tableState && !order.tableState.open)) && (
             <p className="notice">{{ off: t.orderingOff, closed: t.venueClosed }[order.tableState?.reason] || t.scan}</p>
           )}
-          {sections.map((s) => (
-            <section key={s.name} id={s.name} data-category={s.name}>
-              <h2>
-                <span>{tr(s, "name")}</span>
-                <small>{s.products.length}</small>
-              </h2>
-              <ul>
+          {shown.map((s) => (
+            <section key={s.name} id={s.name}>
+              {chosen === "all" && (
+                <h2>
+                  <span>{tr(s, "name")}</span>
+                  <small>{s.products.length}</small>
+                </h2>
+              )}
+              <ul className="cards">
                 {s.products.map((p) => (
-                  <Line
+                  <Card
                     key={p.id}
                     product={p}
                     photo={photoUrl(p)}
-                    open={openId === p.id}
-                    onToggle={() => toggle(p.id)}
+                    hidden={detailId === p.id}
                     canOrder={order.canOrder}
                     count={order.lines.filter((l) => l.productId === p.id).reduce((n, l) => n + l.qty, 0)}
+                    onOpen={() => setDetailId(p.id)}
                     onQuickAdd={() => order.add(p)}
-                    onAdd={(choice) => (order.add(p, choice), toggle(p.id))}
                     t={t}
                     tr={tr}
                   />
@@ -258,9 +241,30 @@ function Menu() {
           {!sections.length && <p className="no-results">{t.noResults}</p>}
           <footer className="foot">{t.priceNote}</footer>
         </main>
+        </div>
       </div>
       <AnimatePresence>
-        {order.count > 0 && !checkOpen && <Stub key="stub" count={order.count} total={order.total} table={table} onOpen={() => setCheckOpen(true)} t={t} />}
+        {detail && (
+          <Detail
+            key={detail.id}
+            product={detail}
+            photo={photoUrl(detail)}
+            category={tr(menu.categories.find((c) => c.name === detail.category) || { name: detail.category }, "name")}
+            canOrder={order.canOrder}
+            onAdd={(choice) => {
+              order.add(detail, choice);
+              setDetailId(null);
+              // Added: one tap from here to the order, which is sent from its sheet.
+              toast.success(t.addedToCart, { action: { label: t.orderNow, onClick: () => setCheckOpen(true) } });
+            }}
+            onClose={() => setDetailId(null)}
+            t={t}
+            tr={tr}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {order.count > 0 && !checkOpen && !detail && <Stub key="stub" count={order.count} total={order.total} table={table} onOpen={() => setCheckOpen(true)} t={t} />}
       </AnimatePresence>
       <Sheet open={checkOpen} onClose={() => setCheckOpen(false)} label={t.check} tearing={tearing}>
         <CheckContent

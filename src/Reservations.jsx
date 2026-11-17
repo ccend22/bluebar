@@ -57,7 +57,7 @@ export function Reservations({ state, update, role }) {
   return (
     <div className="management-layout">
       <section className="panel">
-        <SectionHeading
+        <SectionHeading icon="calendar"
           title={dayLabel(date)}
           description={day.length ? `${plural(day.length, "rezervim", "rezervime")} · ${plural(day.reduce((n, r) => n + r.guests, 0), "person", "persona")}` : "Asnjë rezervim për këtë ditë"}
         />
@@ -111,7 +111,7 @@ export function Reservations({ state, update, role }) {
       </section>
       <aside className="management-aside">
         <section className="panel" ref={form}>
-          <SectionHeading
+          <SectionHeading icon="calendar"
             title={draft.id ? "Ndrysho rezervimin" : "Rezervim i ri"}
             description={draft.id ? `${draft.name} · ${dayLabel(draft.date)}` : "Klienti, sa veta vijnë, kur dhe ku ulen."}
           />
@@ -180,7 +180,7 @@ function SlotSettings({ slots, update }) {
   const set = (i, field) => (e) => setList((l) => l.map((x, j) => (j === i ? { ...x, [field]: e.target.value } : x)));
   return (
     <section className="panel">
-      <SectionHeading
+      <SectionHeading icon="clock"
         title="Fashat orare"
         description={list.length ? "Rezervimi zgjedh një nga këto fasha." : "Pa fasha: rezervimi merr vetëm orën e fillimit."}
       />

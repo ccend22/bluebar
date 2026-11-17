@@ -23,7 +23,7 @@ export function PointsOfSale({ state, update }) {
 
   return (
     <section className="panel">
-      <SectionHeading
+      <SectionHeading icon="cash"
         title="Kasat"
         description="P.sh. bari brenda dhe bari jashtë: secila me zonat, turnin dhe arkën e vet. Inventari është i përbashkët."
       >

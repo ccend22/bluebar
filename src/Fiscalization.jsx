@@ -72,7 +72,7 @@ export function Fiscalization({ onChange }) {
 
   return (
     <section className="panel fiscal-panel">
-      <SectionHeading
+      <SectionHeading icon="receipt"
         title="Fiskalizimi"
         description="Lidheni BlueBar me llogarinë tuaj BlueBill që çdo faturë të fiskalizohet."
       />

@@ -103,7 +103,7 @@ function OpenShift({ state, update }) {
   const [opening, setOpening] = useState(last ? String(last.opening) : "");
   return (
     <section className="panel shift-hero">
-      <SectionHeading title="Hap turnin" description="Numëroni fondin e arkës dhe nisni shërbimin. Pa turn të hapur nuk merren porosi." />
+      <SectionHeading icon="cash" title="Hap turnin" description="Numëroni fondin e arkës dhe nisni shërbimin. Pa turn të hapur nuk merren porosi." />
       <form
         className="shift-open-form"
         onSubmit={(e) => {
@@ -272,7 +272,7 @@ function LiveShift({ state, update, nav, onClose, d, shiftInvoices, history }) {
       )}
       <div className="shift-bottom">
         <section className="panel">
-          <SectionHeading title="Kamarierët" description="Shitjet e këtij turni." />
+          <SectionHeading icon="people" title="Kamarierët" description="Shitjet e këtij turni." />
           {waiters.length ? (
             <ul className="shift-waiters">
               {waiters.map((w) => (
@@ -330,7 +330,7 @@ function CloseShift({ state, update, nav, onCancel, onClosed, d, shiftInvoices }
 
   return (
     <section className="panel close-shift">
-      <SectionHeading title={`Mbyll turnin #${state.shift.id}`}>
+      <SectionHeading icon="check" title={`Mbyll turnin #${state.shift.id}`}>
         <button className="icon-button" onClick={onCancel} aria-label="Anulo mbylljen">
           <Icon name="close" />
         </button>
@@ -472,7 +472,7 @@ function CloseShift({ state, update, nav, onCancel, onClosed, d, shiftInvoices }
 function History({ state, onReport }) {
   return (
     <section className="panel">
-      <SectionHeading title="Historiku i turneve" description={`${state.shifts.length} ${state.shifts.length === 1 ? "turn i mbyllur" : "turne të mbyllura"}`} />
+      <SectionHeading icon="clock" title="Historiku i turneve" description={`${state.shifts.length} ${state.shifts.length === 1 ? "turn i mbyllur" : "turne të mbyllura"}`} />
       {state.shifts.length ? (
         <div className="table-scroll">
           <table className="responsive-table">

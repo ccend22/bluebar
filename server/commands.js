@@ -5,8 +5,10 @@ import { openSpot, rectOf, sizeFor } from "../src/floorGeometry.js";
 export const LOSSES = ["Humbje", "Thyerje", "Skadim"];
 export const STOCK_REASONS = [...LOSSES, "Korrigjim numërimi", "Konsum i brendshëm"];
 // Variants and extras a product can be ordered with, each with the price it adds.
+// Extras, and options in named groups: {name, price, group?}. Extras with the same group are
+// one choice ("Madhësia": E vogël / E mesme / E madhe); those without a group are add-ons.
 function readExtras(list) {
-  if (!Array.isArray(list) || list.length > 20) fail("Shtesat janë të pavlefshme.");
+  if (!Array.isArray(list) || list.length > 30) fail("Shtesat janë të pavlefshme.");
   const seen = new Set();
   return list.map((x) => {
     const name = typeof x?.name === "string" ? x.name.trim() : "";
@@ -14,7 +16,9 @@ function readExtras(list) {
     if (seen.has(name.toLocaleLowerCase())) fail(`Shtesa "${name}" përsëritet.`);
     seen.add(name.toLocaleLowerCase());
     if (!Number.isSafeInteger(x.price) || x.price < 0 || x.price > 100000) fail("Çmimi i shtesës është i pavlefshëm.");
-    return { name, price: x.price };
+    const group = typeof x.group === "string" ? x.group.trim() : "";
+    if (x.group !== undefined && x.group !== null && (typeof x.group !== "string" || group.length > 30)) fail("Grupi i opsioneve është i pavlefshëm.");
+    return group ? { name, price: x.price, group } : { name, price: x.price };
   });
 }
 export class AppError extends Error {
@@ -1211,6 +1215,9 @@ export function applyCommand(state, type, payload, actor = null) {
         extras: p.extras === undefined ? existing?.extras || [] : readExtras(p.extras),
         // What the online menu shows. Left out of the request: kept as it was.
         description: menuText(p.description, 300, existing?.description),
+        // The dish's page: calories and portion ("330 ml", "250 g"); empty means not shown.
+        calories: p.calories === undefined ? existing?.calories ?? null : p.calories === null || p.calories === "" ? null : integer(p.calories, 0, 5000),
+        portion: menuText(p.portion, 40, existing?.portion),
         menuVisible: p.menuVisible === undefined ? existing?.menuVisible ?? true : bool(p.menuVisible),
         photoAt: existing?.photoAt ?? null,
         // Counted in units (bottles, cans) or not (an espresso, a dish made to order).
@@ -1257,6 +1264,11 @@ export function applyCommand(state, type, payload, actor = null) {
           next = applyCommand(next, "product.save", {
             name: row.name, price: row.price, category: known || category, department,
             trackStock: counted, initialStock: counted ? row.stock : undefined,
+            // From a menu photo: its description, portion, calories and options, when it had them.
+            ...(row.description !== undefined && { description: row.description }),
+            ...(row.portion !== undefined && { portion: row.portion }),
+            ...(row.calories !== undefined && { calories: row.calories }),
+            ...(row.extras !== undefined && { extras: row.extras }),
           }, actor).state;
         } catch (e) {
           fail(`Rreshti ${i + 1}${typeof row?.name === "string" && row.name.trim() ? ` (${row.name.trim()})` : ""}: ${e.message}`);

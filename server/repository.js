@@ -39,6 +39,7 @@ export async function loadState(client) {
       id: p.id, name: p.name, category: p.category, price: p.price, stock: p.stock,
       department: p.department, minStock: p.min_stock, available: p.available, extras: p.extras,
       description: p.description, menuVisible: p.menu_visible, photoAt: iso(p.photo_at), trackStock: p.track_stock,
+      calories: p.calories ?? null, portion: p.portion || "",
     }));
   const waiters = (rows("waiters"))
     .sort((a, b) => a.id - b.id)
@@ -290,12 +291,12 @@ export async function persist(client, previous, next) {
   ))
     await client.query(
       // photo_at and i18n are never written here: only the photo upload and the translator set them.
-      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras,description,menu_visible,track_stock)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO bluebar.products(id,name,category,price,stock,department,min_stock,available,extras,description,menu_visible,track_stock,calories,portion)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT(id) DO UPDATE SET name=$2,category=$3,price=$4,stock=$5,department=$6,min_stock=$7,available=$8,extras=$9,
-         description=$10,menu_visible=$11,track_stock=$12`,
+         description=$10,menu_visible=$11,track_stock=$12,calories=$13,portion=$14`,
       [p.id, p.name, p.category, p.price, p.stock, p.department || null, p.minStock ?? 10, p.available !== false, JSON.stringify(p.extras || []),
-        p.description || "", p.menuVisible !== false, p.trackStock !== false],
+        p.description || "", p.menuVisible !== false, p.trackStock !== false, p.calories ?? null, p.portion || ""],
     );
   // Tills first: waiters, shifts and printers reference them; a removed till's
   // waiters and printers were already moved off it (pos.delete).

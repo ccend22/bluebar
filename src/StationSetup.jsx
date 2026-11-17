@@ -30,7 +30,7 @@ export function StationSetup({ state, update }) {
 
   return (
     <section className="panel">
-      <SectionHeading
+      <SectionHeading icon="coffee"
         title="Stacionet"
         description="Ku përgatitet porosia: bari brenda, bari jashtë, furra, kuzhina. Opsionale: pa stacione, fletët shkojnë sipas repartit të përgatitjes."
       >

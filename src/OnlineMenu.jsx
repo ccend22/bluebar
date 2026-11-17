@@ -3,7 +3,7 @@ import { money, plural, tableName } from "./domain.js";
 import { createPortal } from "react-dom";
 import { venueSlug, saveMenuSettings, fetchMenuTables, fetchProductPhoto, saveProductPhoto, deleteProductPhoto, fetchMenuBrand, saveMenuBrand, saveMenuLogo, deleteMenuLogo, translateMenu, fetchMenuI18n, saveMenuI18n } from "./api.js";
 import { ACCENTS } from "./menu/accents.js";
-import { Icon } from "./components.jsx";
+import { Icon, SectionHeading } from "./components.jsx";
 import "./menu/fonts.css";
 
 const menuUrl = (table, key) => `${window.location.origin}/menu/${venueSlug}${table ? `?t=${table}&k=${key}` : ""}`;
@@ -102,6 +102,7 @@ function Qr({ text }) {
 const LANG_NAMES = { en: "English", it: "Italiano", de: "Deutsch", fr: "Français", es: "Español" };
 function TranslationFixes() {
   const [data, setData] = useState(null);
+  const [find, setFind] = useState("");
   const [lang, setLang] = useState("en");
   const [note, setNote] = useState({ text: "", error: false });
   const [busy, setBusy] = useState("");
@@ -169,13 +170,12 @@ function TranslationFixes() {
       </li>
     );
   };
+  const q = find.trim().toLocaleLowerCase();
+  const has = (x) => !q || [x.name, x.description, ...Object.values(x.i18n?.[lang] || {})].some((v) => typeof v === "string" && v.toLocaleLowerCase().includes(q));
+  const cats = data.categories.filter(has), prods = data.products.filter(has);
   return (
     <section className="panel translation-fixes">
-      <h2>Korrigjo përkthimet</h2>
-      <p className="helper">
-        Kur përkthimi automatik gabon, shkruani të saktin. Ruhet sapo dilni nga fusha dhe nuk ndryshon më vetë, derisa të ndryshoni
-        emrin ose përshkrimin shqip.
-      </p>
+      <SectionHeading icon="edit" title="Korrigjo përkthimet" description="Shkruani mbi një përkthim që nuk është i saktë; ruhet kur dilni nga fusha." />
       <div className="tabs" role="tablist" aria-label="Gjuha e përkthimit">
         {data.languages.map((l) => (
           <button key={l} role="tab" aria-selected={lang === l} aria-pressed={lang === l} onClick={() => setLang(l)}>
@@ -184,43 +184,65 @@ function TranslationFixes() {
         ))}
       </div>
       {note.text && <p className={note.error ? "warning-text" : "helper"} role="status">{note.text}</p>}
-      <h3>Kategoritë</h3>
-      <ul className="fix-list">{data.categories.map((c) => row("category", c.name, c))}</ul>
-      <h3>Produktet</h3>
-      <ul className="fix-list">{data.products.map((p) => row("product", p.id, p))}</ul>
+      {/* Long lists stay folded; a search opens the matches. */}
+      <input className="fix-search" type="search" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Kërko një produkt ose kategori…" aria-label="Kërko në përkthime" />
+      {[["Kategoritë", "category", cats, (c) => c.name], ["Produktet", "product", prods, (p) => p.id]].map(([title, kind, list, key]) => (
+        <details key={title} className="panel-fold fix-fold" open={Boolean(find.trim()) && list.length > 0}>
+          <summary>{title} ({list.length})</summary>
+          <ul className="fix-list">{list.map((x) => row(kind, key(x), x))}</ul>
+        </details>
+      ))}
     </section>
   );
 }
 
-// The top of the guest menu as a phone shows it, drawn from the unsaved choices so the
-// manager sees the colour, logo and welcome line before saving.
+// The guest menu in miniature, as it looks now: the header, the title, the search pill, the
+// categories on their oval and the first dish cards, in the venue's colour.
+const previewPhoto = (p) => (p.photoAt ? `/api/product-photo/${p.id}?b=${encodeURIComponent(venueSlug)}&v=${encodeURIComponent(p.photoAt)}` : null);
 function MenuPreview({ name, logo, initials, tagline, accent, state }) {
   const shown = state.products.filter((p) => p.menuVisible !== false);
-  const categories = state.categories.filter((c) => shown.some((p) => p.category === c)).slice(0, 3);
-  // Headings and lines in menu order, as many as the phone holds.
-  const rows = categories.flatMap((c) => [{ head: c }, ...shown.filter((p) => p.category === c)]).slice(0, 7);
+  const categories = state.categories.filter((c) => shown.some((p) => p.category === c));
+  // The oval: two each side of "All", as the menu shows them.
+  const half = Math.ceil(Math.min(categories.length, 4) / 2);
+  const bubbles = [...categories.slice(0, half), null, ...categories.slice(half, 4)];
+  const front = bubbles.indexOf(null);
+  const cards = shown.slice(0, 4);
   return (
     <figure className="menu-preview" style={{ "--ink-brand": accent }}>
       <div className="mp-phone" aria-hidden="true">
-        <header className="mp-masthead">
+        <header className="mp-top">
           <span className="mp-logo">{logo ? <img src={logo} alt="" /> : <b>{initials}</b>}</span>
-          <strong>{name}</strong>
-          <p className={tagline ? "" : "mp-placeholder"}>{tagline || "Rreshti i mirëseardhjes"}</p>
-          <span className="mp-boxes">
-            <span><small>Tavolina</small> 04</span>
-            <span className="lang">Shqip</span>
-          </span>
+          <span className="mp-where"><small>Mirë se erdhët</small><b>Tavolina 04</b></span>
+          <span className="mp-round"><Icon name="location" size={11} /></span>
+          <span className="mp-round"><Icon name="receipt" size={11} /></span>
         </header>
-        <span className="mp-tabs">{categories.map((c, i) => <span key={c} className={i ? "" : "on"}>{c}</span>)}</span>
-        <ul className="mp-lines">
-          {rows.map((p) => p.head ? <li key={p.head} className="mp-head">{p.head}</li> : (
-            <li key={p.id}>
-              <span className="mp-name">{p.name}</span>
-              <span className="mp-price">{money(p.price)}</span>
-              <span className="mp-qty">+</span>
-            </li>
-          ))}
-        </ul>
+        <p className="mp-title">{name} <span>{tagline || "Zgjidh & shijo."}</span></p>
+        <span className="mp-search"><Icon name="search" size={10} /> Kërko në menu…</span>
+        <div className="mp-stage">
+          <div className="mp-arc">
+            {bubbles.map((c, i) => {
+              const d = Math.abs(i - front);
+              const photo = c && previewPhoto(shown.find((p) => p.category === c && p.photoAt) || {});
+              return (
+                <span key={c || "all"} className={`mp-bubble ${c ? "" : "on"}`} style={{ "--dip": `${d * d * 7 + d * 3}px` }}>
+                  <i>{c ? (photo ? <img src={photo} alt="" /> : c.slice(0, 1)) : <Icon name="tables" size={12} />}</i>
+                  <small>{c || "Të gjitha"}</small>
+                </span>
+              );
+            })}
+          </div>
+          <ul className="mp-cards">
+            {cards.map((p) => (
+              <li key={p.id}>
+                <i>{previewPhoto(p) ? <img src={previewPhoto(p)} alt="" /> : p.name.slice(0, 1)}</i>
+                {p.portion && <em>{p.portion}</em>}
+                <b>{p.name}</b>
+                <span className="mp-price">{p.price.toLocaleString("en-US")}<sup>Lek</sup></span>
+                <span className="mp-add">+</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
       <figcaption>Si e sheh klienti</figcaption>
     </figure>
@@ -228,7 +250,7 @@ function MenuPreview({ name, logo, initials, tagline, accent, state }) {
 }
 
 // Cilësimet → Menuja online → the menu's identity: what a guest sees at the top.
-function MenuIdentity({ venueName, state }) {
+function MenuIdentity({ venueName, state, show }) {
   const [brand, setBrand] = useState(null);
   const [tagline, setTagline] = useState("");
   const [rate, setRate] = useState("");
@@ -258,10 +280,10 @@ function MenuIdentity({ venueName, state }) {
   const initials = venueName.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
     <>
+    {show === "look" && (
     <section className="panel menu-identity identity-panel">
       <div className="identity-form">
-      <h2>Identiteti i menusë</h2>
-      <p className="helper">Çfarë sheh klienti në krye të menusë: logoja, emri, një rresht mirëseardhjeje dhe ngjyra e lokalit.</p>
+      <SectionHeading icon="sparkle" title="Pamja e menusë" description="Logoja, titulli dhe ngjyra e butonave." />
       <div className="identity-row">
         <div className="product-photo-actions">
           <label className={`button-like ${busy ? "disabled" : ""}`}>
@@ -291,8 +313,8 @@ function MenuIdentity({ venueName, state }) {
       </div>
       <p className="helper">{brand.logo ? "Logoja ruhet sapo e ngarkoni." : `Pa logo, menuja tregon inicialet e lokalit (${initials}) me ngjyrën e zgjedhur.`}</p>
       <label className="field">
-        <span>Rreshti i mirëseardhjes</span>
-        <input value={tagline} maxLength={90} placeholder="p.sh. Kafe dhe kuzhinë mesdhetare që nga 2012" onChange={(e) => setTagline(e.target.value)} />
+        <span>Pjesa gri e titullit</span>
+        <input value={tagline} maxLength={90} placeholder="Zgjidh & shijo." onChange={(e) => setTagline(e.target.value)} />
       </label>
       <fieldset className="accent-picker">
         <legend>Ngjyra e lokalit</legend>
@@ -313,17 +335,15 @@ function MenuIdentity({ venueName, state }) {
       </div>
       <MenuPreview name={venueName} logo={brand.logo} initials={initials} tagline={tagline.trim()} accent={ACCENTS[brand.accent].hex} state={state} />
     </section>
+    )}
+    {show === "lang" && (
     <section className="panel menu-identity lang-panel">
-      <h2>Gjuhët dhe çmimet</h2>
-      <p className="helper">Klienti zgjedh gjuhën në menu: shqip, anglisht, italisht, gjermanisht, frëngjisht ose spanjisht.</p>
+      <SectionHeading icon="location" title="Gjuhët dhe çmimet" description="Shqip, anglisht, italisht, gjermanisht, frëngjisht dhe spanjisht." />
       <div className="menu-translate">
         <strong>Përkthimi</strong>
         {brand.translation ? (
           <>
-            <p className="helper">
-              Emrat e produkteve, përshkrimet dhe kategoritë përkthehen vetë në të gjitha gjuhët sa herë ruani një produkt
-              ose shtoni një kategori. Për ato që ekzistonin më parë, përktheni të gjitha njëherësh.
-            </p>
+            <p className="helper">Çdo produkt përkthehet vetë kur ruhet. Për ato më të vjetra, përktheni të gjitha njëherësh.</p>
             <button
               type="button"
               disabled={busy}
@@ -359,15 +379,25 @@ function MenuIdentity({ venueName, state }) {
       </div>
       {noteFor("lang")}
     </section>
+    )}
     </>
   );
 }
 
 // Cilësimet → Menuja online: on/off, the link and table QR codes.
-export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
+const MENU_TABS = [["general", "menu", "Përgjithshme"], ["look", "sparkle", "Pamja"], ["lang", "location", "Gjuhët"], ["import", "upload", "Importo me AI"]];
+export function OnlineMenuSettings({ venue, state, update, onVenueChange, importer }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  // Four small tabs instead of one long page; the last one opened comes back.
+  const [tab, setTab] = useState(() => {
+    try { return MENU_TABS.find(([k]) => k === sessionStorage.getItem("menu-settings-tab"))?.[0] || "general"; } catch { return "general"; }
+  });
+  const pickTab = (key) => {
+    setTab(key);
+    try { sessionStorage.setItem("menu-settings-tab", key); } catch {}
+  };
   const enabled = Boolean(venue?.menuEnabled);
   const ordering = Boolean(venue?.menuOrdering);
   // Signed per table by the server; a QR code without its key opens the menu but can't order.
@@ -399,82 +429,92 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange }) {
       setBusy(false);
     }
   };
+  const Switch = ({ on, onToggle, disabled, label }) => (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} className="switch" disabled={disabled} onClick={onToggle}>
+      <span />
+    </button>
+  );
   return (
     <>
-      <section className="panel online-menu-panel">
-        <div className="online-menu-head">
-          <div>
-            <h2>Menuja online</h2>
-            <p className="helper">Klientët e hapin nga telefoni, në shqip ose në një nga 5 gjuhët e huaja. Çmimet dhe produktet vijnë nga Produktet.</p>
-          </div>
-          <button className={enabled ? "" : "primary"} onClick={() => save({ enabled: !enabled })} disabled={busy} aria-pressed={enabled}>
-            {enabled ? "Çaktivizo menunë" : "Aktivizo menunë"}
+      <div className="fin-tabs menu-tabs" role="tablist" aria-label="Menuja online">
+        {MENU_TABS.map(([key, icon, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => pickTab(key)}>
+            <Icon name={icon} size={17} /> {label}
           </button>
-        </div>
-        {error && <div className="notice error" role="alert">{error}</div>}
-        <div className={`online-menu-link ${enabled ? "" : "off"}`}>
-          <Icon name="location" size={16} />
-          <code>{menuUrl()}</code>
-          <button
-            onClick={() => navigator.clipboard?.writeText(menuUrl()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })}
-          >
-            {copied ? "U kopjua" : "Kopjo"}
-          </button>
-          {enabled && <a className="button-like" href={menuUrl()} target="_blank" rel="noreferrer">Hape</a>}
-        </div>
-        <p className="helper">
-          {enabled ? "Menuja është publike." : "Menuja është e fikur: lidhja tregon \"jo e disponueshme\"."}{" "}
-          {state.products.length - hidden} produkte shfaqen{hidden ? `, ${hidden} të fshehura` : ""}. Foton dhe përshkrimin i vendosni te Produktet.
-        </p>
-      </section>
-      <section className="panel">
-        <div className="online-menu-head">
-          <div>
-            <h2>Porositë nga klientët</h2>
-            <p className="helper">
-              Klienti skanon kodin QR të tavolinës, zgjedh produktet dhe dërgon porosinë. Ajo shkon direkt te tavolina dhe
-              te repartet (bar, kuzhinë), dhe kamarieri merr njoftim me tingull te Tavolinat. Pagesa bëhet si zakonisht.
-            </p>
-          </div>
-          <button className={ordering ? "" : "primary"} onClick={() => save({ ordering: !ordering })} disabled={busy || !enabled} aria-pressed={ordering}>
-            {ordering ? "Ndalo porositë" : "Lejo porositë"}
-          </button>
-        </div>
-        <p className="helper">
-          {!enabled
-            ? "Aktivizoni fillimisht menunë online."
-            : ordering
-              ? "Klientët mund të porosisin vetëm nga kodi QR i tavolinës së tyre, dhe vetëm kur turni i kasës është i hapur."
-              : "Tani klientët vetëm e shohin menunë."}
-        </p>
-      </section>
-      <MenuIdentity venueName={venue?.name || "BlueBar"} state={state} />
-      <TranslationFixes />
-      <section className="panel">
-        <div className="online-menu-head">
-          <div>
-            <h2>Kodet QR të tavolinave</h2>
-            <p className="helper">Printojini dhe vendosini në tavolina: klienti skanon dhe hap menunë.</p>
-          </div>
-          <button
-            onClick={() => {
-              // The app is hidden when printing; only this sheet (portalled to <body>) prints.
-              document.body.classList.add("qr-print");
-              window.addEventListener("afterprint", () => document.body.classList.remove("qr-print"), { once: true });
-              window.print();
-            }}
-            disabled={!tables.length}
-          >
-            <Icon name="print" size={17} />
-            Printo kodet QR
-          </button>
-        </div>
-        {/* Twelve big codes are for printing, not reading: folded until asked for. */}
-        <details className="qr-details">
-          <summary>Shfaq kodet ({tables.length})</summary>
-          <div className="qr-sheet">{cards}</div>
-        </details>
-      </section>
+        ))}
+      </div>
+      {tab === "general" && (
+        <>
+          <section className="panel online-menu-panel">
+            <SectionHeading icon="menu" title="Menuja online" description="Menuja që klienti hap nga telefoni, me produktet dhe çmimet nga Produktet." />
+            {error && <div className="notice error" role="alert">{error}</div>}
+            <div className="switch-rows">
+              <div className="switch-row">
+                <span>
+                  <strong>Menuja është publike</strong>
+                  <small>{enabled ? `${state.products.length - hidden} produkte shfaqen${hidden ? `, ${hidden} të fshehura` : ""}.` : "E fikur: lidhja tregon \"jo e disponueshme\"."}</small>
+                </span>
+                <Switch on={enabled} disabled={busy} label="Menuja është publike" onToggle={() => save({ enabled: !enabled })} />
+              </div>
+              <div className="switch-row">
+                <span>
+                  <strong>Klientët porosisin nga tavolina</strong>
+                  <small>{!enabled ? "Aktivizoni fillimisht menunë." : ordering ? "Me kodin QR të tavolinës, kur turni është i hapur. Kamarieri njoftohet me tingull." : "Tani klientët vetëm e shohin menunë."}</small>
+                </span>
+                <Switch on={ordering} disabled={busy || !enabled} label="Klientët porosisin nga tavolina" onToggle={() => save({ ordering: !ordering })} />
+              </div>
+            </div>
+            <div className={`online-menu-link ${enabled ? "" : "off"}`}>
+              <Icon name="location" size={16} />
+              <code>{menuUrl()}</code>
+              <button onClick={() => navigator.clipboard?.writeText(menuUrl()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })}>
+                {copied ? "U kopjua" : "Kopjo"}
+              </button>
+              {enabled && <a className="button-like" href={menuUrl()} target="_blank" rel="noreferrer">Hape</a>}
+            </div>
+          </section>
+          <section className="panel">
+            <SectionHeading icon="tables" title="Kodet QR të tavolinave" description="Printojini dhe vendosini në tavolina.">
+              <button
+                onClick={() => {
+                  // The app is hidden when printing; only this sheet (portalled to <body>) prints.
+                  document.body.classList.add("qr-print");
+                  window.addEventListener("afterprint", () => document.body.classList.remove("qr-print"), { once: true });
+                  window.print();
+                }}
+                disabled={!tables.length}
+              >
+                <Icon name="print" size={17} />
+                Printo ({tables.length})
+              </button>
+            </SectionHeading>
+            {/* Twelve big codes are for printing, not reading: folded until asked for. */}
+            <details className="qr-details">
+              <summary>Shfaq kodet</summary>
+              <div className="qr-sheet">{cards}</div>
+            </details>
+          </section>
+        </>
+      )}
+      {tab === "look" && <MenuIdentity venueName={venue?.name || "BlueBar"} state={state} show="look" />}
+      {tab === "lang" && (
+        <>
+          <MenuIdentity venueName={venue?.name || "BlueBar"} state={state} show="lang" />
+          <TranslationFixes />
+        </>
+      )}
+      {tab === "import" && (
+        <section className="panel menu-import-panel">
+          <SectionHeading icon="sparkle" title="Menuja nga një foto" description="Fotografoni menunë e letrës; AI krijon produktet me çmime, madhësi, shtesa, porcione dhe përshkrime.">
+            {importer}
+          </SectionHeading>
+          <ol className="import-steps">
+            <li><b>Ngarkoni</b> foton ose ngjitni tekstin e menusë.</li>
+            <li><b>Kontrolloni</b> çdo rresht: emrin, çmimin, kategorinë dhe opsionet.</li>
+            <li><b>Ruani</b>: produktet shfaqen menjëherë në menunë online dhe te kasa.</li>
+          </ol>
+        </section>
+      )}
       {createPortal(<div className="qr-sheet qr-print-sheet">{cards}</div>, document.body)}
     </>
   );

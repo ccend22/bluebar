@@ -76,7 +76,12 @@ const MENU_SCHEMA = {
       type: "ARRAY",
       items: {
         type: "OBJECT",
-        properties: { name: { type: "STRING" }, price: { type: "NUMBER" }, category: { type: "STRING" } },
+        properties: {
+          name: { type: "STRING" }, price: { type: "NUMBER" }, category: { type: "STRING" },
+          description: { type: "STRING" }, portion: { type: "STRING" }, calories: { type: "NUMBER" },
+          sizes: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, price: { type: "NUMBER" } }, required: ["name", "price"] } },
+          addOns: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, price: { type: "NUMBER" } }, required: ["name", "price"] } },
+        },
         required: ["name", "price", "category"],
       },
     },
@@ -87,18 +92,25 @@ const MENU_SCHEMA = {
 const MENU_INSTRUCTIONS = `This is a menu from a bar, café or restaurant in Albania: a photo of it, or its text copied from somewhere.
 List every item on it with its price, in the order they appear.
 - "name": the item's name exactly as written (keep the menu's language and spelling; fix only obvious OCR-style slips).
-- "price": the price as a number, in Lek. "1.200" or "1,200" is 1200. If an item has two sizes or prices, list it twice
-  with the size in the name ("Birrë Korça 0.33", "Birrë Korça 0.5").
+- "price": the price as a number, in Lek. "1.200" or "1,200" is 1200.
+- "sizes": when one item comes in sizes with their own prices (pizza small / medium / large, a beer 0.33 / 0.5, a glass /
+  a bottle of wine), list it ONCE with every size here as {name, price} with each size's full price, smallest first, and
+  "price" the smallest size's price. Name sizes as the menu does ("E vogël", "32 cm", "0.5 l"). Otherwise leave it out.
+- "addOns": extras the menu offers for that item or its section with their price ("Djathë ekstra +100"), as {name, price}
+  (the extra's own price; 0 when free). Otherwise leave it out.
 - "category": the heading the item is listed under ("Kafe", "Pije freskuese", "Pica"…); if there is none, a short sensible one in Albanian.
-Leave out anything with no readable price, and descriptions, addresses, opening hours. Never invent items or prices.
+- "description": the item's ingredients or short description as printed, at most 200 characters; leave it out if none.
+- "portion": the quantity as printed ("330 ml", "250 g", "30 cm · 8 feta"), only for a single-size item; leave it out if none.
+- "calories": the kcal number only when the menu prints it; otherwise leave it out.
+Leave out anything with no readable price, and addresses, opening hours. Never invent items, prices, sizes or extras.
 If it is not a menu or nothing is readable, return "products": [].`;
 
 export function geminiMenuPhoto(key, { model = process.env.GEMINI_MODEL || "gemini-3.5-flash", fetchImpl = fetch } = {}) {
   if (!key) return null;
   // note: the manager's own hint ("only the drinks", "prices are in euro").
-  return ({ image, mime, text, note }) =>
+  return ({ image, mime, text, note, estimate }) =>
     gemini(key, model, fetchImpl, [
-      { text: MENU_INSTRUCTIONS + (note ? `\n\nThe manager adds: ${note}` : "") },
+      { text: MENU_INSTRUCTIONS + (estimate ? `\n- The manager asks you to estimate "calories" (kcal for one portion, a typical recipe) for every food and drink the menu doesn't print them for. Round to the nearest 10.` : "") + (note ? `\n\nThe manager adds: ${note}` : "") },
       image ? { inline_data: { mime_type: mime, data: image } } : { text: `The menu:\n${text}` },
     ], MENU_SCHEMA, 45000);
 }

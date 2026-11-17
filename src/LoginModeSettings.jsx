@@ -80,7 +80,7 @@ export function LoginModeSettings({ venue, waiters = [] }) {
 
   return (
     <section className="panel">
-      <SectionHeading
+      <SectionHeading icon="people"
         title="Hyrja e kamarierëve"
         description="Zgjidhni si do të hyjnë kamarierët në ekranin e hyrjes."
       />
@@ -143,7 +143,7 @@ export function ManagerLoginSettings({ venue, name }) {
   }
   return (
     <section className="panel">
-      <SectionHeading title="Hyrja e menaxherit" description="Si hyn menaxheri në ekranin e hyrjes." />
+      <SectionHeading icon="user" title="Hyrja e menaxherit" description="Si hyn menaxheri në ekranin e hyrjes." />
       {error && <p className="notice error" role="alert">{error}</p>}
       {message && <p className="notice" role="status">{message}</p>}
       <div className="login-mode-grid manager-login-grid" role="group" aria-label="Hyrja e menaxherit">
@@ -203,7 +203,7 @@ export function AccountSettings({ name, onChange }) {
   }
   return (
     <section className="panel">
-      <SectionHeading title="Llogaria juaj" description="Ndryshoni emrin dhe PIN-in me të cilin hyni si menaxher." />
+      <SectionHeading icon="user" title="Llogaria juaj" description="Ndryshoni emrin dhe PIN-in me të cilin hyni si menaxher." />
       {error && <p className="notice error" role="alert">{error}</p>}
       {message && <p className="notice" role="status">{message}</p>}
       <form className="stack-form" onSubmit={save} key={name}>
@@ -222,8 +222,11 @@ export function AccountSettings({ name, onChange }) {
             autoComplete="username"
           />
           <p className="helper">3–32 shkronja, numra, pikë ose vizë, pa hapësira.</p>
-          <Field label="PIN-i i ri (6 shifra, opsional)" name="newPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="new-password" />
-          <Field label="Përsëritni PIN-in e ri" name="confirmPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="new-password" />
+          {/* The new PIN and its repeat side by side: one decision, one row. */}
+          <div className="field-pair">
+            <Field label="PIN-i i ri (6 shifra, opsional)" name="newPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="new-password" />
+            <Field label="Përsëritni PIN-in e ri" name="confirmPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="new-password" />
+          </div>
           <Field label="PIN-i aktual" name="currentPin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="current-password" required />
           <button className="primary full-width">{busy ? "Po ruhet…" : "Ruaj ndryshimet"}</button>
         </fieldset>

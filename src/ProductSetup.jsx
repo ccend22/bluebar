@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { plural } from "./domain.js";
 import { Icon } from "./components.jsx";
-import { blank, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
+import { blank, extrasText, parseExtras, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
 import { readDelivery, readMenuPhoto } from "./api.js";
 import { deliveryItems, validDeliveryRows } from "./documentImport.js";
 import { AiDocumentImport } from "./AiDocument.jsx";
@@ -57,6 +57,11 @@ function useImportRows(state, initial) {
     name: r.name.trim(), price: Number(r.price), category: r.category.trim(),
     ...(r.department.trim() ? { department: r.department.trim() } : {}),
     ...(r.stock !== "" ? { stock: Number(r.stock) } : {}),
+    // Rows read from a menu also carry what the guest menu shows.
+    ...(r.details ? {
+      description: (r.description || "").trim(), portion: (r.portion || "").trim(),
+      calories: r.calories === "" || r.calories == null ? null : Number(r.calories), extras: parseExtras(r.options),
+    } : {}),
   }));
   const status = filled.length > 200 ? "Ruani deri në 200 produkte njëherësh" : problems ? `${problems} rreshta për t'u rregulluar` : `${filled.length} produkte gati`;
   return { rows, setRows, filled, problem, add, newRow, ready, products, status };
@@ -113,6 +118,17 @@ function ImportTable({ state, rows: { rows, setRows, problem }, disabled }) {
               <button type="button" className="icon-button" aria-label={`Hiq rreshtin ${i + 1}`} onClick={() => setRows((list) => (list.length > 1 ? list.filter((x) => x.key !== r.key) : [blank(r.category)]))}>
                 <Icon name="close" size={16} />
               </button>
+              {r.details && (
+                <div className="import-details" role="cell">
+                  <label><span>Përshkrimi</span><input disabled={disabled} value={r.description} maxLength={300} onChange={(e) => set(r.key, "description", e.target.value)} placeholder="Përbërësit, si në menu" /></label>
+                  <label><span>Porcioni</span><input disabled={disabled} value={r.portion} maxLength={40} onChange={(e) => set(r.key, "portion", e.target.value)} placeholder="330 ml, 250 g" /></label>
+                  <label><span>Kalori</span><input disabled={disabled} value={r.calories} inputMode="numeric" onChange={(e) => set(r.key, "calories", e.target.value)} placeholder="kcal" /></label>
+                  <label className="import-options">
+                    <span>Opsione dhe shtesa</span>
+                    <textarea disabled={disabled} rows={Math.min(4, r.options ? r.options.split("\n").length + (r.options.length > 38 ? 1 : 0) : 1)} value={r.options} onChange={(e) => set(r.key, "options", e.target.value)} placeholder="Madhësia: E vogël, E madhe +300" />
+                  </label>
+                </div>
+              )}
               {issue && <small className="import-issue">{issue}</small>}
             </div>
           );
@@ -198,12 +214,13 @@ const STEPS = ["Ngarko", "Konfiguro", "Shiko", "Sukses"];
 
 // Produktet → "Importo me AI": a photo of the menu (or its text) → AI reads the products and
 // prices → the manager checks them in the import table → saved in one go.
-export function AiImport({ state, update }) {
+export function AiImport({ state, update, label = "Importo me AI" }) {
   const dialog = useRef(null);
   const [step, setStep] = useState(0);
   const [source, setSource] = useState(null); // { file, url } or { text }
   const [department, setDepartment] = useState("");
   const [note, setNote] = useState("");
+  const [estimate, setEstimate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -244,7 +261,7 @@ export function AiImport({ state, update }) {
     try {
       // Larger than a product photo: the menu's small print has to stay readable.
       const input = source.file ? { image: await shrink(source.file, { size: 2000 }) } : { text: source.text };
-      const { products } = await readMenuPhoto({ ...input, ...(note.trim() && { note: note.trim() }) });
+      const { products } = await readMenuPhoto({ ...input, ...(note.trim() && { note: note.trim() }), ...(estimate && { estimate }) });
       // What's already on the till stays as it is; "KAFE" on the menu is the "Kafe" already here,
       // and a new all-caps heading reads better as "Pije".
       const have = new Set(state.products.map((p) => p.name.toLocaleLowerCase()));
@@ -256,7 +273,10 @@ export function AiImport({ state, update }) {
       else if (!fresh.length) setError("Të gjitha produktet e kësaj menuje ekzistojnë tashmë.");
       else {
         rows.setRows([]);
-        rows.add(fresh.map((p) => ({ ...blank(category(p.category) || state.categories[0] || "", department), name: p.name, price: String(p.price) })));
+        rows.add(fresh.map((p) => ({
+          ...blank(category(p.category) || state.categories[0] || "", department), name: p.name, price: String(p.price),
+          details: true, description: p.description || "", portion: p.portion || "", calories: p.calories == null ? "" : String(p.calories), options: extrasText(p.extras),
+        })));
         setStep(2);
       }
     } catch (e) {
@@ -285,7 +305,7 @@ export function AiImport({ state, update }) {
     <>
       <button type="button" onClick={open}>
         <Icon name="sparkle" size={18} />
-        Importo me AI
+        {label}
       </button>
       <dialog
         ref={dialog}
@@ -318,7 +338,7 @@ export function AiImport({ state, update }) {
             <>
               <div className="ai-intro">
                 <h3>Ngarkoni ose bëni foto të menusë</h3>
-                <p>AI lexon produktet dhe çmimet. I shihni të gjitha para se të ruhen.</p>
+                <p>AI lexon produktet, çmimet, madhësitë, shtesat, porcionet dhe përshkrimet. I shihni të gjitha para se të ruhen.</p>
               </div>
               {preview || (
                 <div className="ai-sources">
@@ -362,6 +382,10 @@ export function AiImport({ state, update }) {
                     {state.departments.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </label>
+                <label className="check-row">
+                  <input type="checkbox" checked={estimate} disabled={busy} onChange={(e) => setEstimate(e.target.checked)} />
+                  Vlerëso kaloritë kur menuja nuk i shkruan (AI, afërsisht)
+                </label>
                 <label className="field">
                   <span>Udhëzim për AI (opsionale)</span>
                   <textarea
@@ -381,7 +405,7 @@ export function AiImport({ state, update }) {
             <>
               <div className="ai-intro">
                 <h3>Kontrolloni produktet</h3>
-                <p>Ndryshoni çfarë nuk është e saktë. Kategoritë dhe repartet e reja krijohen vetë; stoku bosh = pa numërim.</p>
+                <p>Ndryshoni çfarë nuk është e saktë. Kategoritë dhe repartet e reja krijohen vetë; stoku bosh = pa numërim. Te "Opsione", një rresht si "Madhësia: E vogël, E madhe +300" është një zgjedhje.</p>
               </div>
               {skipped.length > 0 && (
                 <p className="ai-note">

@@ -409,7 +409,7 @@ export function buildApp({
     const { venue, db } = await menuVenue(request);
     const [categories, products, brand] = await Promise.all([
       db.query("SELECT name, i18n FROM bluebar.categories ORDER BY name"),
-      db.query(`SELECT id, name, i18n, description, price, category, available, extras, photo_at
+      db.query(`SELECT id, name, i18n, description, price, category, available, extras, photo_at, calories, portion
                 FROM bluebar.products WHERE menu_visible ORDER BY name`),
       db.query("SELECT tagline, accent, logo_at, euro, euro_rate FROM bluebar.menu_branding WHERE id = 1"),
     ]);
@@ -428,8 +428,8 @@ export function buildApp({
         .map((c) => ({ name: c.name, i18n: publicI18n(c.i18n) })),
       products: products.rows.map((p) => ({
         id: p.id, name: p.name, description: p.description, i18n: publicI18n(p.i18n),
-        price: p.price, category: p.category, available: p.available,
-        extras: (p.extras || []).map(({ name, price }) => ({ name, price })),
+        price: p.price, category: p.category, available: p.available, calories: p.calories ?? null, portion: p.portion || "",
+        extras: (p.extras || []).map(({ name, price, group }) => (group ? { name, price, group } : { name, price })),
         photo: photoVersion(p.photo_at),
       })),
     };
@@ -665,6 +665,8 @@ export function buildApp({
   };
   // What a manager's fix of a product's translation was made for: if this changes, the fix is stale.
   const productSource = (p) => `${p.name}\n${p.description || ""}`;
+  // What of a product's extras is translated: each extra's name and each group's name.
+  const extraTexts = (extras = []) => [...new Set(extras.flatMap((x) => (x.group ? [x.name, x.group] : [x.name])))];
   const translateSaved = async (db, type, payload, state) => {
     if (!translate || !state) return;
     try {
@@ -672,7 +674,7 @@ export function buildApp({
         const name = String(payload.name || "").trim().toLowerCase();
         const p = state.products.find((x) => x.name.toLowerCase() === name);
         if (!p) return;
-        const [fresh] = await translateRows([{ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) }]);
+        const [fresh] = await translateRows([{ name: p.name, description: p.description || "", extras: extraTexts(p.extras) }]);
         const old = (await db.query("SELECT i18n FROM bluebar.products WHERE id=$1", [p.id])).rows[0]?.i18n || {};
         const source = productSource(p);
         const i18n = Object.fromEntries(LANGS.map((l) => [l, old[l]?.manual && old[l].source === source ? old[l] : fresh[l]]));
@@ -855,22 +857,44 @@ export function buildApp({
       image: { type: "string", maxLength: 1_900_000, pattern: "^data:image/(jpeg|png|webp);base64," },
       text: { type: "string", minLength: 1, maxLength: 20000 },
       note: { type: "string", maxLength: 300 },
+      estimate: { type: "boolean" },
     }, oneOf: [{ required: ["image"] }, { required: ["text"] }] } },
   }, async (request) => {
     if (!menuPhoto) throw new AppError("Leximi i menusë nga foto nuk është konfiguruar në server (GEMINI_API_KEY).", 503);
     if (!menuPhotoBudget(request.venue.slug)) throw new AppError("Shumë foto për pak kohë. Prisni disa minuta.", 429);
-    const { image: dataUrl, text, note } = request.body;
+    const { image: dataUrl, text, note, estimate = false } = request.body;
     const [head, image] = dataUrl ? dataUrl.split(",") : [];
     let out;
     try {
-      out = await menuPhoto(image ? { image, mime: head.slice(5, head.indexOf(";")), note: note?.trim() } : { text, note: note?.trim() });
+      out = await menuPhoto(image ? { image, mime: head.slice(5, head.indexOf(";")), note: note?.trim(), estimate } : { text, note: note?.trim(), estimate });
     } catch (e) {
       console.error("products/from-photo:", e.message);
       throw new AppError(`Fotoja nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
     }
     const clean = (v, max) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+    // What Gemini sends back is checked like any input: sizes become one "Madhësia" group
+    // priced from the smallest (whose price is the product's), add-ons become extras.
+    const lek = (v) => Math.round(Number(v));
+    const options = (list, max) => (Array.isArray(list) ? list : [])
+      .map((o) => ({ name: clean(o?.name, 40), price: lek(o?.price) }))
+      .filter((o) => o.name && Number.isFinite(o.price) && o.price >= 0 && o.price <= 1000000)
+      .filter((o, i, all) => all.findIndex((y) => y.name.toLocaleLowerCase() === o.name.toLocaleLowerCase()) === i)
+      .slice(0, max);
     const products = (Array.isArray(out?.products) ? out.products : [])
-      .map((x) => ({ name: clean(x?.name, 80), price: Math.round(Number(x?.price)), category: clean(x?.category, 40) }))
+      .map((x) => {
+        const sizes = options(x?.sizes, 6).filter((o) => o.price > 0).sort((a, b) => a.price - b.price);
+        const price = sizes.length > 1 ? sizes[0].price : lek(x?.price);
+        const calories = lek(x?.calories);
+        return {
+          name: clean(x?.name, 80), price, category: clean(x?.category, 40),
+          description: clean(x?.description, 300), portion: sizes.length > 1 ? "" : clean(x?.portion, 40),
+          calories: Number.isInteger(calories) && calories > 0 && calories <= 5000 ? calories : null,
+          extras: [
+            ...(sizes.length > 1 ? sizes.map((o) => ({ name: o.name, price: o.price - price, group: "Madhësia" })) : []),
+            ...options(x?.addOns, 12).filter((o) => o.price <= 100000 && !sizes.some((s) => s.name.toLocaleLowerCase() === o.name.toLocaleLowerCase())),
+          ],
+        };
+      })
       .filter((x) => x.name && Number.isFinite(x.price) && x.price > 0)
       .slice(0, 200);
     return { products };
@@ -883,7 +907,7 @@ export function buildApp({
     const products = (await db.query(`SELECT id, name, description, extras FROM bluebar.products WHERE ${missing} ORDER BY id LIMIT 200`)).rows;
     const categories = (await db.query(`SELECT name FROM bluebar.categories WHERE ${missing}`)).rows;
     if (!products.length && !categories.length) return { products: 0, categories: 0 };
-    const out = await translateRows([...products.map((p) => ({ name: p.name, description: p.description || "", extras: (p.extras || []).map((x) => x.name) })), ...categories.map((c) => ({ name: c.name }))]);
+    const out = await translateRows([...products.map((p) => ({ name: p.name, description: p.description || "", extras: extraTexts(p.extras) })), ...categories.map((c) => ({ name: c.name }))]);
     for (const [n, p] of products.entries())
       await db.query("UPDATE bluebar.products SET i18n=$2 WHERE id=$1", [p.id, out[n]]);
     for (const [n, c] of categories.entries())

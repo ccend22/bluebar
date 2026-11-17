@@ -1427,7 +1427,7 @@ test("online menu: off until enabled, public read-only, only visible products an
     assert.equal(body.euroRate, null, "Lek only until the manager turns euro on");
     assert.deepEqual(body.products.map((p) => p.name), ["Espresso"], "a hidden product never reaches guests");
     assert.deepEqual(Object.keys(body.products[0]).sort(),
-      ["available", "category", "description", "extras", "i18n", "id", "name", "photo", "price"]);
+      ["available", "calories", "category", "description", "extras", "i18n", "id", "name", "photo", "portion", "price"]);
     // Euro for foreign guests, at the venue's rate.
     assert.equal((await t.call("PUT", "/api/venue/menu-brand", { cookie, body: { tagline: "", accent: "blue", euro: true, euroRate: 98.456 } })).json().euroRate, 98.46);
     assert.equal((await guest("/api/menu/bluebar")).json().euroRate, 98.46);
@@ -1708,7 +1708,12 @@ test("a menu photo: managers only, Gemini's rows come back cleaned, nothing is s
   let asked;
   const fake = async (input) => {
     asked = input;
-    return { products: [{ name: " Espresso ", price: 100, category: "Kafe" }, { name: "Birrë Korça", price: 249.6, category: "Pije" }, { name: "", price: 50, category: "x" }, { name: "Falas", price: 0, category: "x" }] };
+    return { products: [
+      { name: " Espresso ", price: 100, category: "Kafe", portion: "30 ml" }, { name: "Birrë Korça", price: 249.6, category: "Pije" },
+      { name: "", price: 50, category: "x" }, { name: "Falas", price: 0, category: "x" },
+      { name: "Margarita", price: 700, category: "Pica", description: "Domate, mocarelë", calories: 820, portion: "30 cm",
+        sizes: [{ name: "E madhe", price: 900 }, { name: "E vogël", price: 550 }, { name: "", price: 1 }], addOns: [{ name: "Djathë", price: 100 }, { name: "Djathë", price: 120 }] },
+    ] };
   };
   const t = await setup({ menuPhoto: fake });
   try {
@@ -1717,12 +1722,19 @@ test("a menu photo: managers only, Gemini's rows come back cleaned, nothing is s
     assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: { image: "data:text/html;base64,AAAA" } })).statusCode, 400);
     const r = await t.call("POST", "/api/products/from-photo", { cookie, body: { image } });
     assert.equal(r.statusCode, 200);
-    assert.deepEqual(r.json(), { products: [{ name: "Espresso", price: 100, category: "Kafe" }, { name: "Birrë Korça", price: 250, category: "Pije" }] });
+    const plain = { description: "", portion: "", calories: null, extras: [] };
+    assert.deepEqual(r.json(), { products: [
+      { name: "Espresso", price: 100, category: "Kafe", ...plain, portion: "30 ml" }, { name: "Birrë Korça", price: 250, category: "Pije", ...plain },
+      // Sizes become one "Madhësia" group priced from the smallest; a size's portion is dropped; a repeated add-on once.
+      { name: "Margarita", price: 550, category: "Pica", description: "Domate, mocarelë", portion: "", calories: 820, extras: [
+        { name: "E vogël", price: 0, group: "Madhësia" }, { name: "E madhe", price: 350, group: "Madhësia" }, { name: "Djathë", price: 100 },
+      ] },
+    ] });
     assert.equal(asked.mime, "image/webp");
     assert.equal(asked.image, Buffer.alloc(300, 1).toString("base64"));
     assert.equal((await t.call("GET", "/api/state", { cookie })).json().state.products.length, 0, "nothing saved until the manager presses Ruaj");
     assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: { text: "Espresso 100", note: "vetëm kafet" } })).statusCode, 200);
-    assert.deepEqual(asked, { text: "Espresso 100", note: "vetëm kafet" });
+    assert.deepEqual(asked, { text: "Espresso 100", note: "vetëm kafet", estimate: false });
     assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: {} })).statusCode, 400, "a photo or text");
   } finally {
     await t.close();

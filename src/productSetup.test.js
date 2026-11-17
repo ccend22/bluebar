@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 globalThis.crypto ??= (await import("node:crypto")).webcrypto;
-const { parseList, productRowProblem, validDeliveryQuantity } = await import("./parseList.js");
+const { parseList, productRowProblem, validDeliveryQuantity, parseExtras, extrasText } = await import("./parseList.js");
 
 test("a pasted list becomes product rows: prices, category headings, Excel rows", () => {
   const rows = parseList("Kafe:\nEspresso 100\nMacchiato - 120 lek\n\nPije:\nCoca-Cola, 150\nUjë natyral 1.000\nPa çmim\nPeroni\t300\tBirra\tBar\t24", "Ushqim");
@@ -56,4 +56,14 @@ test('retrying a partially saved document excludes acknowledged expense rows', a
   await saveDocumentRows(remaining, async (row) => { writes.push(row.key); }, acknowledge);
   assert.deepEqual(writes, ['a', 'b', 'c']);
   assert.deepEqual(remaining, []);
+});
+
+test("options text: a group line is one choice, a plain line an add-on, and it reads back the same", () => {
+  const text = "Madhësia: E vogël, E mesme +150, E madhe +300\nDjathë ekstra +100\nPa qepë";
+  const extras = parseExtras(text);
+  assert.deepEqual(extras, [
+    { name: "E vogël", price: 0, group: "Madhësia" }, { name: "E mesme", price: 150, group: "Madhësia" }, { name: "E madhe", price: 300, group: "Madhësia" },
+    { name: "Djathë ekstra", price: 100 }, { name: "Pa qepë", price: 0 },
+  ]);
+  assert.equal(extrasText(extras), text);
 });

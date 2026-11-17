@@ -1,7 +1,8 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
-import { bill, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, total, plural, tableName } from "./domain.js";
+import { extrasText, parseExtras } from "./parseList.js";
+import { bill, since, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
@@ -37,6 +38,7 @@ import {
   Badge,
   Field,
   SectionHeading,
+  StatCards,
   TableSymbol,
   DepartmentTag,
   BrandMark,
@@ -303,8 +305,7 @@ function DeviceSettings() {
   });
   return (
     <section className="panel">
-      <h2>Kjo pajisje</h2>
-      <p className="helper">Vlen vetëm për këtë tablet ose telefon; çdo pajisje ruan zgjedhjen e vet.</p>
+      <SectionHeading icon="settings" title="Kjo pajisje" description="Vlen vetëm për këtë tablet ose telefon." />
       <label className="printer-ascii device-option">
         <input
           type="checkbox"
@@ -574,6 +575,65 @@ function App({ user, onLogout, onUserChange }) {
   );
   const lowStock = state.products.filter(isLow).length;
   const pendingUnits = (t) => t.lines.reduce((s, l) => s + l.qty - (l.sent || 0), 0);
+  // Each page opens with Raportet's summary cards, figures from what is already loaded.
+  const pageStats = (() => {
+    const day = new Date().toLocaleDateString("sv-SE");
+    const isToday = (d) => d && new Date(d).toLocaleDateString("sv-SE") === day;
+    const openTables = state.tables.filter((t) => t.lines.length);
+    const openSum = openTables.reduce((s, t) => s + bill(t).remaining, 0);
+    const units = (lines) => lines.reduce((s, l) => s + l.qty, 0);
+    const paidSum = (list) => list.reduce((s, i) => s + i.total, 0);
+    const todays = state.invoices.filter((i) => isToday(i.date));
+    const waiting = state.tickets.filter((k) => !k.doneAt && !k.cancelledAt);
+    const oldest = waiting.map((k) => k.date).sort()[0];
+    const bookings = (state.reservations || []).filter((r) => r.date === day);
+    const active = state.waiters.filter((w) => w.active);
+    const n = (x) => x.toLocaleString("en-US");
+    return {
+      Porositë: [
+        ["blue", "list", "Porosi të hapura", n(openTables.length), `${n(occupied)} tavolina të zëna`],
+        ["income", "cash", "Për t'u paguar", money(openSum), "Totali i porosive të hapura"],
+        ["waiting", "clock", "Pa dërguar", n(openTables.reduce((s, t) => s + pendingUnits(t), 0)), "Artikuj që s'kanë shkuar te repartet"],
+        ["pending", "chart", "Mesatarja", money(openTables.length ? Math.round(openSum / openTables.length) : 0), "Për porosi të hapur"],
+      ],
+      Repartet: [
+        ["waiting", "receipt", "Fletë në pritje", n(waiting.length), "Për t'u përgatitur"],
+        ["blue", "coffee", "Artikuj", n(waiting.reduce((s, k) => s + units(k.lines), 0)), "Në fletët e hapura"],
+        ["pending", "clock", "Më e vjetra", oldest ? since(oldest) : "—", oldest ? `Që nga ${time(oldest)}` : "Asnjë fletë në pritje"],
+        ["income", "check", "Gati sot", n(state.tickets.filter((k) => isToday(k.doneAt)).length), "Fletë të përfunduara"],
+      ],
+      Rezervimet: [
+        ["blue", "calendar", "Rezervime sot", n(bookings.length), `Sot, ${longDate(new Date())}`],
+        ["income", "people", "Persona", n(bookings.reduce((s, r) => s + (Number(r.guests) || 0), 0)), "Të pritur sot"],
+        ["waiting", "tables", "Pa tavolinë", n(bookings.filter((r) => !r.table).length), "Caktojini një tavolinë"],
+        ["pending", "clock", "Më pas", n((state.reservations || []).filter((r) => r.date > day).length), "Rezervime në ditët në vijim"],
+      ],
+      Faturat: [
+        ["blue", "receipt", "Fatura", n(state.invoices.length), `${n(todays.length)} sot`],
+        ["income", "check", "Të arkëtuara", money(paidSum(state.invoices)), `${money(paidSum(todays))} sot`],
+        ["waiting", "cash", "Cash", money(paidSum(state.invoices.filter((i) => i.method === "Cash"))), "Në arkë"],
+        ["pending", "card", "Kartë", money(paidSum(state.invoices.filter((i) => i.method !== "Cash"))), "Me POS ose bankë"],
+      ],
+      Inventari: [
+        ["blue", "stock", "Produkte me stok", n(counted.length), `${n(state.products.length - counted.length)} pa numërim`],
+        [lowStock ? "spent" : "income", "info", "Stok i ulët", n(lowStock), lowStock ? "Nën pragun minimal" : "Gjithçka mbi prag"],
+        ["waiting", "clock", "Të rezervuara", n(openTables.reduce((s, t) => s + units(t.lines), 0)), "Në porositë e hapura"],
+        ["income", "cash", "Vlera e stokut", money(counted.reduce((s, p) => s + Math.max(0, p.stock) * p.price, 0)), "Me çmimin e shitjes"],
+      ],
+      Produktet: [
+        ["blue", "menu", "Produkte", n(state.products.length), "Në menu"],
+        ["income", "list", "Kategori", n(state.categories.length), "Grupet e menusë"],
+        ["pending", "coffee", "Reparte", n(state.departments.length), "Ku përgatiten"],
+        [unrouted ? "spent" : "income", "info", "Pa repart", n(unrouted), unrouted ? "Nuk printohen askund" : "Çdo produkt ka repart"],
+      ],
+      Kamarierët: [
+        ["blue", "people", "Aktivë", n(active.length), `${n(state.waiters.length)} profile gjithsej`],
+        ["income", "tables", "Tavolina hapur", n(openTables.length), "Te kamarierët tani"],
+        ["waiting", "cash", "Në pritje pagese", money(openSum), "Te tavolinat e hapura"],
+        ["pending", "receipt", "Fatura sot", n(todays.length), money(paidSum(todays))],
+      ],
+    };
+  })()[page];
   // Printing from this browser never opens the invoice preview: only the printed copy changes.
   const print = (invoice) => {
     setTicketPrint(null);
@@ -748,18 +808,13 @@ function App({ user, onLogout, onUserChange }) {
           department: form.get("department") || undefined,
           trackStock: form.get("trackStock") === "on",
           ...(!editor.id && form.get("initialStock") ? { initialStock: Number(form.get("initialStock")) } : {}),
-          // "Qumësht soje +50" → {name, price: 50}; no "+N" means no extra charge.
-          extras: String(form.get("extras") || "")
-            .split("\n")
-            .map((row) => row.trim())
-            .filter(Boolean)
-            .map((row) => {
-              const m = row.match(/^(.*?)\s*\+\s*(\d+)\s*(lek)?$/i);
-              return m ? { name: m[1].trim(), price: Number(m[2]) } : { name: row, price: 0 };
-            }),
+          // "Djathë ekstra +100" an add-on; "Madhësia: E vogël, E madhe +300" one choice of a group.
+          extras: parseExtras(form.get("extras")),
           // Online menu (guests): visibility and the description.
           menuVisible: form.get("menuVisible") === "on",
           description: String(form.get("description") || "").trim(),
+          calories: form.get("calories") === "" ? null : Number(form.get("calories")),
+          portion: String(form.get("portion") || "").trim(),
         },
         editor.id
           ? "Produkti u përditësua. Porositë ekzistuese ruajnë çmimin e tyre."
@@ -1146,6 +1201,7 @@ function App({ user, onLogout, onUserChange }) {
               </div>
             )}
 
+            {pageStats && <StatCards items={pageStats} />}
             {page === "Tavolinat" &&
               (manageTables ? (
                 <RoomEditor
@@ -1382,7 +1438,7 @@ function App({ user, onLogout, onUserChange }) {
                 className={`invoice-layout ${receipt ? "with-preview" : ""}`}
               >
                 <section className="panel">
-                  <SectionHeading
+                  <SectionHeading icon="receipt"
                     title="Regjistri i faturave"
                     description={`${state.invoices.length} fatura të regjistruara në databazë`}
                   >
@@ -1615,7 +1671,7 @@ function App({ user, onLogout, onUserChange }) {
             {page === "Inventari" && (
               <>
                 <section className="panel">
-                  <SectionHeading
+                  <SectionHeading icon="stock"
                     title="Gjendja e stokut"
                     description="Njësi të shitshme · rezervimet përfshijnë porositë e hapura"
                   >
@@ -1777,7 +1833,7 @@ function App({ user, onLogout, onUserChange }) {
                   )}
                 </section>
                 <section className="panel">
-                  <SectionHeading
+                  <SectionHeading icon="rotate"
                     title="Lëvizjet e fundit"
                     description="Hyrjet, shitjet, korrigjimet dhe humbjet, me arsye dhe person"
                   />
@@ -1830,7 +1886,7 @@ function App({ user, onLogout, onUserChange }) {
             {page === "Produktet" && (
               <div className="management-layout products-layout">
                 <section className="panel">
-                  <SectionHeading
+                  <SectionHeading icon="menu"
                     title="Menuja e lokalit"
                     description={`${state.products.length} produkte · ${state.departments.length} reparte`}
                   />
@@ -1943,7 +1999,7 @@ function App({ user, onLogout, onUserChange }) {
                       onKeyDown={(e) => e.key === "Escape" && setEditor(null)}
                     >
                     <section className="panel editor-panel product-dialog" role="dialog" aria-label={editor.id ? "Ndrysho produktin" : "Produkt i ri"}>
-                      <SectionHeading
+                      <SectionHeading icon="edit"
                         title={editor.id ? "Ndrysho produktin" : "Produkt i ri"}
                       >
                         <button
@@ -1996,12 +2052,12 @@ function App({ user, onLogout, onUserChange }) {
                         />
                         <StockFields key={editor.id || "new"} product={editor} />
                         <label className="field product-extras">
-                          <span>Variante dhe shtesa (një për rresht)</span>
+                          <span>Opsione dhe shtesa (një për rresht; "Grupi: a, b +100" = zgjidhet një)</span>
                           <textarea
                             name="extras"
                             rows={3}
-                            defaultValue={(editor.extras || []).map((x) => `${x.name}${x.price ? ` +${x.price}` : ""}`).join("\n")}
-                            placeholder={"Qumësht soje +50\nPa sheqer\nE madhe +100"}
+                            defaultValue={extrasText(editor.extras)}
+                            placeholder={"Madhësia: E vogël, E mesme +150, E madhe +300\nDjathë ekstra +100\nPa qepë"}
                           />
                         </label>
                         <fieldset className="menu-fields">
@@ -2014,6 +2070,16 @@ function App({ user, onLogout, onUserChange }) {
                             <span>Përshkrimi</span>
                             <textarea name="description" rows={2} maxLength={300} defaultValue={editor.description || ""} placeholder="p.sh. Espresso me pak qumësht të shkumëzuar" />
                           </label>
+                          <div className="menu-facts">
+                            <label className="field">
+                              <span>Kalori (kcal)</span>
+                              <input name="calories" type="number" min="0" max="5000" step="1" defaultValue={editor.calories ?? ""} placeholder="p.sh. 240" />
+                            </label>
+                            <label className="field">
+                              <span>Porcioni</span>
+                              <input name="portion" maxLength={40} defaultValue={editor.portion || ""} placeholder="p.sh. 330 ml, 250 g" />
+                            </label>
+                          </div>
                           {editor.id ? (
                             <ProductPhoto product={state.products.find((p) => p.id === editor.id) || editor} onChanged={() => database.refresh()} />
                           ) : (
@@ -2035,7 +2101,7 @@ function App({ user, onLogout, onUserChange }) {
                     </div>
                   )}
                   <section className="panel">
-                    <SectionHeading
+                    <SectionHeading icon="coffee"
                       title="Repartet e përgatitjes"
                       description="Ku përgatitet porosia: bar, kuzhinë, ëmbëltore. Çdo repart mund të ketë printerin e vet."
                     />
@@ -2089,7 +2155,7 @@ function App({ user, onLogout, onUserChange }) {
                     </form>
                   </section>
                   <section className="panel">
-                    <SectionHeading
+                    <SectionHeading icon="list"
                       title="Kategoritë e menusë"
                       description="Grupet e menusë që sheh kamarieri: kafe, pije, birra…"
                     />
@@ -2165,7 +2231,7 @@ function App({ user, onLogout, onUserChange }) {
             {page === "Kamarierët" && (
               <div className="management-layout">
                 <section className="panel">
-                  <SectionHeading
+                  <SectionHeading icon="people"
                     title="Ekipi i shërbimit"
                     description={`${state.waiters.filter((w) => w.active).length} aktivë · ${state.waiters.length} profile gjithsej`}
                   />
@@ -2291,7 +2357,7 @@ function App({ user, onLogout, onUserChange }) {
                 </section>
                 <aside className="management-aside">
                   <section className="panel">
-                    <SectionHeading
+                    <SectionHeading icon="plus"
                       title="Shto në ekip"
                       description="Krijoni një profil për të caktuar porositë."
                     />
@@ -2432,7 +2498,7 @@ function App({ user, onLogout, onUserChange }) {
                 )}
                 {settingsTab === "Menuja online" && (
                   <div className="settings-column settings-wide">
-                    <OnlineMenuSettings venue={user.venue} state={state} update={update} onVenueChange={(venue) => onUserChange({ venue })} />
+                    <OnlineMenuSettings venue={user.venue} state={state} update={update} onVenueChange={(venue) => onUserChange({ venue })} importer={<AiImport state={state} update={update} label="Importo menunë me AI" />} />
                   </div>
                 )}
                 {settingsTab === "Fiskalizimi" && (
