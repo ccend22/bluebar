@@ -7578,3 +7578,12 @@ body:has(.app) { background: #f6f8fb; }
   .ai-beam { display: none; }
   .ai-constellation line { transition: none; }
 }
+@media (min-width: 900px) and (min-height: 600px) {
+  /* A panel pinned for a scrolling page (sticky, top: 88px) would just sit 88 px lower here,
+     where the page doesn't scroll: every panel starts at the top, level with its neighbour. */
+  .page-fit :is(.orders-desk, .management-layout, .invoice-layout) > * { top: auto; align-self: stretch; }
+}
+
+/* No box scrolls inside itself: Cilësimet keeps its two columns, and a topic taller than the
+   screen simply lets the page scroll. */
+.settings-fit .settings-column { overflow: visible; }

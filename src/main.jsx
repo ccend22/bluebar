@@ -1071,7 +1071,7 @@ function App({ user, onLogout, onUserChange }) {
               <Badge>{database.error ? "PA LIDHJE" : "TEST"}</Badge>
             </div>
           )}
-          <main id="main" className={page === "Tavolinat" || page === "Inventari" ? undefined : `fit ${page === "Cilësimet" ? "settings-fit" : "page-fit"}`}>
+          <main id="main" className={page === "Cilësimet" ? "settings-fit" : undefined}>
             <fieldset className="workspace-controls" disabled={database.busy} aria-busy={database.busy} aria-label="Hapësira e punës">
             {/* Raportet carries its own header, with its tabs beside the title. */}
             <div className={`title-row ${page === "Raportet" ? "sr-only" : ""}`}>
