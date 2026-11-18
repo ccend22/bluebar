@@ -4,7 +4,7 @@ import { Icon } from "./components.jsx";
 import { blank, extrasText, parseExtras, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
 import { readDelivery, readMenuPhoto } from "./api.js";
 import { deliveryItems, validDeliveryRows } from "./documentImport.js";
-import { AiDocumentImport } from "./AiDocument.jsx";
+import { AiDocumentImport, AiReading, MENU_STEPS, ScanMarks } from "./AiDocument.jsx";
 import { shrink } from "./OnlineMenu.jsx";
 
 // Produktet → product form: is this product counted in units, and how many are there now?
@@ -218,7 +218,8 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
   const dialog = useRef(null);
   const [step, setStep] = useState(0);
   const [source, setSource] = useState(null); // { file, url } or { text }
-  const [department, setDepartment] = useState("");
+  // "ai": the AI picks each product's department from the venue's own; or one for all, or none.
+  const [department, setDepartment] = useState("ai");
   const [note, setNote] = useState("");
   const [estimate, setEstimate] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -261,7 +262,7 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
     try {
       // Larger than a product photo: the menu's small print has to stay readable.
       const input = source.file ? { image: await shrink(source.file, { size: 2000 }) } : { text: source.text };
-      const { products } = await readMenuPhoto({ ...input, ...(note.trim() && { note: note.trim() }), ...(estimate && { estimate }) });
+      const { products } = await readMenuPhoto({ ...input, ...(note.trim() && { note: note.trim() }), ...(estimate && { estimate }), ...(department === "ai" && state.departments.length && { departments: true }) });
       // What's already on the till stays as it is; "KAFE" on the menu is the "Kafe" already here,
       // and a new all-caps heading reads better as "Pije".
       const have = new Set(state.products.map((p) => p.name.toLocaleLowerCase()));
@@ -274,7 +275,7 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
       else {
         rows.setRows([]);
         rows.add(fresh.map((p) => ({
-          ...blank(category(p.category) || state.categories[0] || "", department), name: p.name, price: String(p.price),
+          ...blank(category(p.category) || state.categories[0] || "", department === "ai" ? p.department || "" : department), name: p.name, price: String(p.price),
           details: true, description: p.description || "", portion: p.portion || "", calories: p.calories == null ? "" : String(p.calories), options: extrasText(p.extras),
         })));
         setStep(2);
@@ -295,8 +296,11 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
   const canForward = step === 0 ? Boolean(source) : step === 1 ? !busy : step === 2 ? rows.ready && !busy : false;
 
   const preview = source && (
-    <div className="ai-preview">
-      {source.url ? <img src={source.url} alt="Fotoja e menusë" /> : <pre>{source.text.slice(0, 600)}</pre>}
+    <div className={`ai-preview ${busy && step === 1 ? "scanning" : ""}`}>
+      <span className="ai-shot">
+        {source.url ? <img src={source.url} alt="Fotoja e menusë" /> : <pre>{source.text.slice(0, 600)}</pre>}
+        {busy && step === 1 && <ScanMarks />}
+      </span>
       {step === 0 && <button type="button" onClick={() => setSource(null)}>Ndrysho</button>}
     </div>
   );
@@ -376,10 +380,11 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
               {preview}
               <div className="ai-fields">
                 <label className="field">
-                  <span>Reparti për të gjitha</span>
+                  <span>Reparti</span>
                   <select value={department} onChange={(e) => setDepartment(e.target.value)} disabled={busy}>
+                    {state.departments.length > 0 && <option value="ai">AI zgjedh për secilin (bar, kuzhinë…)</option>}
                     <option value="">Pa repart (e zgjidhni më vonë)</option>
-                    {state.departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                    {state.departments.map((d) => <option key={d} value={d}>Të gjitha te {d}</option>)}
                   </select>
                 </label>
                 <label className="check-row">
@@ -397,7 +402,7 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
                     placeholder="p.sh. vetëm pijet; çmimet janë në euro"
                   />
                 </label>
-                {busy && <p className="ai-reading" role="status"><span className="ai-spinner" /> AI po lexon menunë… zakonisht 10–30 sekonda.</p>}
+                {busy && <AiReading steps={MENU_STEPS} />}
               </div>
             </div>
           )}

@@ -486,7 +486,7 @@ test("waiters are pinned to the venue IP, limited to order commands and see trim
     assert.equal((await t.call("PUT", "/api/accounts/waiters/2/pin", pinRoute)).statusCode, 403);
     assert.equal((await t.call("PUT", "/api/accounts/waiters/2/pin", { ...pinRoute, cookie: mgr })).statusCode, 200);
     assert.equal(
-      (await t.call("PUT", "/api/accounts/waiters/2/pin", { cookie: mgr, body: { pin: "111111" } })).statusCode,
+      (await t.call("PUT", "/api/accounts/waiters/2/pin", { cookie: mgr, body: { pin: "12345" } })).statusCode,
       400,
     );
   } finally {
@@ -1366,9 +1366,9 @@ test("a manager changes their own name and PIN: current PIN required, other devi
     const wrong = await t.call("PUT", path, { cookie: here, body: { currentPin: "000000", username: "drita" } });
     assert.equal(wrong.statusCode, 400);
     assert.match(wrong.json().error, /PIN-i aktual/);
-    // Bad name or too simple a PIN.
+    // Bad name or a PIN that is not six digits (a simple one like 123456 is the venue's choice).
     assert.equal((await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, username: "a b" } })).statusCode, 400);
-    assert.equal((await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, newPin: "123456" } })).statusCode, 400);
+    assert.equal((await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, newPin: "12ab56" } })).statusCode, 400);
 
     // Name only: both devices stay signed in, and the new name shows.
     const renamed = await t.call("PUT", path, { cookie: here, body: { currentPin: t.manager.pin, username: "Drita" } });
@@ -1709,7 +1709,7 @@ test("a menu photo: managers only, Gemini's rows come back cleaned, nothing is s
   const fake = async (input) => {
     asked = input;
     return { products: [
-      { name: " Espresso ", price: 100, category: "Kafe", portion: "30 ml" }, { name: "Birrë Korça", price: 249.6, category: "Pije" },
+      { name: " Espresso ", price: 100, category: "Kafe", portion: "30 ml", department: "bar" }, { name: "Birrë Korça", price: 249.6, category: "Pije", department: "Kantina" },
       { name: "", price: 50, category: "x" }, { name: "Falas", price: 0, category: "x" },
       { name: "Margarita", price: 700, category: "Pica", description: "Domate, mocarelë", calories: 820, portion: "30 cm",
         sizes: [{ name: "E madhe", price: 900 }, { name: "E vogël", price: 550 }, { name: "", price: 1 }], addOns: [{ name: "Djathë", price: 100 }, { name: "Djathë", price: 120 }] },
@@ -1722,11 +1722,11 @@ test("a menu photo: managers only, Gemini's rows come back cleaned, nothing is s
     assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: { image: "data:text/html;base64,AAAA" } })).statusCode, 400);
     const r = await t.call("POST", "/api/products/from-photo", { cookie, body: { image } });
     assert.equal(r.statusCode, 200);
-    const plain = { description: "", portion: "", calories: null, extras: [] };
+    const plain = { department: "", description: "", portion: "", calories: null, extras: [] };
     assert.deepEqual(r.json(), { products: [
       { name: "Espresso", price: 100, category: "Kafe", ...plain, portion: "30 ml" }, { name: "Birrë Korça", price: 250, category: "Pije", ...plain },
       // Sizes become one "Madhësia" group priced from the smallest; a size's portion is dropped; a repeated add-on once.
-      { name: "Margarita", price: 550, category: "Pica", description: "Domate, mocarelë", portion: "", calories: 820, extras: [
+      { name: "Margarita", price: 550, category: "Pica", department: "", description: "Domate, mocarelë", portion: "", calories: 820, extras: [
         { name: "E vogël", price: 0, group: "Madhësia" }, { name: "E madhe", price: 350, group: "Madhësia" }, { name: "Djathë", price: 100 },
       ] },
     ] });
@@ -1734,7 +1734,13 @@ test("a menu photo: managers only, Gemini's rows come back cleaned, nothing is s
     assert.equal(asked.image, Buffer.alloc(300, 1).toString("base64"));
     assert.equal((await t.call("GET", "/api/state", { cookie })).json().state.products.length, 0, "nothing saved until the manager presses Ruaj");
     assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: { text: "Espresso 100", note: "vetëm kafet" } })).statusCode, 200);
-    assert.deepEqual(asked, { text: "Espresso 100", note: "vetëm kafet", estimate: false });
+    assert.deepEqual(asked, { text: "Espresso 100", note: "vetëm kafet", estimate: false, departments: [] });
+    // Asked to, the AI picks each item's department from the venue's own; one it doesn't have is dropped.
+    const venueDepartments = (await t.call("GET", "/api/state", { cookie })).json().state.departments;
+    assert.ok(venueDepartments.includes("Bar"));
+    const picked = (await t.call("POST", "/api/products/from-photo", { cookie, body: { text: "Espresso 100", departments: true } })).json().products;
+    assert.deepEqual([...asked.departments].sort(), [...venueDepartments].sort());
+    assert.deepEqual(picked.map((p) => [p.name, p.department]), [["Espresso", "Bar"], ["Birrë Korça", ""], ["Margarita", ""]]);
     assert.equal((await t.call("POST", "/api/products/from-photo", { cookie, body: {} })).statusCode, 400, "a photo or text");
   } finally {
     await t.close();
@@ -1835,7 +1841,7 @@ test("the audit log records settings, PINs and translation fixes, never the secr
     await t.call("PUT", "/api/venue/menu", { cookie, body: { enabled: true } });
     await t.call("PUT", "/api/venue/network", { cookie, body: { allowedIps: ["203.0.113.10"] } });
     // A refused change leaves no entry.
-    await t.call("PUT", "/api/accounts/waiters/1/pin", { cookie, body: { pin: "111111" } });
+    await t.call("PUT", "/api/accounts/waiters/1/pin", { cookie, body: { pin: "12345" } });
     const from = new Date(Date.now() - 60_000).toISOString(), to = new Date(Date.now() + 60_000).toISOString();
     const audit = (await t.call("GET", `/api/reports?from=${from}&to=${to}`, { cookie })).json().audit;
     const types = audit.map((a) => a.type);

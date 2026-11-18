@@ -109,7 +109,7 @@ const MENU_SCHEMA = {
         type: "OBJECT",
         properties: {
           name: { type: "STRING" }, price: { type: "NUMBER" }, category: { type: "STRING" },
-          description: { type: "STRING" }, portion: { type: "STRING" }, calories: { type: "NUMBER" },
+          description: { type: "STRING" }, portion: { type: "STRING" }, calories: { type: "NUMBER" }, department: { type: "STRING" },
           sizes: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, price: { type: "NUMBER" } }, required: ["name", "price"] } },
           addOns: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, price: { type: "NUMBER" } }, required: ["name", "price"] } },
         },
@@ -119,6 +119,28 @@ const MENU_SCHEMA = {
   },
   required: ["products"],
 };
+
+// With the venue's departments, every item must name one of them (or "Asnjë" for none): the
+// answer's shape itself keeps the model from skipping the field or inventing a name.
+const menuSchemaWith = (departments) => {
+  const item = MENU_SCHEMA.properties.products.items;
+  return {
+    ...MENU_SCHEMA,
+    properties: { products: { ...MENU_SCHEMA.properties.products, items: {
+      ...item,
+      properties: { ...item.properties, department: { type: "STRING", enum: [...departments, "Asnjë"] } },
+      required: [...item.required, "department"],
+    } } },
+  };
+};
+// Where each item is prepared, from the venue's own departments ("Bar", "Kuzhina", "Pica"…).
+const departmentRule = (departments) => `
+- "department": where the item is prepared, written exactly as one of: ${departments.map((d) => JSON.stringify(d)).join(", ")}.
+  Give every item one whenever any fits, items with sizes included. Match by meaning, in any language: a department
+  named after a kind of item takes those items ("Pica"/"Pizza" takes every pizza, "Ëmbëltore"/"Pastiçeri" desserts and
+  pastry, "Grill" grilled meat, "Sushi" sushi). Otherwise drinks (coffee, tea, water, juice, soft drinks, beer, wine,
+  cocktails, spirits) go to the bar-like one ("Bar", "Banak"), and food to the kitchen-like one ("Kuzhina", "Restorant").
+  Write "Asnjë" only when nothing fits.`;
 
 const MENU_INSTRUCTIONS = `This is a menu from a bar, café or restaurant in Albania: a photo of it, or its text copied from somewhere.
 List every item on it with its price, in the order they appear.
@@ -139,11 +161,12 @@ If it is not a menu or nothing is readable, return "products": [].`;
 export function geminiMenuPhoto(key, { model = process.env.GEMINI_MODEL || "gemini-3.5-flash", fetchImpl = fetch } = {}) {
   if (!key) return null;
   // note: the manager's own hint ("only the drinks", "prices are in euro").
-  return ({ image, mime, text, note, estimate }) =>
+  // departments: the venue's own preparation departments; each item gets the one that makes it.
+  return ({ image, mime, text, note, estimate, departments = [] }) =>
     gemini(key, model, fetchImpl, [
-      { text: MENU_INSTRUCTIONS + (estimate ? `\n- The manager asks you to estimate "calories" (kcal for one portion, a typical recipe) for every food and drink the menu doesn't print them for. Round to the nearest 10.` : "") + (note ? `\n\nThe manager adds: ${note}` : "") },
+      { text: MENU_INSTRUCTIONS + (departments.length ? departmentRule(departments) : "") + (estimate ? `\n- The manager asks you to estimate "calories" (kcal for one portion, a typical recipe) for every food and drink the menu doesn't print them for. Round to the nearest 10.` : "") + (note ? `\n\nThe manager adds: ${note}` : "") },
       image ? { inline_data: { mime_type: mime, data: image } } : { text: `The menu:\n${text}` },
-    ], MENU_SCHEMA, 110000);
+    ], departments.length ? menuSchemaWith(departments) : MENU_SCHEMA, 110000);
 }
 
 // The room (Ndrysho sallën → "Pamja nga foto"): the venue's own table, or its floor, drawn

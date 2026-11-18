@@ -42,7 +42,7 @@ export async function spendBudget(pool, key) {
 export async function registerVenue(pool, { slug, name, pin, luxhotelUid = null }, ip) {
   if (!validSlug(slug) || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 80)
     throw new AppError("Vendosni emrin dhe kodin e vlefshëm të biznesit.");
-  if (!validPin(pin)) throw new AppError("PIN-i është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.");
+  if (!validPin(pin)) throw new AppError("PIN-i duhet të ketë 6 shifra.");
   if ((await spendBudget(pool, ip)) > 5) throw new AppError("Shumë regjistrime. Provoni pas një ore.", 429);
   const secret = await hashSecret(pin);
   const schema = `bluebar_${randomUUID().replaceAll("-", "")}`;

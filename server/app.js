@@ -860,15 +860,20 @@ export function buildApp({
       text: { type: "string", minLength: 1, maxLength: 20000 },
       note: { type: "string", maxLength: 300 },
       estimate: { type: "boolean" },
+      departments: { type: "boolean" },
     }, oneOf: [{ required: ["image"] }, { required: ["text"] }] } },
   }, async (request) => {
     if (!menuPhoto) throw new AppError("Leximi i menusë nga foto nuk është konfiguruar në server (GEMINI_API_KEY).", 503);
     if (!menuPhotoBudget(request.venue.slug)) throw new AppError("Shumë foto për pak kohë. Prisni disa minuta.", 429);
     const { image: dataUrl, text, note, estimate = false } = request.body;
+    // The venue's own departments, read here (not from the request): the AI picks one of them.
+    const departments = request.body.departments
+      ? (await request.db.query("SELECT name FROM bluebar.departments ORDER BY name")).rows.map((d) => d.name)
+      : [];
     const [head, image] = dataUrl ? dataUrl.split(",") : [];
     let out;
     try {
-      out = await menuPhoto(image ? { image, mime: head.slice(5, head.indexOf(";")), note: note?.trim(), estimate } : { text, note: note?.trim(), estimate });
+      out = await menuPhoto(image ? { image, mime: head.slice(5, head.indexOf(";")), note: note?.trim(), estimate, departments } : { text, note: note?.trim(), estimate, departments });
     } catch (e) {
       console.error("products/from-photo:", e.message);
       throw e.busy ? new AppError(BUSY, 503) : new AppError(`Fotoja nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
@@ -889,6 +894,8 @@ export function buildApp({
         const calories = lek(x?.calories);
         return {
           name: clean(x?.name, 80), price, category: clean(x?.category, 40),
+          // Only a department the venue has; anything else is left for the manager.
+          department: departments.find((d) => d.toLocaleLowerCase() === clean(x?.department, 40).toLocaleLowerCase()) || "",
           description: clean(x?.description, 300), portion: sizes.length > 1 ? "" : clean(x?.portion, 40),
           calories: Number.isInteger(calories) && calories > 0 && calories <= 5000 ? calories : null,
           extras: [

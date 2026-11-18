@@ -1,8 +1,83 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { shrink } from "./OnlineMenu.jsx";
 import { Icon } from "./components.jsx";
 
 const STEPS = ["Ngarko", "Shiko", "Sukses"];
+
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// While the AI reads: what it's doing, typed letter by letter; a constellation of five dots
+// that light and join one after another (the pattern pad's own gesture); and the seconds, so a
+// long wait never looks frozen. After half a minute it says plainly that Google is slow.
+export function AiReading({ steps }) {
+  const [seconds, setSeconds] = useState(0);
+  const [typed, setTyped] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const id = setInterval(() => setSeconds(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const index = Math.floor(seconds / 5) % steps.length;
+  const phrase = steps[index];
+  // Type the phrase out; with reduced motion it simply appears.
+  useEffect(() => {
+    if (reducedMotion()) return void setTyped(phrase.length);
+    setTyped(0);
+    const id = setInterval(() => setTyped((n) => (n >= phrase.length ? (clearInterval(id), n) : n + 1)), 28);
+    return () => clearInterval(id);
+  }, [phrase]);
+  // Five dots on a gentle arc; one more lights every 3 s, then they start over.
+  const lit = (Math.floor(seconds / 3) % 6) || 0;
+  const dots = [[8, 26], [26, 12], [46, 22], [66, 8], [84, 20]];
+  return (
+    <div className="ai-reading" role="status">
+      <svg className="ai-constellation" viewBox="0 0 92 34" aria-hidden="true">
+        {dots.slice(1).map(([x, y], i) => (
+          <line key={i} x1={dots[i][0]} y1={dots[i][1]} x2={x} y2={y} className={i + 1 < lit ? "on" : ""} />
+        ))}
+        {dots.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3.4" className={i < lit ? "on" : ""} />)}
+      </svg>
+      <span className="ai-reading-text">
+        <b aria-hidden="true">{phrase.slice(0, typed)}<i className="ai-caret" /></b>
+        <span className="sr-only">AI po lexon. Prisni pak.</span>
+        <small>
+          {seconds} s{seconds >= 30 ? " · Google po merr më shumë kohë se zakonisht, vazhdojmë të provojmë…" : " · zakonisht 10–40 sekonda"}
+        </small>
+      </span>
+    </div>
+  );
+}
+
+// Over the photo while it's read: viewfinder corners, a reading line sweeping down and up, and
+// small frames flashing where the line passes, like a scanner picking out lines of text. The
+// frames are abstract marks, never invented content.
+export function ScanMarks() {
+  const [marks, setMarks] = useState([]);
+  useEffect(() => {
+    if (reducedMotion()) return;
+    const start = performance.now();
+    let id = 0;
+    const timer = setInterval(() => {
+      // Where the line is now: the same 2.4 s down-and-up as its CSS sweep.
+      const phase = ((performance.now() - start) / 2400) % 2;
+      const eased = (t) => (1 - Math.cos(Math.PI * t)) / 2;
+      const y = (phase < 1 ? eased(phase) : 1 - eased(phase - 1)) * 92 + 2;
+      const w = 12 + Math.random() * 30;
+      const mark = { id: ++id, x: 4 + Math.random() * (92 - w), y: Math.min(94, Math.max(2, y + (Math.random() - 0.5) * 4)), w };
+      setMarks((list) => [...list.slice(-9), mark]);
+    }, 260);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <span className="ai-scan" aria-hidden="true">
+      <i className="ai-corner tl" /><i className="ai-corner tr" /><i className="ai-corner bl" /><i className="ai-corner br" />
+      {marks.map((m) => <i key={m.id} className="ai-mark" style={{ left: `${m.x}%`, top: `${m.y}%`, width: `${m.w}%` }} />)}
+      <i className="ai-beam" />
+    </span>
+  );
+}
+export const DOCUMENT_STEPS = ["Po shikoj dokumentin…", "Po lexoj rreshtat…", "Po lexoj sasitë dhe shumat…", "Po kontrolloj datat dhe emrat…"];
+export const MENU_STEPS = ["Po shikoj foton e menusë…", "Po lexoj emrat e produkteve…", "Po lexoj çmimet…", "Po gjej madhësitë dhe shtesat…", "Po rendis kategoritë…"];
 
 // "Importo me AI" for a document (Inventari: a supplier's invoice; Shpenzimet: receipts or a bank
 // statement): a photo or pasted text → read(input) by AI into rows → the manager checks them
@@ -115,8 +190,11 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
                 <p>{intro}</p>
               </div>
               {source ? (
-                <div className="ai-preview">
-                  {source.url ? <img src={source.url} alt="Dokumenti" /> : <pre>{source.text.slice(0, 600)}</pre>}
+                <div className={`ai-preview ${busy ? "scanning" : ""}`}>
+                  <span className="ai-shot">
+                    {source.url ? <img src={source.url} alt="Dokumenti" /> : <pre>{source.text.slice(0, 600)}</pre>}
+                    {busy && <ScanMarks />}
+                  </span>
                   <button type="button" disabled={busy} onClick={() => setSource(null)}>Ndrysho</button>
                 </div>
               ) : (
@@ -152,7 +230,7 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
                 <span>Udhëzim për AI (opsional)</span>
                 <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder={notePlaceholder} disabled={busy} />
               </label>
-              {busy && <p className="ai-reading" role="status"><span className="ai-spinner" /> AI po lexon dokumentin… mund të zgjasë deri në 90 sekonda.</p>}
+              {busy && <AiReading steps={DOCUMENT_STEPS} />}
             </>
           )}
           {step === 1 && (

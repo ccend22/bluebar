@@ -32,8 +32,8 @@ export const validPattern = (p) =>
   p.every((d) => Number.isInteger(d) && d >= 1 && d <= 9) &&
   new Set(p).size === p.length;
 const patternSecret = (p) => p.join("-");
-export const validPin = (p) =>
-  /^\d{6}$/.test(p) && !/^(\d)\1{5}$/.test(p) && !"01234567890".includes(p) && !"09876543210".includes(p);
+// Any six digits: the venue decides how simple its PINs are.
+export const validPin = (p) => /^\d{6}$/.test(p);
 
 export const cookieName = (secure, slug = "bluebar") =>
   (secure ? "__Host-session" : "bluebar_session") + (slug === "bluebar" ? "" : `_${slug}`);
@@ -254,7 +254,7 @@ export async function loginWaiterByPin(pool, pin) {
 }
 
 export async function setWaiterPin(pool, waiterId, pin) {
-  if (!validPin(pin)) throw new AppError("PIN-i është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.");
+  if (!validPin(pin)) throw new AppError("PIN-i duhet të ketë 6 shifra.");
   if (await taken(pool, pin, { except: await ownAccount(pool, waiterId) })) throw new AppError(TAKEN_PIN, 409);
   const r = await pool.query(
     `INSERT INTO bluebar.accounts(role, waiter_id, secret_hash)
@@ -302,7 +302,7 @@ export async function updateManagerAccount(pool, accountId, { currentPin, userna
   if (username !== undefined && !validUsername(username))
     throw new AppError("Emri: 3–32 shkronja të vogla, numra, pikë ose vizë, pa hapësira.", 400);
   if (newPin !== undefined && !validPin(newPin))
-    throw new AppError("PIN-i i ri është shumë i thjeshtë. Shmangni shifra të përsëritura ose në varg.", 400);
+    throw new AppError("PIN-i i ri duhet të ketë 6 shifra.", 400);
   if (newPin !== undefined && (await taken(pool, newPin, { except: a.id }))) throw new AppError(TAKEN_PIN, 409);
   try {
     await pool.query(

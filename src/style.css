@@ -7538,3 +7538,43 @@ body:has(.app) { background: #f6f8fb; }
   .page-fit > fieldset > :is(.panel, .fin, div:not([class])),
   .settings-fit .settings-column { position: relative; }
 }
+
+/* ---- While the AI reads: a typed line beside a constellation of dots that light and join
+   (the pattern pad's gesture); over the photo a viewfinder, a sweeping reading line, and frames
+   flashing where it passes. ---- */
+.ai-reading { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px; margin: 0; padding: 14px 16px; border-radius: 14px; background: linear-gradient(120deg, #eef5fe, #f7f9fc); box-shadow: inset 0 0 0 1px #dbe8f7; color: var(--blue-strong); }
+.ai-constellation { width: 92px; height: 34px; overflow: visible; }
+.ai-constellation line { stroke: #c9daef; stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 40; stroke-dashoffset: 40; transition: stroke-dashoffset 600ms cubic-bezier(0.23, 1, 0.32, 1), stroke 300ms ease; }
+.ai-constellation line.on { stroke: var(--blue); stroke-dashoffset: 0; }
+.ai-constellation circle { fill: #fff; stroke: #b7cde8; stroke-width: 1.6; transform-box: fill-box; transform-origin: center; transition: fill 300ms ease, stroke 300ms ease; }
+.ai-constellation circle.on { fill: var(--blue); stroke: var(--blue); animation: ai-dot 600ms cubic-bezier(0.23, 1, 0.32, 1); filter: drop-shadow(0 0 4px rgba(8, 103, 201, 0.55)); }
+@keyframes ai-dot { from { transform: scale(1.9); } }
+.ai-reading-text { display: grid; gap: 3px; min-width: 0; }
+.ai-reading-text b { min-height: 1.35em; font-size: 14.5px; font-weight: 650; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.12em; border-radius: 1px; background: var(--blue); animation: ai-caret 0.9s steps(1) infinite; }
+@keyframes ai-caret { 50% { opacity: 0; } }
+.ai-reading-text small { color: #4b6a8c; font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.ai-shot { position: relative; display: inline-grid; max-width: 100%; }
+.ai-scan { position: absolute; inset: 0; overflow: hidden; border-radius: 10px; pointer-events: none; }
+.ai-scan::before { content: ""; position: absolute; inset: 0; background: rgba(9, 32, 64, 0.08); }
+.ai-corner { position: absolute; width: 18px; height: 18px; border: 2.5px solid var(--blue); animation: ai-corner 1.6s ease-in-out infinite; }
+.ai-corner.tl { left: 6px; top: 6px; border-right: 0; border-bottom: 0; border-top-left-radius: 6px; }
+.ai-corner.tr { right: 6px; top: 6px; border-left: 0; border-bottom: 0; border-top-right-radius: 6px; }
+.ai-corner.bl { left: 6px; bottom: 6px; border-right: 0; border-top: 0; border-bottom-left-radius: 6px; }
+.ai-corner.br { right: 6px; bottom: 6px; border-left: 0; border-top: 0; border-bottom-right-radius: 6px; }
+@keyframes ai-corner { 50% { transform: scale(0.88); opacity: 0.7; } }
+.ai-beam {
+  position: absolute; left: 0; right: 0; top: 0; height: 2px; background: #5aa8ff;
+  box-shadow: 0 0 10px 2px rgba(90, 168, 255, 0.85), 0 0 34px 10px rgba(90, 168, 255, 0.28);
+  animation: ai-beam 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@keyframes ai-beam { from { top: 2%; } to { top: 94%; } }
+.ai-mark { position: absolute; height: 3.2%; min-height: 6px; border-radius: 3px; background: rgba(90, 168, 255, 0.28); box-shadow: inset 0 0 0 1.2px rgba(8, 103, 201, 0.75); animation: ai-mark 2.4s ease-out forwards; }
+@keyframes ai-mark { 0% { opacity: 0; transform: scaleX(0.4); } 12% { opacity: 1; transform: scaleX(1); } 100% { opacity: 0; } }
+.ai-preview.scanning img { filter: saturate(0.85); }
+@media (prefers-reduced-motion: reduce) {
+  .ai-beam, .ai-corner, .ai-caret, .ai-constellation circle.on { animation: none; }
+  .ai-beam { display: none; }
+  .ai-constellation line { transition: none; }
+}
