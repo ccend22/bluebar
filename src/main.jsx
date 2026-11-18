@@ -888,6 +888,7 @@ function App({ user, onLogout, onUserChange }) {
                       cancelling={cancelling}
                       setCancelling={setCancelling}
                       headingRef={orderHeading}
+                      onOpenShifts={role === "Kamarier" ? undefined : () => (setSelected(null), nav("Turnet"))}
                     />
                       </div>
                     </div>

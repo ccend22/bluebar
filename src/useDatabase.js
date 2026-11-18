@@ -112,16 +112,24 @@ export function useDatabase() {
     [publish],
   );
   const refresh = useCallback(async () => {
-    try {
-      const data = await fetchState(confirmedRef.current.revision);
-      if (data.unchanged) setError("");
-      else accept(data);
-      return true;
-    } catch (requestError) {
-      setError(requestError.message);
-      return false;
-    } finally {
-      setLoading(false);
+    // One quiet retry: a single dropped connection (a database blip) shouldn't flash the red
+    // "no connection" notice; a real outage still shows it.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const data = await fetchState(confirmedRef.current.revision);
+        if (data.unchanged) setError("");
+        else accept(data);
+        setLoading(false);
+        return true;
+      } catch (requestError) {
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 800));
+          continue;
+        }
+        setError(requestError.message);
+        setLoading(false);
+        return false;
+      }
     }
   }, [accept]);
 

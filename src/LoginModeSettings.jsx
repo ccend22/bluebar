@@ -59,8 +59,12 @@ export function LoginModeSettings({ venue, waiters = [] }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const missingPatterns = waiters.filter((waiter) => waiter.active && !waiter.hasPattern).length;
-  const missingPins = waiters.filter((waiter) => waiter.active && !waiter.hasPin).length;
+  // Who still lacks a PIN or a pattern, by name: a count alone ("3 kamarierët") read like the whole team.
+  const withoutPattern = waiters.filter((waiter) => waiter.active && !waiter.hasPattern).map((w) => w.name);
+  const withoutPin = waiters.filter((waiter) => waiter.active && !waiter.hasPin).map((w) => w.name);
+  const missingPatterns = withoutPattern.length;
+  const missingPins = withoutPin.length;
+  const names = (list) => (list.length > 3 ? `${list.slice(0, 3).join(", ")} dhe ${list.length - 3} të tjerë` : list.join(", "));
 
   async function choose(id) {
     if (id === mode || busy) return;
@@ -110,8 +114,16 @@ export function LoginModeSettings({ venue, waiters = [] }) {
           </button>
         ))}
       </div>
-      {missingPatterns > 0 && <p className="helper">Për të aktivizuar pattern-in, vendoseni për të gjithë {missingPatterns} kamarierët aktivë te lista e ekipit.</p>}
-      {missingPins > 0 && <p className="helper">Për hyrjen me PIN, vendoseni për të gjithë {missingPins} kamarierët aktivë te lista e ekipit.</p>}
+      {missingPatterns > 0 && (
+        <p className="helper">
+          Për pattern-in, {missingPatterns === 1 ? "1 kamarier aktiv nuk ka" : `${missingPatterns} kamarierë aktivë nuk kanë`} ende pattern: {names(withoutPattern)}. Vendoseni te Kamarierët.
+        </p>
+      )}
+      {missingPins > 0 && (
+        <p className="helper">
+          Për hyrjen me PIN, {missingPins === 1 ? "1 kamarier aktiv nuk ka" : `${missingPins} kamarierë aktivë nuk kanë`} ende PIN: {names(withoutPin)}. Vendoseni te Kamarierët.
+        </p>
+      )}
     </section>
   );
 }

@@ -1660,6 +1660,10 @@ export function buildApp({
     if (error.statusCode >= 400 && error.statusCode < 500)
       return reply.code(error.statusCode).send({ error: "Formati i kërkesës është i pavlefshëm." });
     // Never include SQL, a DSN, credentials, parameters or provider messages in responses/logs.
+    // The log gets only what kind of failure it was: the route, the error's code and type, and the
+    // message itself only for a known connection problem (it carries none of those).
+    const connection = /terminated|timeout|ECONN|closed|connect|socket/i.test(String(error.message || ""));
+    console.error(`request failed: ${request.method} ${request.routeOptions?.url || "?"} code=${error.code || "-"} ${error.name || "Error"}${connection ? `: ${String(error.message).slice(0, 120)}` : ""}`);
     return reply
       .code(503)
       .send({

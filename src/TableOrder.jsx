@@ -44,6 +44,7 @@ export function TableOrder({
   cancelling,
   setCancelling,
   headingRef,
+  onOpenShifts,
 }) {
   const [menu, setMenu] = useState(null);
   // One inline form at a time: move, handover, note.
@@ -86,6 +87,15 @@ export function TableOrder({
   const foreign = isWaiter && hasOrder && table.waiter !== user.waiterId;
   const shiftOpen = Boolean(tableShift(state, table));
   const canAdd = shiftOpen && Boolean(ownerId) && !foreign;
+  // Why nothing can be added, said plainly (greyed products alone don't explain it).
+  const till = state.pointsOfSale.find((k) => k.id === posOf(state, table));
+  const blocked = !shiftOpen
+    ? `Turni i kasës "${till?.name || "kasa"}"${table.area ? ` (zona ${table.area})` : ""} nuk është i hapur, prandaj nuk merren porosi për këtë tavolinë.`
+    : !ownerId
+      ? "Zgjidhni kamarierin lart, pranë emrit të tavolinës, për të shtuar produkte."
+      : foreign
+        ? `Kjo tavolinë është e ${owner?.name || "një kolegu"}. Merreni përsipër për të shtuar produkte.`
+        : "";
   const qtyOf = new Map(table.lines.map((l) => [l.id, l.qty]));
   const fresh = (l) => l.qty - (l.sent || 0);
   const pending = table.lines.reduce((s, l) => s + fresh(l), 0);
@@ -197,6 +207,13 @@ export function TableOrder({
                 onRetry={() => (setSpoken(null), setVoiceError(""), voice.start())}
                 onClose={() => setSpoken(null)}
               />
+            )}
+            {blocked && (
+              <div className="notice warning order-blocked" role="status">
+                <Icon name="info" size={18} />
+                <span>{blocked}</span>
+                {!shiftOpen && onOpenShifts && <button type="button" onClick={onOpenShifts}>Hap turnin</button>}
+              </div>
             )}
             <div className="chip-row" aria-label="Kategoritë e menusë">
               {["Të gjitha", ...state.categories].map((c) => (
