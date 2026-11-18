@@ -32,7 +32,7 @@ export function StationSetup({ state, update }) {
     <section className="panel">
       <SectionHeading icon="coffee"
         title="Stacionet"
-        description="Ku përgatitet porosia: bari brenda, bari jashtë, furra, kuzhina. Opsionale: pa stacione, fletët shkojnë sipas repartit të përgatitjes."
+        description="Ku përgatitet porosia: bar, kuzhinë, furrë. Pa stacione, fletët shkojnë sipas repartit."
       >
         {!editing && (
           <button onClick={() => setEditing({ departments: [], areas: [] })}>

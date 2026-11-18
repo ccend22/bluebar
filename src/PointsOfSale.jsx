@@ -25,7 +25,7 @@ export function PointsOfSale({ state, update }) {
     <section className="panel">
       <SectionHeading icon="cash"
         title="Kasat"
-        description="P.sh. bari brenda dhe bari jashtë: secila me zonat, turnin dhe arkën e vet. Inventari është i përbashkët."
+        description="Secila me zonat, turnin dhe arkën e vet; inventari i përbashkët."
       >
         {!editing && (
           <button onClick={() => setEditing({ areas: [] })}>

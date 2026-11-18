@@ -7393,3 +7393,148 @@ body:has(.app) { background: #f6f8fb; }
 @media (prefers-reduced-motion: reduce) { .app .switch, .app .switch span { transition: none; } }
 .fix-search { width: 100%; max-width: 420px; min-height: 42px; margin: 12px 0 4px; padding: 0 14px; border: 1px solid var(--card-line, #e3e8ee); border-radius: 12px; font: inherit; font-size: 14px; }
 .fix-fold { margin-top: 12px; }
+
+/* ---- Cilësimet fits the screen: no page scroll on a computer or tablet. The topic's panels sit
+   in two columns that fill the height; a column whose content is ever taller scrolls inside
+   itself, the page never moves. A phone keeps the normal scrolling page. ---- */
+@media (min-width: 900px) and (min-height: 600px) {
+  /* The height comes from the shell: the workspace is the screen, the header takes its share. */
+  .workspace:has(> main.fit) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden; }
+  .workspace:has(> main.fit) > :not(main) { flex: none; }
+  main.fit { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; padding-top: 20px; padding-bottom: 16px; }
+  main.fit + footer { display: none; }
+  .fit > fieldset { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+  /* The breadcrumb and the sidebar already name the page: its big title gives its room to the panels. */
+  .settings-fit .title-row { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .settings-fit .settings-grid .panel { padding: 20px 22px; }
+  .settings-fit .settings-grid .section-heading { margin-bottom: 14px; }
+  .settings-fit .settings-grid .panel .helper { margin-top: 6px; margin-bottom: 0; }
+  .settings-fit .settings-layout { flex: 1; min-height: 0; align-items: stretch; }
+  .settings-fit .settings-tabs { align-self: start; }
+  .settings-fit .settings-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .settings-fit .settings-body > :not(.settings-grid) { flex: none; margin: 0; }
+  .settings-fit .settings-grid { flex: 1; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+  .settings-fit .settings-column {
+    min-height: 0; overflow-y: auto; align-content: start; gap: 16px; padding: 2px 4px 2px 2px;
+    scrollbar-width: thin; scrollbar-color: #d5dbe2 transparent; overscroll-behavior: contain;
+  }
+  /* A topic held in one wide column: its panels go side by side, the first one tall on the left. */
+  .settings-fit .settings-wide { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: dense; grid-auto-rows: min-content; }
+  .settings-fit .settings-wide > section:first-of-type:not(:only-of-type) { grid-row: span 3; }
+  .settings-fit .settings-wide > section:only-of-type,
+  .settings-fit .settings-wide > .menu-tabs,
+  .settings-fit .settings-wide > .identity-panel { grid-column: 1 / -1; }
+  .settings-fit .settings-grid .panel { margin: 0; }
+  .settings-fit .menu-preview { position: static; }
+  .settings-fit .mp-phone { height: 400px; }
+}
+@media (min-width: 1180px) and (min-height: 600px) {
+  /* A narrower topic list (names only) leaves the width to the panels. */
+  .settings-fit .settings-layout { grid-template-columns: 210px minmax(0, 1fr); gap: 20px; }
+  .settings-fit .settings-tabs button small { display: none; }
+}
+@media (min-width: 900px) and (min-height: 600px) {
+  .settings-fit .settings-tabs { position: static; }
+  /* The three ways for waiters to sign in side by side, not stacked. */
+  .settings-fit .login-mode-grid:not(.manager-login-grid) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* On a page that fits the screen (every page but Tavolinat), the sidebar never makes it taller:
+   on a short laptop screen it tightens, and if it still doesn't fit it scrolls inside itself. */
+@media (min-width: 900px) and (min-height: 600px) {
+  .app:has(main.fit) .sidebar { overflow-y: auto; scrollbar-width: none; }
+  .app:has(main.fit) .sidebar::-webkit-scrollbar { display: none; }
+}
+@media (min-width: 900px) and (min-height: 600px) and (max-height: 860px) {
+  .app:has(main.fit) .sidebar { padding-top: 18px; padding-bottom: 12px; }
+  .app:has(main.fit) .sidebar nav button { min-height: 36px; padding-block: 7px; }
+  .app:has(main.fit) .nav-group { margin: 12px 12px 4px; }
+}
+@media (min-width: 900px) and (min-height: 600px) {
+  /* Lists inside a topic (printers, registers, stations): tighter cards so a normal venue fits. */
+  .settings-fit .printer-list { gap: 8px; }
+  .settings-fit .printer-card { padding: 10px 12px; gap: 6px; }
+  .settings-fit .printer-card .printer-targets { gap: 4px; margin-top: 4px; }
+  .settings-fit .printer-actions button:not(.icon-button) { min-height: 36px; padding-inline: 12px; font-size: 13.5px; }
+  .settings-fit .printer-actions .icon-button { width: 34px; height: 34px; }
+}
+@media (min-width: 900px) and (min-height: 600px) and (max-height: 860px) {
+  main.fit { padding-top: 14px; padding-bottom: 12px; }
+  .settings-fit .settings-body { gap: 10px; }
+  .settings-fit .settings-grid, .settings-fit .settings-column, .settings-fit .settings-wide { gap: 12px; }
+  .settings-fit .settings-grid .panel { padding: 16px 18px; }
+  .settings-fit .settings-grid .section-heading { margin-bottom: 10px; }
+  .settings-fit .config-check summary, .settings-fit .config-check > button { min-height: 40px; }
+}
+@media (min-width: 900px) and (max-width: 1179px) and (min-height: 600px) {
+  /* Tablet: the six topics on one row (icons and names), so the panels keep the height. */
+  .settings-fit .settings-layout .settings-tabs { display: flex; gap: 2px; padding: 4px; overflow-x: auto; scrollbar-width: none; }
+  .settings-fit .settings-layout .settings-tabs button { flex: 1 0 auto; min-height: 38px; padding-inline: 10px; font-size: 12.5px; white-space: nowrap; }
+}
+@media (min-width: 900px) and (min-height: 600px) and (max-height: 800px) {
+  .settings-fit .login-mode-preview { min-height: 0; height: 52px; padding: 8px; }
+  .settings-fit .login-mode-grid label, .settings-fit .login-mode-grid button { gap: 4px; }
+}
+@media (min-width: 900px) and (max-width: 1179px) and (min-height: 600px) and (max-height: 800px) {
+  /* A tablet on its side: titles only, so every topic fits. */
+  .settings-fit .settings-grid .section-heading p { display: none; }
+  .settings-fit .settings-grid .section-heading.has-icon h2 { line-height: 34px; }
+}
+@media (min-width: 1180px) and (min-height: 600px) {
+  .settings-fit .settings-tabs button { min-height: 44px; padding-block: 9px; }
+}
+
+/* ---- Every page fits the screen (computer and tablet), like Cilësimet: the title, the summary
+   cards and toolbars stay in place; the page's panels fill the rest of the height, and a long
+   list scrolls inside its own panel. The page itself never scrolls. Tavolinat already fits. ---- */
+@media (min-width: 900px) and (min-height: 600px) {
+  .page-fit > fieldset > * { flex: none; }
+  .page-fit .title-row { margin-bottom: 14px; }
+  .page-fit .page-stats { margin-bottom: 14px; }
+  /* The page's content: whatever follows the title and the cards takes the remaining height. */
+  .page-fit > fieldset > :is(.orders-desk, .management-layout, .invoice-layout, .fin, .panel, div:not([class])) { flex: 1 1 0; min-height: 0; }
+  .page-fit > fieldset > .panel + .panel { flex-grow: 0.65; margin-top: 14px; }
+  .page-fit :is(.orders-desk, .management-layout, .invoice-layout) { height: 100%; align-items: stretch; margin: 0; }
+  .page-fit :is(.orders-desk, .management-layout, .invoice-layout) > *,
+  .page-fit > fieldset > :is(.panel, .fin, div:not([class])) {
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #d5dbe2 transparent;
+  }
+  .page-fit .management-aside { display: grid; align-content: start; gap: 14px; }
+  .page-fit .panel { margin-bottom: 0; }
+}
+@media (min-width: 900px) and (min-height: 600px) and (max-height: 860px) {
+  /* Shorter screens: the summary cards get compact so the lists keep their room. */
+  .page-fit .page-stats .fin-card { padding: 12px 16px; gap: 2px; }
+  .page-fit .page-stats .fin-card-icon { width: 30px; height: 30px; margin-bottom: 4px; }
+  .page-fit .page-stats .fin-card strong { padding-bottom: 4px; font-size: 22px; }
+  .page-fit .title-row h1 { font-size: 26px; }
+  .page-fit .title-row p { display: none; }
+}
+@media (min-width: 900px) and (min-height: 600px) {
+  /* The page keeps its full width (a centred box would shrink to its content inside the flex). */
+  .fit > fieldset { width: 100%; }
+  /* Panels get a firm height so a long list scrolls inside, never clipped. */
+  .page-fit :is(.orders-desk, .management-layout, .invoice-layout) { grid-template-rows: minmax(0, 1fr); }
+  .page-fit :is(.panel, .fin, .management-aside, div:not([class])) > * { flex-shrink: 0; }
+  .page-fit > fieldset > .panel + .panel { flex-grow: 0.5; }
+  /* Summary cards, compact: icon, label and number in one row. */
+  .page-fit .page-stats { gap: 12px; }
+  .page-fit .page-stats .fin-card { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; align-items: center; column-gap: 12px; row-gap: 0; padding: 12px 16px; }
+  .page-fit .page-stats .fin-card-icon { grid-row: span 2; width: 38px; height: 38px; margin: 0; }
+  .page-fit .page-stats .fin-card h3 { font-size: 10.5px; letter-spacing: 0.08em; }
+  .page-fit .page-stats .fin-card strong { padding: 0; border: 0; font-size: 22px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-fit .page-stats .fin-card small { display: none; }
+}
+@media (min-width: 900px) and (min-height: 600px) {
+  main.fit { width: 100%; }
+  .page-fit .invoice-layout { display: grid; }
+  /* Raportet scrolls as one report: its rows keep their own height instead of being squeezed. */
+  .page-fit .fin { grid-auto-rows: max-content; align-content: start; }
+}
+@media (min-width: 900px) and (min-height: 600px) {
+  /* Each panel that scrolls is the frame for what's positioned inside it (e.g. a hidden table
+     label), so nothing can reach past the screen and make the page scroll. */
+  .page-fit :is(.orders-desk, .management-layout, .invoice-layout) > *,
+  .page-fit > fieldset > :is(.panel, .fin, div:not([class])),
+  .settings-fit .settings-column { position: relative; }
+}

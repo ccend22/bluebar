@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { setWaiterPattern } from "./api.js";
 
 const DOTS = Array.from({ length: 9 }, (_, index) => ({
@@ -178,8 +178,14 @@ export function WaiterPatternEditor({ waiter, onSaved, onCancel }) {
     }
   };
 
+  // Opened at the foot of a list that scrolls inside its panel: bring the whole pad into view.
+  const box = useRef(null);
+  useEffect(() => {
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    box.current?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  }, []);
   return (
-    <div className="staff-pattern-editor">
+    <div className="staff-pattern-editor" ref={box}>
       <div className="staff-pattern-heading">
         <div>
           <strong>Pattern për {waiter.name}</strong>

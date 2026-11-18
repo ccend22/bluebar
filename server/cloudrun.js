@@ -68,8 +68,13 @@ const encoding = (req, found) => {
   return found.br && /\bbr\b/.test(accept) ? "br" : found.gzip && /\bgzip\b/.test(accept) ? "gzip" : null;
 };
 
-createServer(async (req, res) => {
-  const path = decodeURIComponent((req.url || "/").split("?")[0]);
+async function page(req, res) {
+  let path;
+  try {
+    path = decodeURIComponent((req.url || "/").split("?")[0]);
+  } catch {
+    return res.writeHead(400).end(); // a broken %-escape: refused, never a crash
+  }
   if (path.startsWith("/api/")) return app.server.emit("request", req, res);
   if (req.method !== "GET" && req.method !== "HEAD") return res.writeHead(405).end();
   const found =
@@ -86,9 +91,22 @@ createServer(async (req, res) => {
     "Cache-Control": path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache",
   });
   res.end(req.method === "HEAD" ? undefined : enc ? found[enc] : found.body);
-}).listen(Number(process.env.PORT || 8080), "0.0.0.0", () => console.log(`BlueBar on :${process.env.PORT || 8080}`));
+}
+const server = createServer((req, res) =>
+  page(req, res).catch((e) => {
+    console.error("page:", e);
+    if (!res.headersSent) res.writeHead(500);
+    res.end();
+  }),
+).listen(Number(process.env.PORT || 8080), "0.0.0.0", () => console.log(`BlueBar on :${process.env.PORT || 8080}`));
 
-process.once("SIGTERM", async () => {
-  await app.close();
-  process.exit(0);
+// Cloud Run stops an old revision with SIGTERM and allows 10 s. Take no new requests, let
+// the ones in flight finish, then close the API: exiting at once answered them with a 500.
+process.once("SIGTERM", () => {
+  server.close(async () => {
+    await app.close();
+    process.exit(0);
+  });
+  server.closeIdleConnections();
+  setTimeout(() => process.exit(0), 8000).unref();
 });

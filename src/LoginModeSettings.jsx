@@ -82,7 +82,7 @@ export function LoginModeSettings({ venue, waiters = [] }) {
     <section className="panel">
       <SectionHeading icon="people"
         title="Hyrja e kamarierëve"
-        description="Zgjidhni si do të hyjnë kamarierët në ekranin e hyrjes."
+        description="Si hyjnë kamarierët në ekranin e hyrjes."
       />
       {error && (
         <p className="notice error" role="alert">

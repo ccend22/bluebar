@@ -370,8 +370,8 @@ function MenuIdentity({ venueName, state, show }) {
           <input inputMode="decimal" value={rate} disabled={!brand.euro} onChange={(e) => setRate(e.target.value)} />
         </label>
         <p className="helper">
-          {rateValue > 0 ? `p.sh. 320 Lek shfaqen ${(Math.round((320 / rateValue) * 100) / 100).toFixed(2)} €, të rrumbullakosura në 2 shifra. ` : "Vendosni një kurs më të madh se 0. "}
-          Në shqip çmimet mbeten në Lek; pagesa dhe fatura janë gjithmonë në Lek.
+          {rateValue > 0 ? `p.sh. 320 Lek = ${(Math.round((320 / rateValue) * 100) / 100).toFixed(2)} €. ` : "Vendosni një kurs më të madh se 0. "}
+          Fatura dhe pagesa mbeten në Lek.
         </p>
         <button type="button" disabled={busy || (brand.euro && !(rateValue > 0))} onClick={() => save("Çmimet në euro u ruajtën. Menuja përditësohet brenda një minute.", "lang")}>
           Ruaj çmimet
