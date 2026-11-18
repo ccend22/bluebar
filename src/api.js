@@ -105,7 +105,7 @@ export const fetchReport = (params) =>
 // The waiter's spoken order (a WAV, base64): what was heard and which products.
 export const voiceOrder = (audio, mime) => request("/voice-order", { method: "POST", body: JSON.stringify({ audio, mime }) });
 // Gemini reads a whole menu in up to ~45 s, longer than the usual wait.
-export const readMenuPhoto = (input) => request("/products/from-photo", { method: "POST", body: JSON.stringify(input), timeout: 50000 });
+export const readMenuPhoto = (input) => request("/products/from-photo", { method: "POST", body: JSON.stringify(input), timeout: 125000 });
 // The 3D floor: a drawing made from the venue's photo (Gemini takes up to a minute and a half),
 // kept as a floor asset; a table wears one ("all": every table), the room's floor is one.
 export const drawFloorAsset = (kind, image) => request("/floor/draw", { method: "POST", body: JSON.stringify({ kind, image }), timeout: 100000 });
@@ -127,6 +127,6 @@ export const deleteAccount = (id) => send("DELETE", `/accounts/${id}`);
 export const moveMoney = (move) => send("POST", "/accounts/moves", move);
 // "Importo me AI" for documents: allow time for detailed invoice images.
 const readDocument = (path) => (input, note) =>
-  request(path, { method: "POST", body: JSON.stringify({ ...input, ...(note && { note }) }), timeout: 100000 });
+  request(path, { method: "POST", body: JSON.stringify({ ...input, ...(note && { note }) }), timeout: 125000 });
 export const readDelivery = readDocument("/stock/from-photo");
 export const readExpenses = readDocument("/expenses/from-photo");

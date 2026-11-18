@@ -806,6 +806,8 @@ export function buildApp({
     text: { type: "string", minLength: 1, maxLength: 20000 },
     note: { type: "string", maxLength: 300 },
   }, oneOf: [{ required: ["image"] }, { required: ["text"] }] } };
+  // Google's AI stayed overloaded or slow through every retry: say so plainly, it's not the photo.
+  const BUSY = "AI i Google është i zënë tani. Provoni sërish pas 1–2 minutash.";
   const readDocument = async (request, reader, extra = {}) => {
     if (!reader) throw new AppError("Leximi me AI nuk është konfiguruar në server (GEMINI_API_KEY).", 503);
     if (!documentBudget(request.venue.slug)) throw new AppError("Shumë dokumente për pak kohë. Prisni disa minuta.", 429);
@@ -817,7 +819,7 @@ export function buildApp({
       console.error("ai document:", e.message);
       if (e.name === "TimeoutError" || e.name === "AbortError")
         throw new AppError("AI nuk u përgjigj në kohë. Provoni sërish ose ngarkoni një foto vetëm të rreshtave të faturës.", 504);
-      throw new AppError(`Dokumenti nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
+      throw e.busy ? new AppError(BUSY, 503) : new AppError(`Dokumenti nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
     }
   };
   const tidy = (v, max) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -869,7 +871,7 @@ export function buildApp({
       out = await menuPhoto(image ? { image, mime: head.slice(5, head.indexOf(";")), note: note?.trim(), estimate } : { text, note: note?.trim(), estimate });
     } catch (e) {
       console.error("products/from-photo:", e.message);
-      throw new AppError(`Fotoja nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
+      throw e.busy ? new AppError(BUSY, 503) : new AppError(`Fotoja nuk u lexua${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
     }
     const clean = (v, max) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
     // What Gemini sends back is checked like any input: sizes become one "Madhësia" group

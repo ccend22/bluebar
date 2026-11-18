@@ -34,9 +34,16 @@ ${menu}`;
 // Gemini 2.x takes a thinking budget, 3.x a thinking level.
 const QUICK = (model) => (/^gemini-2/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "minimal" });
 
-// One structured Gemini answer: parts in, JSON matching the schema out.
-async function gemini(key, model, fetchImpl, parts, schema, timeout) {
-  const signal = AbortSignal.timeout(timeout);
+// Google's AI is sometimes overloaded ("503 high demand"), slow, or retires a model (404).
+// Then the same question goes to the next model, and round again once, all within one time
+// budget; no single attempt may use more than about half of it. GEMINI_FALLBACK_MODELS lists
+// the models to fall back on.
+const FALLBACKS = (process.env.GEMINI_FALLBACK_MODELS || "gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean);
+const RETRYABLE = new Set([404, 429, 500, 503, 504]);
+const busyError = (e) => e?.name === "TimeoutError" || e?.name === "AbortError" || RETRYABLE.has(e?.status);
+
+async function askGemini(key, model, fetchImpl, parts, schema, ms) {
+  const signal = AbortSignal.timeout(ms);
   const ask = (thinking) =>
     fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
@@ -53,10 +60,34 @@ async function gemini(key, model, fetchImpl, parts, schema, timeout) {
   if (!response.ok) {
     // Google's reason (quota, region, key…) for the server log; the user sees only the status.
     const reason = await response.json().then((b) => b.error?.message, () => "");
-    throw Object.assign(new Error(`Gemini ${response.status}: ${String(reason || "").slice(0, 300)}`), { status: response.status });
+    throw Object.assign(new Error(`Gemini ${response.status} (${model}): ${String(reason || "").slice(0, 300)}`), { status: response.status });
   }
   const out = (await response.json()).candidates?.[0]?.content?.parts || [];
   return JSON.parse(out.map((p) => p.text || "").join(""));
+}
+
+// One structured Gemini answer: parts in, JSON matching the schema out. Throws an error with
+// busy: true when Google stayed overloaded or slow for the whole budget.
+async function gemini(key, model, fetchImpl, parts, schema, timeout) {
+  const deadline = Date.now() + timeout;
+  const models = [...new Set([model, ...FALLBACKS])];
+  const perTry = Math.max(20000, Math.round(timeout / 2));
+  let last;
+  for (let round = 0; round < 2; round++) {
+    for (const m of models) {
+      const left = deadline - Date.now();
+      if (left < 3000) break;
+      try {
+        return await askGemini(key, m, fetchImpl, parts, schema, Math.min(left, perTry));
+      } catch (e) {
+        if (!busyError(e)) throw e;
+        last = e;
+        console.warn(`gemini: ${m} busy, trying the next one: ${e.message.slice(0, 160)}`);
+      }
+    }
+    if (round === 0 && deadline - Date.now() > 8000) await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw Object.assign(last || new Error("Gemini: no time left"), { busy: true });
 }
 
 export function geminiVoice(key, { model = process.env.GEMINI_MODEL || "gemini-3.5-flash", fetchImpl = fetch } = {}) {
@@ -112,7 +143,7 @@ export function geminiMenuPhoto(key, { model = process.env.GEMINI_MODEL || "gemi
     gemini(key, model, fetchImpl, [
       { text: MENU_INSTRUCTIONS + (estimate ? `\n- The manager asks you to estimate "calories" (kcal for one portion, a typical recipe) for every food and drink the menu doesn't print them for. Round to the nearest 10.` : "") + (note ? `\n\nThe manager adds: ${note}` : "") },
       image ? { inline_data: { mime_type: mime, data: image } } : { text: `The menu:\n${text}` },
-    ], MENU_SCHEMA, 45000);
+    ], MENU_SCHEMA, 110000);
 }
 
 // The room (Ndrysho sallën → "Pamja nga foto"): the venue's own table, or its floor, drawn
@@ -180,7 +211,7 @@ export function geminiDelivery(key, { model = process.env.GEMINI_MODEL || "gemin
     gemini(key, model, fetchImpl, [
       { text: deliveryInstructions() + products.map((p) => `${p.id}: ${p.name}`).join("\n") + (note ? `\n\nThe manager adds: ${note}` : "") },
       image ? { inline_data: { mime_type: mime, data: image } } : { text: `The document:\n${text}` },
-    ], DELIVERY_SCHEMA, 90000);
+    ], DELIVERY_SCHEMA, 110000);
 }
 
 // Raportet → Shpenzimet → "Importo me AI": receipts, bills or a bank statement read into the
@@ -212,5 +243,5 @@ export function geminiExpenses(key, { model = process.env.GEMINI_MODEL || "gemin
     gemini(key, model, fetchImpl, [
       { text: EXPENSES_INSTRUCTIONS + (note ? `\n\nThe manager adds: ${note}` : "") },
       image ? { inline_data: { mime_type: mime, data: image } } : { text: `The documents:\n${text}` },
-    ], EXPENSES_SCHEMA, 90000);
+    ], EXPENSES_SCHEMA, 110000);
 }
