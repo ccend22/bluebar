@@ -745,6 +745,8 @@ export function buildApp({
       return { image: `data:${out.mime};base64,${out.image}` };
     } catch (e) {
       console.error("floor/draw:", e.message);
+      // 429 here is the key's missing image quota (Google's image model isn't in the free tier).
+      if (e.status === 429) throw new AppError("Vizatimi me AI kërkon kuotë për imazhe te Google (plan me pagesë për çelësin Gemini).", 503);
       throw new AppError(`Vizatimi nuk u bë${e.status ? ` (Gemini ${e.status})` : ""}. Provoni sërish.`, 502);
     }
   });

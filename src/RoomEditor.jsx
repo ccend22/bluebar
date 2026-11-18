@@ -52,7 +52,28 @@ async function cutOut(dataUrl) {
   return url.startsWith("data:image/webp") ? url : out.toDataURL("image/png");
 }
 
-// A photo → Gemini's drawing → shown to the manager before it is used.
+// A floor without the drawing AI: a square of floor from the lower middle of the photo, mirrored
+// four ways into a 512 px tile, so it repeats without seams.
+async function floorTile(file) {
+  const img = await createImageBitmap(file);
+  const side = Math.min(img.width, img.height) * 0.55;
+  const sx = (img.width - side) / 2;
+  const sy = Math.max(0, img.height - side - img.height * 0.08);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  for (const [fx, fy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    ctx.save();
+    ctx.translate(fx < 0 ? 512 : 0, fy < 0 ? 512 : 0);
+    ctx.scale(fx, fy);
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, 256, 256);
+    ctx.restore();
+  }
+  return canvas.toDataURL("image/jpeg", 0.86);
+}
+
+// A photo → Gemini's drawing → shown to the manager before it is used. When Google won't draw
+// (no image quota, busy), a floor is made from the photo itself instead.
 function PhotoButton({ label, kind, busy, onDrawn, onError, setBusy }) {
   return (
     <label className={`button-like ${busy ? "disabled" : ""}`}>
@@ -71,7 +92,9 @@ function PhotoButton({ label, kind, busy, onDrawn, onError, setBusy }) {
             const { image } = await drawFloorAsset(kind, await shrink(file, { size: 1280 }));
             onDrawn(kind === "table" ? await cutOut(image) : await shrink(await (await fetch(image)).blob(), { size: 512 }));
           } catch (err) {
-            onError(err.message);
+            if (kind === "floor") {
+              try { onError(""); onDrawn(await floorTile(file)); } catch { onError(err.message); }
+            } else onError(err.message);
           }
           setBusy(false);
         }}

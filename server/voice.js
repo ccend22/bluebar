@@ -34,13 +34,19 @@ ${menu}`;
 // Gemini 2.x takes a thinking budget, 3.x a thinking level.
 const QUICK = (model) => (/^gemini-2/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "minimal" });
 
-// Google's AI is sometimes overloaded ("503 high demand"), slow, or retires a model (404).
-// Then the same question goes to the next model, and round again once, all within one time
-// budget; no single attempt may use more than about half of it. GEMINI_FALLBACK_MODELS lists
-// the models to fall back on.
-const FALLBACKS = (process.env.GEMINI_FALLBACK_MODELS || "gemini-3.8-flash,gemini-3.5-flash-lite").split(",").map((m) => m.trim()).filter(Boolean);
+// Google's AI is sometimes overloaded ("503 high demand"), slow, out of a model's free quota
+// ("429"), or has retired a model (404). Then the same question goes to the next model; each
+// model has its own quota. GEMINI_FALLBACK_MODELS lists them, in order.
+const FALLBACKS = (process.env.GEMINI_FALLBACK_MODELS ||
+  "gemini-3.8-flash,gemini-3.1-flash-lite,gemini-3-flash-preview,gemini-3.5-flash-lite,gemini-flash-lite-latest")
+  .split(",").map((m) => m.trim()).filter(Boolean);
 const RETRYABLE = new Set([404, 429, 500, 503, 504]);
 const busyError = (e) => e?.name === "TimeoutError" || e?.name === "AbortError" || RETRYABLE.has(e?.status);
+// A model out of quota (429) or gone (404) is left alone for a while, across every request:
+// nobody should wait on it again until its quota may be back.
+const resting = new Map(); // model → until (ms)
+const REST = { 429: 15 * 60_000, 404: 6 * 60 * 60_000 };
+const awake = (m) => !(resting.get(m) > Date.now());
 
 async function askGemini(key, model, fetchImpl, parts, schema, ms) {
   const signal = AbortSignal.timeout(ms);
@@ -66,14 +72,18 @@ async function askGemini(key, model, fetchImpl, parts, schema, ms) {
   return JSON.parse(out.map((p) => p.text || "").join(""));
 }
 
-// One structured Gemini answer: parts in, JSON matching the schema out. Throws an error with
-// busy: true when Google stayed overloaded or slow for the whole budget.
+// One structured Gemini answer: parts in, JSON matching the schema out. Up to three rounds over
+// the models within one time budget, a short pause between rounds; no single attempt takes more
+// than about a third of the budget. Throws an error with busy: true when every model stayed out of
+// quota, overloaded or slow for the whole budget.
 async function gemini(key, model, fetchImpl, parts, schema, timeout) {
   const deadline = Date.now() + timeout;
-  const models = [...new Set([model, ...FALLBACKS])];
-  const perTry = Math.max(20000, Math.round(timeout / 2));
+  const all = [...new Set([model, ...FALLBACKS])];
+  const perTry = Math.max(20000, Math.round(timeout * 0.35));
   let last;
-  for (let round = 0; round < 2; round++) {
+  for (let round = 0; round < 3; round++) {
+    // Rested models only; if every one is resting, try them all rather than none.
+    const models = all.filter(awake).length ? all.filter(awake) : all;
     for (const m of models) {
       const left = deadline - Date.now();
       if (left < 3000) break;
@@ -82,10 +92,12 @@ async function gemini(key, model, fetchImpl, parts, schema, timeout) {
       } catch (e) {
         if (!busyError(e)) throw e;
         last = e;
+        if (REST[e.status]) resting.set(m, Date.now() + REST[e.status]);
         console.warn(`gemini: ${m} busy, trying the next one: ${e.message.slice(0, 160)}`);
       }
     }
-    if (round === 0 && deadline - Date.now() > 8000) await new Promise((r) => setTimeout(r, 1500));
+    const pause = 1500 * (round + 1);
+    if (round < 2 && deadline - Date.now() > pause + 5000) await new Promise((r) => setTimeout(r, pause));
   }
   throw Object.assign(last || new Error("Gemini: no time left"), { busy: true });
 }

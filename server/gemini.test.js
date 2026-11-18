@@ -24,14 +24,24 @@ test("Google busy: the menu is read by the next model", async () => {
   assert.deepEqual(g.asked, ["gemini-3.5-flash", "gemini-3.8-flash"]);
 });
 
-test("Google busy on every model, twice round: a busy error, not a broken photo", async () => {
+test("Google busy on every model, three rounds: a busy error, not a broken photo", async () => {
   const g = google([503]);
   await assert.rejects(geminiMenuPhoto("key", { model: "gemini-3.5-flash", fetchImpl: g.fetchImpl })(photo), (e) => e.busy === true && e.status === 503);
-  assert.equal(g.asked.length, 6, "three models, two rounds");
+  assert.equal(g.asked.length, 18, "six models, three rounds");
 });
 
 test("a real error (a wrong key) is not retried", async () => {
   const g = google([401]);
   await assert.rejects(geminiMenuPhoto("key", { model: "gemini-3.5-flash", fetchImpl: g.fetchImpl })(photo), (e) => !e.busy && e.status === 401);
   assert.equal(g.asked.length, 1);
+});
+
+test("a model out of quota (429) is left alone on the next read", async () => {
+  // Its own main model name, so other tests' state can't touch it.
+  const first = google([429, 200]);
+  await geminiMenuPhoto("key", { model: "gemini-quota-test", fetchImpl: first.fetchImpl })(photo);
+  assert.deepEqual(first.asked, ["gemini-quota-test", "gemini-3.8-flash"]);
+  const next = google([200]);
+  await geminiMenuPhoto("key", { model: "gemini-quota-test", fetchImpl: next.fetchImpl })(photo);
+  assert.deepEqual(next.asked, ["gemini-3.8-flash"], "the model out of quota is skipped");
 });

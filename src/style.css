@@ -7587,3 +7587,7 @@ body:has(.app) { background: #f6f8fb; }
 /* No box scrolls inside itself: Cilësimet keeps its two columns, and a topic taller than the
    screen simply lets the page scroll. */
 .settings-fit .settings-column { overflow: visible; }
+
+/* Ndrysho sallën: the buttons on one row, "Ndrysho sallën" at its end; the hint on its own line below. */
+.room-edit-tools .room-edit-hint { order: 2; flex-basis: 100%; margin-left: 0; text-align: right; }
+.room-edit-tools .room-done { order: 1; margin-left: auto; }
