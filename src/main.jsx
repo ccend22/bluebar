@@ -2,13 +2,13 @@ import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import { extrasText, parseExtras } from "./parseList.js";
-import { bill, since, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, total, plural, tableName } from "./domain.js";
+import { bill, since, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, ticketWaiting, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
 import { AiImport, ProductImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
-import { Finance } from "./Finance.jsx";
+import { Finance, TransactionCategories } from "./Finance.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
@@ -16,7 +16,7 @@ import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js"
 import { InvoiceEditForm } from "./InvoiceEdit.jsx";
 import { DesktopInstall, NetworkPrinters } from "./NetworkPrinters.jsx";
 import { PointsOfSale } from "./PointsOfSale.jsx";
-import { ConfigCheck, StationSetup } from "./StationSetup.jsx";
+import { ConfigCheck } from "./StationSetup.jsx";
 import { OrderHistory } from "./OrderHistory.jsx";
 import { PaymentForm, RefundForm } from "./PaymentDialog.jsx";
 import { WaiterPatternEditor } from "./PatternPad.jsx";
@@ -28,7 +28,6 @@ import { Reports } from "./Reports.jsx";
 import { Orders } from "./Orders.jsx";
 import { Stations, useStationPrinting } from "./Stations.jsx";
 import { TableOrder } from "./TableOrder.jsx";
-import { ShiftReport, Shifts } from "./Shifts.jsx";
 import { useInstall, useOnline } from "./pwa.js";
 import { fetchSession, fiscalizeInvoice, logout, reprintDocument, setUnauthorizedHandler, setWaiterPin } from "./api.js";
 import {
@@ -42,6 +41,7 @@ import {
   TableSymbol,
   DepartmentTag,
   BrandMark,
+  InfoTip,
 } from "./components.jsx";
 import "./style.css";
 
@@ -49,7 +49,7 @@ import "./style.css";
 // open from "Më shumë".
 // The manager's navigation in sections, each named above its first page.
 const NAV_GROUPS = { Tavolinat: "Shërbimi", Faturat: "Shitjet dhe financat", Inventari: "Magazina", Kamarierët: "Ekipi dhe sistemi" };
-const MOBILE_TABS = ["Tavolinat", "Porositë", "Faturat", "Turnet"];
+const MOBILE_TABS = ["Tavolinat", "Porositë", "Faturat", "Transaksione"];
 const pages = [
   {
     name: "Tavolinat",
@@ -78,9 +78,14 @@ const pages = [
     description: "Çdo pagesë e regjistruar, çdo faturë lehtësisht e gjendshme.",
   },
   {
+    name: "Transaksione",
+    icon: "cash",
+    description: "Shpenzimet, hyrjet e parave dhe shitjet, në një listë.",
+  },
+  {
     name: "Raportet",
     icon: "chart",
-    description: "Financat, llogaritë, shitjet dhe shpenzimet.",
+    description: "Përmbledhja financiare, llogaritë dhe shitjet.",
   },  {
     name: "Inventari",
     icon: "stock",
@@ -94,12 +99,7 @@ const pages = [
   {
     name: "Kamarierët",
     icon: "people",
-    description: "Ekipi, tavolinat dhe gjendja e secilit profil.",
-  },
-  {
-    name: "Turnet",
-    icon: "clock",
-    description: "Nga fondi fillestar te numërimi përfundimtar i arkës.",
+    description: "Ekipi, tavolinat e hapura dhe gjendja e secilit.",
   },
 
 
@@ -113,13 +113,16 @@ const pages = [
 const SETTINGS_TABS = [
   ["Printerët", "print", "Printerët dhe kompjuteri i tyre"],
   ["Stafi dhe hyrja", "people", "Hyrja e stafit dhe rrjeti i lokalit"],
-  ["Kasat dhe stacionet", "coffee", "Arkat, zonat dhe stacionet"],
+  ["Kamarierët", "user", "Profilet, PIN-i dhe pattern-i"],
+  ["Porositë", "list", "Menuja e kamarierit: me foto ose pa"],
+  ["Transaksione", "cash", "Kategoritë e shpenzimeve dhe hyrjeve"],
+  ["Kasat", "coffee", "Arkat dhe zonat e tyre"],
   ["Menuja online", "menu", "Kodi QR dhe porositë e klientëve"],
   ["Fiskalizimi", "receipt", "Lidhja me BlueBill dhe tatimet"],
   ["Llogaria ime", "user", "Emri, PIN-i dhe kjo pajisje"],
 ];
 // Which settings topic fixes each group of the configuration check (Produktet has its own page).
-const ISSUE_TAB = { Stafi: "Stafi dhe hyrja", Kasat: "Kasat dhe stacionet", Stacionet: "Kasat dhe stacionet", Rregullat: "Kasat dhe stacionet" };
+const ISSUE_TAB = { Stafi: "Stafi dhe hyrja", Kasat: "Kasat", Rregullat: "Kasat" };
 const matches = (text, query) =>
   text.toLocaleLowerCase("sq").includes(query.trim().toLocaleLowerCase("sq"));
 const date = (value) => {
@@ -298,32 +301,6 @@ function StationTicket({ ticket, waiterName, tables }) {
     </>
   );
 }
-// Cilësimet → Llogaria ime → this device's own preferences (kept in this browser only).
-function DeviceSettings() {
-  const [photos, setPhotos] = useState(() => {
-    try { return localStorage.getItem("order-photos") !== "0"; } catch { return true; }
-  });
-  return (
-    <section className="panel">
-      <SectionHeading icon="settings" title="Kjo pajisje" description="Vlen vetëm për këtë tablet ose telefon." />
-      <label className="printer-ascii device-option">
-        <input
-          type="checkbox"
-          checked={photos}
-          onChange={(e) => {
-            try { localStorage.setItem("order-photos", e.target.checked ? "1" : "0"); } catch {}
-            setPhotos(e.target.checked);
-          }}
-        />
-        <span>
-          Fotot e produkteve te porosia
-          <small>Pa foto, menuja e porosisë del më e ngjeshur, vetëm me emra dhe çmime.</small>
-        </span>
-      </label>
-    </section>
-  );
-}
-
 function App({ user, onLogout, onUserChange }) {
   const database = useDatabase();
   const online = useOnline();
@@ -362,7 +339,6 @@ function App({ user, onLogout, onUserChange }) {
     }),
     [settingsIssues, setSettingsIssues] = useState([]),
     [manageTables, setManageTables] = useState(false),
-    [report, setReport] = useState(null),
     [cancelling, setCancelling] = useState(false),
     [deleteConfirmId, setDeleteConfirmId] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
@@ -433,7 +409,7 @@ function App({ user, onLogout, onUserChange }) {
   useEffect(() => {
     if (!notice) return;
     setNoticeLeaving(false);
-    const ms = notice.tone === "error" ? 10000 : notice.tickets || receipt || report ? 7000 : 4000;
+    const ms = notice.tone === "error" ? 10000 : notice.tickets || receipt ? 7000 : 4000;
     let fade, gone;
     const wait = () => {
       fade = setTimeout(() => {
@@ -485,7 +461,6 @@ function App({ user, onLogout, onUserChange }) {
     setReceipt(null);
     setTicketPrint(null);
     setManageTables(false);
-    setReport(null);
     setFloorSelected(null);
     setOrderMode("summary");
   };
@@ -516,10 +491,6 @@ function App({ user, onLogout, onUserChange }) {
     setCategory("Të gjitha");
     setNotice(null);
   };
-  // The tills this user works (a waiter assigned to one till: just that one), and those not open.
-  const myPos = user.role === "waiter" ? state.waiters.find((w) => w.id === user.waiterId)?.posId : null;
-  const tills = state.pointsOfSale.filter((k) => !myPos || k.id === myPos);
-  const closedTills = tills.filter((k) => !state.openShifts.some((s) => s.posId === k.id));
   // Deactivated tables ("Menaxho tavolinat") drop off the floor but stay listed there for reactivation.
   const activeTables = state.tables.filter((t) => t.active),
     areas = [
@@ -584,7 +555,7 @@ function App({ user, onLogout, onUserChange }) {
     const units = (lines) => lines.reduce((s, l) => s + l.qty, 0);
     const paidSum = (list) => list.reduce((s, i) => s + i.total, 0);
     const todays = state.invoices.filter((i) => isToday(i.date));
-    const waiting = state.tickets.filter((k) => !k.doneAt && !k.cancelledAt);
+    const waiting = state.tickets.filter(ticketWaiting);
     const oldest = waiting.map((k) => k.date).sort()[0];
     const bookings = (state.reservations || []).filter((r) => r.date === day);
     const active = state.waiters.filter((w) => w.active);
@@ -823,17 +794,6 @@ function App({ user, onLogout, onUserChange }) {
     )
       setEditor(null);
   }
-  // The shift report goes to the cashier's network printer when there is one.
-  const printShiftReport = async (r) => {
-    const cashierPrinter = printerFor(state.printers, r.shift.posId);
-    if (!cashierPrinter) return printFitted();
-    try {
-      await reprintDocument("shift", r.shift.id);
-      notify(`Raporti u dërgua te ${cashierPrinter.name}.`);
-    } catch (e) {
-      notify(e.message, "error");
-    }
-  };
   if (database.loading || !database.ready)
     return (
       <main className="database-setup">
@@ -888,7 +848,6 @@ function App({ user, onLogout, onUserChange }) {
                       cancelling={cancelling}
                       setCancelling={setCancelling}
                       headingRef={orderHeading}
-                      onOpenShifts={role === "Kamarier" ? undefined : () => (setSelected(null), nav("Turnet"))}
                     />
                       </div>
                     </div>
@@ -1047,12 +1006,6 @@ function App({ user, onLogout, onUserChange }) {
                   Pa internet
                 </span>
               )}
-              <span className={`shift-status ${closedTills.length < tills.length ? "" : "closed"}`}>
-                <span className="dot" />
-                {tills.length > 1
-                  ? `${tills.length - closedTills.length}/${tills.length} kasa hapur`
-                  : closedTills.length < tills.length ? "Turn i hapur" : "Turn i mbyllur"}
-              </span>
               <span className="role">
                 <span>{user.name}</span>
                 <button onClick={onLogout} disabled={database.saving}>Dil</button>
@@ -1075,7 +1028,7 @@ function App({ user, onLogout, onUserChange }) {
           <main id="main" className={page === "Cilësimet" ? "settings-fit" : undefined}>
             <fieldset className="workspace-controls" disabled={database.busy} aria-busy={database.busy} aria-label="Hapësira e punës">
             {/* Raportet carries its own header, with its tabs beside the title. */}
-            <div className={`title-row ${page === "Raportet" ? "sr-only" : ""}`}>
+            <div className={`title-row ${["Raportet", "Transaksione"].includes(page) ? "sr-only" : ""}`}>
               <div>
                 <h1 ref={heading} tabIndex={-1}>
                   {page}
@@ -1186,12 +1139,6 @@ function App({ user, onLogout, onUserChange }) {
                       Printo fletët
                     </button>
                   )}
-                {page === "Turnet" && report && notice.tone === "success" && (
-                  <button onClick={() => printShiftReport(report)}>
-                    <Icon name="print" size={16} />
-                    Printo raportin
-                  </button>
-                )}
                 <button
                   className="icon-button"
                   onClick={() => setNotice(null)}
@@ -1228,22 +1175,6 @@ function App({ user, onLogout, onUserChange }) {
               ) : (
                 <>
                 <GuestOrders state={state} user={user} update={update} />
-                {closedTills.length > 0 && (
-                  <div className="notice warning">
-                    <Icon name="clock" />
-                    <span>
-                      {closedTills.length === tills.length
-                        ? "Turni është i mbyllur. Hapni një turn për të marrë porosi."
-                        : `Turni është i mbyllur te ${closedTills.map((k) => k.name).join(", ")}: tavolinat e saj nuk marrin porosi.`}
-                    </span>
-                    {role === "Menaxher" && (
-                      <button onClick={() => nav("Turnet")}>
-                        Hap turnin
-                        <Icon name="arrow" size={15} />
-                      </button>
-                    )}
-                  </div>
-                )}
                 <div className="floor-summary">
                   <div>
                     <span className="status-marker available" />
@@ -1718,11 +1649,11 @@ function App({ user, onLogout, onUserChange }) {
                       <table className="responsive-table stock-table">
                         <thead>
                           <tr>
-                            <th>Produkti</th>
-                            <th>Gjendja</th>
-                            <th>E disponueshme</th>
-                            <th>Pragu minimal</th>
-                            <th>Hyrje stoku</th>
+                            <th>Produkti<InfoTip label="Produkti">Artikulli që mban stok. Produktet pa ndjekje stoku nuk shfaqen këtu.</InfoTip></th>
+                            <th>Gjendja<InfoTip label="Gjendja">Sa copë ka fizikisht në magazinë tani, përfshirë ato që janë në porosi të hapura.</InfoTip></th>
+                            <th>E disponueshme<InfoTip label="E disponueshme">Gjendja pa copët e porosive të hapura: sa mund të shiten ende.</InfoTip></th>
+                            <th>Pragu minimal<InfoTip label="Pragu minimal">Kur gjendja bie në këtë numër ose më poshtë, produkti shënohet me stok të ulët.</InfoTip></th>
+                            <th>Hyrje stoku<InfoTip label="Hyrje stoku">Shkruani sasinë që erdhi dhe shtypni Shto. Çdo hyrje ruhet në historikun e lëvizjeve.</InfoTip></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1927,10 +1858,10 @@ function App({ user, onLogout, onUserChange }) {
                       <table className="responsive-table product-table">
                         <thead>
                           <tr>
-                            <th>Produkti</th>
-                            <th>Reparti</th>
-                            <th>Kategoria e menusë</th>
-                            <th className="numeric">Çmimi</th>
+                            <th>Produkti<InfoTip label="Produkti">Emri që shohin kamarierët dhe klientët në menu. Klikoni Ndrysho për foto, opsione, përshkrim dhe stok.</InfoTip></th>
+                            <th>Reparti<InfoTip label="Reparti">Ku përgatitet: bar, kuzhinë, ëmbëltore… Fleta e porosisë del te ekrani dhe printeri i këtij reparti.</InfoTip></th>
+                            <th>Kategoria e menusë<InfoTip label="Kategoria e menusë">Grupi ku del produkti në menu (p.sh. Kafe, Pije, Ushqim). Nuk ndikon se ku përgatitet.</InfoTip></th>
+                            <th className="numeric">Çmimi<InfoTip label="Çmimi">Çmimi i shitjes në Lek. Një ndryshim vlen për porositë e reja; faturat e vjetra mbajnë çmimin e tyre.</InfoTip></th>
                             <th>
                               <span className="sr-only">Veprimet</span>
                             </th>
@@ -2027,6 +1958,7 @@ function App({ user, onLogout, onUserChange }) {
                         />
                         <ChoiceField
                           label="Reparti i përgatitjes"
+                          info={<InfoTip label="Reparti i përgatitjes">Kush e përgatit produktin. Kur dërgohet porosia, fleta del te ekrani dhe printeri i këtij reparti.</InfoTip>}
                           name="department"
                           defaultValue={editor.department || ""}
                           options={[
@@ -2036,6 +1968,7 @@ function App({ user, onLogout, onUserChange }) {
                         />
                         <ChoiceField
                           label="Kategoria e menusë"
+                          info={<InfoTip label="Kategoria e menusë">Grupi ku shfaqet produkti te kamarierët dhe në menunë online. Nuk ndikon se ku përgatitet.</InfoTip>}
                           name="category"
                           defaultValue={editor.category || state.categories[0]}
                           options={state.categories.map((item) => ({ value: item, label: item }))}
@@ -2053,7 +1986,7 @@ function App({ user, onLogout, onUserChange }) {
                         />
                         <StockFields key={editor.id || "new"} product={editor} />
                         <label className="field product-extras">
-                          <span>Opsione dhe shtesa (një për rresht; "Grupi: a, b +100" = zgjidhet një)</span>
+                          <span>Opsione dhe shtesa <InfoTip label="Opsione dhe shtesa">Një për rresht. "Madhësia: E vogël, E madhe +300" është grup: klienti zgjedh vetëm një. Një rresht i thjeshtë si "Djathë ekstra +100" është shtesë që mund të shtohet. "+100" është çmimi shtesë në Lek.</InfoTip></span>
                           <textarea
                             name="extras"
                             rows={3}
@@ -2230,7 +2163,105 @@ function App({ user, onLogout, onUserChange }) {
 
             {page === "Rezervimet" && <Reservations state={state} update={update} role={role} />}
             {page === "Kamarierët" && (
-              <div className="management-layout">
+              // The team at a glance; adding waiters, PINs and patterns is in Cilësimet → Kamarierët.
+              <section className="panel">
+                <SectionHeading icon="people"
+                  title="Ekipi i shërbimit"
+                  description={`${state.waiters.filter((w) => w.active).length} aktivë · ${state.waiters.length} profile gjithsej`}
+                >
+                  <button type="button" onClick={() => { setSettingsTab("Kamarierët"); try { sessionStorage.setItem("settings-tab", "Kamarierët"); } catch {} nav("Cilësimet"); }}>
+                    <Icon name="settings" size={16} /> Ndrysho te Cilësimet
+                  </button>
+                </SectionHeading>
+                <div className="staff-list">
+                  {state.waiters.map((w) => {
+                    const assigned = state.tables.filter((t) => t.lines.length && t.waiter === w.id);
+                    return (
+                      <div className="staff-row staff-row-view" key={w.id}>
+                        <div className="staff-person">
+                          <span className={`avatar ${w.active ? "" : "inactive"}`}>
+                            {w.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+                          </span>
+                          <div>
+                            <strong>{w.name}</strong>
+                            <small>
+                              {assigned.length
+                                ? `${assigned.length} tavolina · ${money(assigned.reduce((sum, t) => sum + bill(t).remaining, 0))}`
+                                : "Pa porosi të hapura"}
+                              {state.pointsOfSale.length > 1 && ` · ${state.pointsOfSale.find((k) => k.id === w.posId)?.name || "Të gjitha kasat"}`}
+                            </small>
+                          </div>
+                        </div>
+                        <Badge tone={w.active ? "green" : ""}>{w.active ? "Aktiv" : "Joaktiv"}</Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+                {!state.waiters.length && <Empty icon="people" title="Ende pa kamarierë">Shtojini te Cilësimet → Kamarierët.</Empty>}
+              </section>
+            )}
+
+            {page === "Raportet" && <Finance state={state} notify={notify} sales={<Reports state={state} />} />}
+            {page === "Transaksione" && <Finance state={state} notify={notify} mode="transactions" />}
+            {page === "Cilësimet" && (
+              <>
+              {/* One topic at a time instead of ten panels on one page: a side list on wide screens,
+                  a row of tabs on narrow ones; what needs a look, one line above the topic. */}
+              <div className="settings-layout">
+              <div className="tabs settings-tabs" role="tablist" aria-label="Cilësimet">
+                {SETTINGS_TABS.map(([t, icon, hint]) => {
+                  const issues = settingsIssues.filter((i) => ISSUE_TAB[i.group] === t);
+                  return (
+                    <button
+                      key={t}
+                      role="tab"
+                      aria-selected={settingsTab === t}
+                      aria-pressed={settingsTab === t}
+                      onClick={(e) => {
+                        setSettingsTab(t);
+                        try { sessionStorage.setItem("settings-tab", t); } catch {}
+                        e.currentTarget.scrollIntoView({ inline: "center", block: "nearest" });
+                      }}
+                    >
+                      <Icon name={icon} size={18} />
+                      <b>{t}</b>
+                      <small>{hint}</small>
+                      {issues.length > 0 && (
+                        <i className={issues.some((i) => i.level === "error") ? "error" : undefined} aria-label={`${issues.length} për t'u parë`}>
+                          {issues.length}
+                        </i>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="settings-body">
+              <ConfigCheck state={state} onIssues={setSettingsIssues} />
+              <div className="settings-grid">
+                {settingsTab === "Printerët" && (
+                  <div className="settings-column settings-wide">
+                    <NetworkPrinters state={state} update={update} notify={notify} />
+                  </div>
+                )}
+                {settingsTab === "Stafi dhe hyrja" && (
+                  <>
+                    <div className="settings-column">
+                      <LoginModeSettings venue={user.venue} waiters={state.waiters} />
+                      <ManagerLoginSettings venue={user.venue} name={user.name} />
+                    </div>
+                    <div className="settings-column">
+                      <BusinessNetwork venue={user.venue} />
+                    </div>
+                  </>
+                )}
+                {settingsTab === "Kasat" && (
+                  <div className="settings-column settings-wide">
+                    <PointsOfSale state={state} update={update} />
+                  </div>
+                )}
+                {settingsTab === "Kamarierët" && (
+                  <>
+                  <div className="settings-column settings-wide">
                 <section className="panel">
                   <SectionHeading icon="people"
                     title="Ekipi i shërbimit"
@@ -2356,7 +2387,8 @@ function App({ user, onLogout, onUserChange }) {
                     </Empty>
                   )}
                 </section>
-                <aside className="management-aside">
+                  </div>
+                <div className="settings-column">
                   <section className="panel">
                     <SectionHeading icon="plus"
                       title="Shto në ekip"
@@ -2412,90 +2444,34 @@ function App({ user, onLogout, onUserChange }) {
                     <div>
                       <strong>Hyrja e kamarierit</strong>
                       <p>
-                        Vendosni PIN ose pattern për çdo kamarier. Mënyrën e hyrjes e zgjidhni te Cilësimet.
+                        Vendosni PIN ose pattern për çdo kamarier. Mënyrën e hyrjes e zgjidhni te "Stafi dhe hyrja".
                         Pas 5 përpjekjeve të gabuara llogaria bllokohet për 15
                         minuta; vendosja e një PIN-i ose pattern-i të ri e zhbllokon. Kamarierët
                         hyjnë vetëm nga rrjeti i lokalit.
                       </p>
                     </div>
                   </div>
-                </aside>
-              </div>
-            )}
-
-            {page === "Turnet" && (
-              <Shifts
-                state={state}
-                user={user}
-                update={update}
-                notify={notify}
-                nav={nav}
-                report={report}
-                setReport={setReport}
-                onPrintReport={printShiftReport}
-              />
-            )}
-            {page === "Raportet" && <Finance state={state} notify={notify} sales={<Reports state={state} />} />}
-            {page === "Cilësimet" && (
-              <>
-              {/* One topic at a time instead of ten panels on one page: a side list on wide screens,
-                  a row of tabs on narrow ones; what needs a look, one line above the topic. */}
-              <div className="settings-layout">
-              <div className="tabs settings-tabs" role="tablist" aria-label="Cilësimet">
-                {SETTINGS_TABS.map(([t, icon, hint]) => {
-                  const issues = settingsIssues.filter((i) => ISSUE_TAB[i.group] === t);
-                  return (
-                    <button
-                      key={t}
-                      role="tab"
-                      aria-selected={settingsTab === t}
-                      aria-pressed={settingsTab === t}
-                      onClick={(e) => {
-                        setSettingsTab(t);
-                        try { sessionStorage.setItem("settings-tab", t); } catch {}
-                        e.currentTarget.scrollIntoView({ inline: "center", block: "nearest" });
-                      }}
-                    >
-                      <Icon name={icon} size={18} />
-                      <b>{t}</b>
-                      <small>{hint}</small>
-                      {issues.length > 0 && (
-                        <i className={issues.some((i) => i.level === "error") ? "error" : undefined} aria-label={`${issues.length} për t'u parë`}>
-                          {issues.length}
-                        </i>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="settings-body">
-              <ConfigCheck state={state} onIssues={setSettingsIssues} />
-              <div className="settings-grid">
-                {settingsTab === "Printerët" && (
+                </div>
+                  </>
+                )}
+                {settingsTab === "Transaksione" && (
+                  <TransactionCategories state={state} notify={notify} onSaved={() => database.refresh()} />
+                )}
+                {settingsTab === "Porositë" && (
                   <div className="settings-column settings-wide">
-                    <NetworkPrinters state={state} update={update} notify={notify} />
+                    <section className="panel">
+                      <SectionHeading icon="list" title="Menuja e porosisë" description="Si i shohin produktet kamarierët kur marrin porosi. Vlen për të gjithë telefonat." />
+                      <div className="fin-seg order-photos-choice" role="group" aria-label="Menuja e porosisë">
+                        {[[true, "Me foto"], [false, "Pa foto"]].map(([v, l]) => (
+                          <button key={l} type="button" aria-pressed={(state.orderPhotos !== false) === v}
+                            onClick={() => (state.orderPhotos !== false) !== v && update("menu.photos", { photos: v }, v ? "Menuja e porosisë del me foto." : "Menuja e porosisë del pa foto, vetëm emra dhe çmime.")}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="helper">Pa foto, menuja del më e ngjeshur: më shumë produkte në ekran, vetëm me emër dhe çmim.</p>
+                    </section>
                   </div>
-                )}
-                {settingsTab === "Stafi dhe hyrja" && (
-                  <>
-                    <div className="settings-column">
-                      <LoginModeSettings venue={user.venue} waiters={state.waiters} />
-                      <ManagerLoginSettings venue={user.venue} name={user.name} />
-                    </div>
-                    <div className="settings-column">
-                      <BusinessNetwork venue={user.venue} />
-                    </div>
-                  </>
-                )}
-                {settingsTab === "Kasat dhe stacionet" && (
-                  <>
-                    <div className="settings-column">
-                      <PointsOfSale state={state} update={update} />
-                    </div>
-                    <div className="settings-column">
-                      <StationSetup state={state} update={update} />
-                    </div>
-                  </>
                 )}
                 {settingsTab === "Menuja online" && (
                   <div className="settings-column settings-wide">
@@ -2510,7 +2486,6 @@ function App({ user, onLogout, onUserChange }) {
                 {settingsTab === "Llogaria ime" && (
                   <div className="settings-column settings-wide">
                     <AccountSettings name={user.name} onChange={onUserChange} />
-                    <DeviceSettings />
                   </div>
                 )}
               </div>
@@ -2560,11 +2535,6 @@ function App({ user, onLogout, onUserChange }) {
       {(printDoc || receipt) && !ticketPrint && (
         <article className="receipt print-only invoice-print">
           <Receipt invoice={printDoc || receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === (printDoc || receipt).waiter)?.name} tables={state.tables} />
-        </article>
-      )}
-      {report && (
-        <article className="receipt print-only">
-          <ShiftReport report={report} venueName={user.venue?.name} />
         </article>
       )}
     </>

@@ -105,8 +105,33 @@ export function initialState() {
 // first till — so a business with a single till never has to configure areas.
 export const posOf = (state, table) =>
   (state.pointsOfSale.find((k) => k.areas.includes(table.area)) ?? state.pointsOfSale[0])?.id ?? null;
+// A slip still waiting at its department: not ready, not cancelled, and its order not yet
+// paid. Once the table has paid there's no order left, so it leaves Repartet.
+export const ticketWaiting = (k) => !k.doneAt && !k.cancelledAt && !k.invoice;
+// Transaksione's categories: the venue's own lists (Cilësimet → Transaksione), else these.
+export const TX_CATEGORIES = {
+  shpenzim: ["Furnitorë", "Staff", "Qira", "Utilities", "Taksa", "Mirëmbajtje", "Transport", "Marketing", "Të tjera"],
+  hyrje: ["Evente", "Qira e marrë", "Sponsorizime", "Të tjera"],
+};
+export const txCategories = (state, kind) => state.transactionCategories?.[kind] ?? TX_CATEGORIES[kind];
+// Each category's icon: the one the manager picked, else a fitting default, else a tag.
+const TX_ICONS = {
+  Furnitorë: "truck", Staff: "people", Qira: "home", Utilities: "bolt", Taksa: "receipt", Mirëmbajtje: "wrench",
+  Transport: "location", Marketing: "megaphone", Evente: "music", "Qira e marrë": "home", Sponsorizime: "star",
+};
+export const txIcon = (state, kind, name) => state.transactionCategories?.icons?.[kind]?.[name] || TX_ICONS[name] || "tag";
 export const shiftFor = (state, posId) => state.openShifts.find((s) => s.posId === posId) || null;
 export const tableShift = (state, table) => shiftFor(state, posOf(state, table));
+// No shift to open by hand: the first order at a table opens its till's shift, from 0 Lek.
+export function withOpenShift(state, table, by = null) {
+  const posId = posOf(state, table);
+  if (posId == null || shiftFor(state, posId)) return state;
+  const ids = [...state.shifts, ...state.openShifts].map((s) => s.id);
+  return {
+    ...state,
+    openShifts: [...state.openShifts, { id: (ids.length ? Math.max(...ids) : 0) + 1, posId, opened: new Date().toISOString(), opening: 0, openedBy: by, cashMovements: [] }],
+  };
+}
 // The till a station ticket / an invoice belongs to: the one stored when it was sent
 // (older tickets: its table's), its shift's.
 export const ticketPos = (state, ticket) => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { addItem, bill, checkout, closeShift, COURSES, DENOMINATIONS, drawer, findLine, lineDetails, newLineKey, pendingUnits, posOf, readDetails, reservationClash, reservationTime, routeStation, shiftFor, tableName, tableShift, unitPrice } from "../src/domain.js";
+import { addItem, bill, checkout, closeShift, COURSES, DENOMINATIONS, drawer, findLine, lineDetails, newLineKey, pendingUnits, posOf, readDetails, reservationClash, reservationTime, routeStation, shiftFor, tableName, tableShift, unitPrice, withOpenShift } from "../src/domain.js";
 import { openSpot, rectOf, sizeFor } from "../src/floorGeometry.js";
 // Why stock changes by hand. Losses are counted as such in the reports.
 export const LOSSES = ["Humbje", "Thyerje", "Skadim"];
@@ -135,6 +135,14 @@ export function applyCommand(state, type, payload, actor = null) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
     fail("Kërkesë e pavlefshme.");
   const p = payload;
+  // No shift is opened by hand any more: an order at a table opens its till's shift (from
+  // 0 Lek), and so does a table an order is moved to.
+  if (/^(order|guest)\./.test(type)) {
+    for (const id of [p.tableId, p.toTableId]) {
+      const t = Number.isSafeInteger(id) && state.tables.find((x) => x.id === id && x.active);
+      if (t) state = withOpenShift(state, t, actor?.name || null);
+    }
+  }
   const now = new Date().toISOString();
   let next,
     result = {};
@@ -274,7 +282,7 @@ export function applyCommand(state, type, payload, actor = null) {
       // table at today's prices and go to the stations, as if the waiter had entered them.
       const g = guestOrder();
       const t = table(g.table);
-      if (!tableShift(state, t)) fail("Turni është i mbyllur.");
+      state = withOpenShift(state, t, actor?.name || null); // its till opens with the order
       let waiter;
       if (actor?.role === "waiter") {
         if (t.waiter && t.waiter !== actor.waiterId) fail("Kjo tavolinë është e një kolegu: ai e pranon porosinë.");
@@ -572,6 +580,12 @@ export function applyCommand(state, type, payload, actor = null) {
       break;
     }
     // Every zone laid out as a room of its own, or all zones in one room.
+    // Cilësimet → Porositë: every waiter's order menu with product photos, or names and prices only.
+    case "menu.photos": {
+      if (typeof p.photos !== "boolean") fail("Zgjidhni me foto ose pa foto.");
+      next = { ...state, orderPhotos: p.photos };
+      break;
+    }
     case "floor.rooms": {
       if (typeof p.separate !== "boolean") fail("Zgjidhni si ndahet salla.");
       next = { ...state, separateRooms: p.separate };

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { bill, COURSES, money, pendingUnits, posOf, shiftFor, since, tableName, tableShift } from "./domain.js";
+import { bill, COURSES, money, pendingUnits, posOf, since, tableName } from "./domain.js";
 import { ChoiceField } from "./ChoiceField.jsx";
 import { VoicePanel, useRecorder } from "./VoiceOrder.jsx";
 import { parseOrder } from "./voice.js";
@@ -44,7 +44,6 @@ export function TableOrder({
   cancelling,
   setCancelling,
   headingRef,
-  onOpenShifts,
 }) {
   const [menu, setMenu] = useState(null);
   // One inline form at a time: move, handover, note.
@@ -85,13 +84,10 @@ export function TableOrder({
   const owner = state.waiters.find((w) => w.id === ownerId);
   // A waiter looking at a colleague's table can see it, but must claim it first.
   const foreign = isWaiter && hasOrder && table.waiter !== user.waiterId;
-  const shiftOpen = Boolean(tableShift(state, table));
-  const canAdd = shiftOpen && Boolean(ownerId) && !foreign;
+  // The till's shift opens by itself with the first order, so only these can block adding.
+  const canAdd = Boolean(ownerId) && !foreign;
   // Why nothing can be added, said plainly (greyed products alone don't explain it).
-  const till = state.pointsOfSale.find((k) => k.id === posOf(state, table));
-  const blocked = !shiftOpen
-    ? `Turni i kasës "${till?.name || "kasa"}"${table.area ? ` (zona ${table.area})` : ""} nuk është i hapur, prandaj nuk merren porosi për këtë tavolinë.`
-    : !ownerId
+  const blocked = !ownerId
       ? "Zgjidhni kamarierin lart, pranë emrit të tavolinës, për të shtuar produkte."
       : foreign
         ? `Kjo tavolinë është e ${owner?.name || "një kolegu"}. Merreni përsipër për të shtuar produkte.`
@@ -115,10 +111,8 @@ export function TableOrder({
   const departmentOf = (id) => state.products.find((p) => p.id === id)?.department || "Tjetër";
   const lines = [...table.lines].sort((a, b) => (fresh(b) > 0) - (fresh(a) > 0));
   const [showHistory, setShowHistory] = useState(false);
-  // Product photos on the tiles, per device (Cilësimet → Llogaria ime → Kjo pajisje).
-  const [photos] = useState(() => {
-    try { return localStorage.getItem("order-photos") !== "0"; } catch { return true; }
-  });
+  // Product photos on the tiles: one choice for the whole venue (Cilësimet → Porositë).
+  const photos = state.orderPhotos !== false;
   // Ordering by voice: what the waiter said and the products it named (null: no panel).
   const [spoken, setSpoken] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -212,7 +206,6 @@ export function TableOrder({
               <div className="notice warning order-blocked" role="status">
                 <Icon name="info" size={18} />
                 <span>{blocked}</span>
-                {!shiftOpen && onOpenShifts && <button type="button" onClick={onOpenShifts}>Hap turnin</button>}
               </div>
             )}
             <div className="chip-row" aria-label="Kategoritë e menusë">
@@ -281,22 +274,22 @@ export function TableOrder({
           <div className={`order-footer-actions ${sendable > 0 || waitingCourse ? "split" : ""}`}>
             {sendable > 0 ? (
               <>
-                <button disabled={!shiftOpen || foreign} onClick={onPay}>
+                <button disabled={foreign} onClick={onPay}>
                   Paguaj
                 </button>
-                <button className="primary" disabled={!shiftOpen || foreign} onClick={() => onSend(table)}>
+                <button className="primary" disabled={foreign} onClick={() => onSend(table)}>
                   <Icon name="arrow" size={17} />
                   Dërgo në repartet · {sendable}
                 </button>
               </>
             ) : waitingCourse ? (
               <>
-                <button disabled={!shiftOpen || foreign} onClick={onPay}>
+                <button disabled={foreign} onClick={onPay}>
                   Paguaj
                 </button>
                 <button
                   className="primary"
-                  disabled={!shiftOpen || foreign}
+                  disabled={foreign}
                   onClick={() => update("order.fire", { tableId: table.id, course: waitingCourse }, `filloi kursi: ${COURSES[waitingCourse]}.`)}
                 >
                   <Icon name="arrow" size={17} />
@@ -304,7 +297,7 @@ export function TableOrder({
                 </button>
               </>
             ) : (
-              <button className="primary" disabled={!shiftOpen || foreign} onClick={onPay}>
+              <button className="primary" disabled={foreign} onClick={onPay}>
                 <Icon name="check" size={17} />
                 Paguaj · {money(b.remaining)}
               </button>
@@ -699,7 +692,7 @@ function MovePanel({ state, table, here, tillName, onCancel, onMove }) {
           {otherTill &&
             ` ${tableName(target)} i përket kasës "${tillName(posOf(state, target))}": llogaria do të paguhet atje.${
               table.payments?.length ? " Kjo llogari ka pagesa të pjesshme, prandaj nuk mund të kalojë në kasë tjetër." : ""
-            }${!shiftFor(state, posOf(state, target)) ? " Ajo kasë nuk ka turn të hapur." : ""}`}
+            }`}
         </p>
       )}
       <div className="actions">

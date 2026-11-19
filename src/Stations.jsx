@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { reportStationsSeen, venueSlug } from "./api.js";
 import { DepartmentTag, Empty, Icon, SectionHeading } from "./components.jsx";
 import { ChoiceField } from "./ChoiceField.jsx";
-import { COURSES, printerFor, tableName } from "./domain.js";
+import { COURSES, printerFor, tableName, ticketWaiting } from "./domain.js";
 
 // What this device shows and prints is a property of the device (the bar's Mac has
 // the bar printer), not of the business — so it lives in localStorage.
@@ -100,9 +100,8 @@ const ago = (iso) => {
   const days = Math.floor(minutes / (24 * 60));
   return `${days} ditë`;
 };
-// On screen until the station marks it done — paying the table doesn't take work away.
-// A cancelled order's tickets leave at once (their slip says "ANULUAR").
-const open = (k) => !k.doneAt && !k.cancelledAt;
+// On screen until it's marked ready, or its order is gone: cancelled or paid.
+const open = ticketWaiting;
 
 export function Stations({ state, device, update, onPrint, time, tillOf }) {
   const stations = state.stations || [];

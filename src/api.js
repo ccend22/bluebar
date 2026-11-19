@@ -121,6 +121,19 @@ export const fetchFinance = (from, to) => request(`/finance?${range(from, to)}`)
 export const fetchExpenses = (from, to) => request(`/expenses?${range(from, to)}`);
 export const saveExpense = (expense) => (expense.id ? send("PUT", `/expenses/${expense.id}`, { ...expense, id: undefined }) : send("POST", "/expenses", expense));
 export const deleteExpense = (id) => send("DELETE", `/expenses/${id}`);
+// One kind's category list (Cilësimet → Transaksione); rename: { from, to } moves past transactions too.
+export const fetchCategoryUsage = () => request("/transaction-categories/usage");
+export const saveTransactionCategories = (kind, categories, rename, icons) =>
+  send("PUT", "/transaction-categories", { kind, categories, ...(rename && { rename }), ...(icons && { icons }) });
+// An expense's attachment: upload (a photo or PDF as a data URL), open (as a blob), remove.
+export const saveExpenseFile = (id, name, dataUrl) =>
+  request(`/expenses/${id}/file`, { method: "PUT", body: JSON.stringify({ name, dataUrl }), timeout: 60000 });
+export const deleteExpenseFile = (id) => send("DELETE", `/expenses/${id}/file`);
+export async function fetchExpenseFile(id) {
+  const response = await fetch(`/api/expenses/${id}/file`, { credentials: "same-origin", headers: { "X-BlueBar-Client": "1", "X-BlueBar-Venue": venueSlug } });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Dokumenti nuk u hap.");
+  return response.blob();
+}
 export const fetchAccounts = () => request("/accounts");
 export const saveAccount = ({ id, ...account }) => (id ? send("PUT", `/accounts/${id}`, account) : send("POST", "/accounts", account));
 export const deleteAccount = (id) => send("DELETE", `/accounts/${id}`);

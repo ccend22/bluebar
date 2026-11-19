@@ -162,7 +162,7 @@ export async function verifyEmptyDatabase(pool) {
   await rejected(
     "order.pay",
     { tableId: 1, method: "Cash", received: 100 },
-    /mbyllur/,
+    /bosh/, // the till reopens by itself; the table's bill was already paid
   );
   return {
     migrations: "idempotent",

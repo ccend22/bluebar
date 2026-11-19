@@ -199,6 +199,8 @@ export async function loadState(client) {
       floorTexture: control.floor_texture || null,
       floorStyle: control.floor_style || "3d",
       separateRooms: control.separate_rooms === true,
+      orderPhotos: control.order_photos !== false,
+      transactionCategories: control.transaction_categories || null,
       invoices,
       movements,
       printers: rows("printers")
@@ -215,18 +217,9 @@ export async function loadState(client) {
           cutter: x.cutter,
           posId: x.pos_id,
         })),
-      stations: rows("stations")
-        .sort((a, b) => a.id - b.id)
-        .map((x) => ({
-          id: x.id,
-          name: x.name,
-          departments: x.departments,
-          areas: x.areas,
-          active: x.active,
-          backupId: x.backup_id,
-          printerId: x.printer_id,
-          deviceSeenAt: iso(x.device_seen_at),
-        })),
+      // Stations are retired: a ticket goes to its department and its till's printer.
+      // The old rows stay in the database untouched (ponytail: drop the table once no venue needs them back).
+      stations: [],
       pointsOfSale: rows("points_of_sale")
         .sort((a, b) => a.id - b.id)
         .map((k) => ({ id: k.id, name: k.name, areas: k.areas })),
@@ -454,6 +447,8 @@ export async function persist(client, previous, next) {
     );
   if (typeof next.separateRooms === "boolean" && next.separateRooms !== previous.separateRooms)
     await client.query("UPDATE bluebar.control SET separate_rooms=$1 WHERE id=1", [next.separateRooms]);
+  if (typeof next.orderPhotos === "boolean" && next.orderPhotos !== previous.orderPhotos)
+    await client.query("UPDATE bluebar.control SET order_photos=$1 WHERE id=1", [next.orderPhotos]);
   if (next.floorStyle && next.floorStyle !== previous.floorStyle)
     await client.query("UPDATE bluebar.control SET floor_style=$1 WHERE id=1", [next.floorStyle]);
   if (changed(previous.reservationSlots || [], next.reservationSlots || []))
@@ -698,7 +693,11 @@ export async function executeOrderPatch(pool, command, actor = null) {
         "Të dhënat ndryshuan nga një sesion tjetër. Gjendja u rifreskua; kontrolloni dhe provoni sërish.",
         409,
       );
-    if (!context.shift_open) throw new AppError("Hapni turnin për të marrë porosi.");
+    // The till has no shift yet: the full path opens one (from 0) with this order.
+    if (!context.shift_open) {
+      await client.query("ROLLBACK");
+      return execute(pool, command, actor);
+    }
     if (!context.table_id) throw new AppError("Tavolina nuk ekziston.");
     if (!context.table_active) throw new AppError("Tavolina është joaktive.");
     if (context.actor_pos && context.actor_pos !== context.table_pos)

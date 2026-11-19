@@ -852,9 +852,10 @@ test("Kasat: each till has its own shift and drawer, waiters stay at their till,
     await ok(boss, "stock.receive", { productId: 1, qty: 5 });
     await ok(boss, "shift.open", { posId: 1, opening: 1000 });
 
-    // Outside's shift is closed, so its tables take no orders yet — inside's do.
-    assert.equal((await cmd(arben, "order.add", { tableId: 9, productId: 1, waiterId: 1 })).statusCode, 400);
-    await ok(boss, "shift.open", { posId: 2, opening: 500 });
+    // Outside has no shift yet: its first order opens one, from 0 Lek (on the fast order path too).
+    await ok(arben, "order.add", { tableId: 9, productId: 1, waiterId: 1 });
+    await ok(arben, "order.remove", { tableId: 9, productId: 1 });
+    assert.deepEqual((await t.call("GET", "/api/state", { cookie: boss })).json().state.openShifts.map((s) => [s.posId, s.opening]), [[1, 1000], [2, 0]]);
     assert.equal((await cmd(boss, "shift.open", { posId: 2, opening: 0 })).statusCode, 400, "one open shift per till");
     // Arben works outside only: inside tables are refused on both order paths, and hidden.
     assert.equal((await cmd(arben, "order.add", { tableId: 1, productId: 1, waiterId: 1 })).statusCode, 403);
@@ -868,7 +869,7 @@ test("Kasat: each till has its own shift and drawer, waiters stay at their till,
     // Elira (any till) sells inside; an open order inside doesn't block closing outside.
     await ok(boss, "order.add", { tableId: 1, productId: 1, waiterId: 2 });
     const state = await ok(boss, "shift.close", { posId: 2, counted: 600 });
-    assert.deepEqual([state.shifts[0].posId, state.shifts[0].expected, state.shifts[0].sales.total], [2, 600, 100]);
+    assert.deepEqual([state.shifts[0].posId, state.shifts[0].expected, state.shifts[0].sales.total], [2, 100, 100]);
     assert.deepEqual(state.openShifts.map((s) => s.posId), [1]);
     assert.equal(state.products[0].stock, 4, "one stock for every till");
     assert.equal((await cmd(boss, "shift.close", { posId: 1, counted: 1000 })).statusCode, 400, "inside still has an open order");
@@ -954,79 +955,6 @@ test("Korrektësia: paying never loses station work, voids reach the station, ev
     // The table's next order starts with a clean history.
     await ok(arben, "order.add", { tableId: 1, productId: 1, waiterId: 1 });
     assert.deepEqual((await t.call("GET", "/api/tables/1/history", { cookie: arben })).json().map((e) => e.kind), ["add"]);
-  } finally {
-    await t.close();
-  }
-});
-
-test("Stacionet: two bars by zone, specialised kitchens, backup, inactive station, accepted transfers, no rerouting", async () => {
-  const t = await setup();
-  try {
-    const boss = t.cookieOf(await t.managerLogin());
-    const arben = t.cookieOf(await t.waiterLogin(1, "482913"));
-    const cmd = async (cookie, type, payload) => {
-      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
-      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
-    };
-    const ok = async (...args) => {
-      const r = await cmd(...args);
-      assert.equal(r.statusCode, 200, r.body);
-      return r.json();
-    };
-    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
-    await ok(boss, "shift.open", { opening: 0 });
-    await ok(boss, "department.create", { name: "Pica" });
-    for (const [name, department] of [["Birrë", "Bar"], ["Pasta", "Restorant"], ["Picë", "Pica"]]) {
-      await ok(boss, "product.save", { name, price: 300, category: "Ushqim", department });
-      await ok(boss, "stock.receive", { productId: (await state()).products.at(-1).id, qty: 50 });
-    }
-    // One till, no stations: nothing to configure, nothing flagged.
-    assert.deepEqual(configIssues(await state()), []);
-
-    // Tables 1-8 are Salla, 9-12 Tarraca.
-    await ok(boss, "station.save", { name: "Bari brenda", departments: ["Bar"], areas: ["Salla"] });
-    await ok(boss, "station.save", { name: "Bari jashtë", departments: ["Bar"], areas: ["Tarraca"] });
-    await ok(boss, "station.save", { name: "Kuzhina", departments: ["Restorant", "Pica"], areas: [] });
-    await ok(boss, "station.save", { name: "Furra", departments: ["Pica"], areas: ["Salla", "Tarraca"], backupId: 3 });
-    assert.equal((await cmd(boss, "station.save", { id: 3, name: "Kuzhina", departments: ["Restorant", "Pica"], areas: [], backupId: 4 })).statusCode, 400, "no backup loops");
-
-    const order = async (tableId, ...productIds) => {
-      for (const productId of productIds) await ok(arben, "order.add", { tableId, productId, waiterId: 1 });
-      return (await ok(arben, "order.send", { tableId })).result.tickets.map((k) => [k.department, k.station]);
-    };
-    assert.deepEqual(await order(1, 1, 2, 3), [["Bar", 1], ["Restorant", 3], ["Pica", 4]], "inside bar, oven, shared kitchen");
-    assert.deepEqual(await order(9, 1), [["Bar", 2]], "outside bar");
-
-    // The oven is down: new pizzas go to its backup; the one it already has stays put.
-    await ok(boss, "station.toggle", { id: 4 });
-    assert.deepEqual(await order(2, 3), [["Pica", 3]]);
-    // Reconfiguring zones doesn't move tickets already sent.
-    await ok(boss, "station.save", { id: 2, name: "Bari jashtë", departments: ["Bar"], areas: [] });
-    let s = await state();
-    assert.deepEqual(s.tickets.filter((k) => k.table === 9).map((k) => k.station), [2]);
-    assert.deepEqual(s.tickets.filter((k) => k.table === 1).map((k) => k.station), [1, 4, 3]);
-    assert.ok(configIssues(s).some((i) => /"Furra" është joaktiv dhe ka 1 fletë/.test(i.text)));
-
-    // Controlled transfer: the oven's pizza goes to the kitchen only once the kitchen accepts.
-    const pizza = s.tickets.find((k) => k.station === 4);
-    await ok(boss, "ticket.transfer", { id: pizza.id, stationId: 3 });
-    assert.equal((await cmd(arben, "ticket.done", { id: pizza.id })).statusCode, 400, "in transfer");
-    s = await state();
-    assert.deepEqual([s.tickets.find((k) => k.id === pizza.id).station, s.tickets.find((k) => k.id === pizza.id).transferTo], [4, 3]);
-    await ok(arben, "ticket.accept", { id: pizza.id });
-    s = await state();
-    assert.deepEqual([s.tickets.find((k) => k.id === pizza.id).station, s.tickets.find((k) => k.id === pizza.id).transferTo], [3, null]);
-    assert.equal((await cmd(arben, "ticket.accept", { id: pizza.id })).statusCode, 400);
-    const history = (await t.call("GET", "/api/tables/1/history", { cookie: boss })).json().filter((e) => e.kind === "transfer");
-    assert.deepEqual(history.map((e) => e.actor), ["boss", "Arben K"]);
-
-    // A station with tickets can't be deleted; a printer's removal leaves its station on screen.
-    assert.equal((await cmd(boss, "station.delete", { id: 1 })).statusCode, 400, "has tickets");
-    assert.equal((await cmd(boss, "station.delete", { id: 3 })).statusCode, 400, "is a backup");
-    // No device anywhere: every active station is flagged, with a reason.
-    assert.ok(configIssues(s).filter((i) => /nuk ka printer dhe asnjë ekran/.test(i.text)).length === 3);
-    await t.call("POST", "/api/stations/seen", { cookie: arben, body: { stations: [1, 2, 3] } });
-    assert.ok(!configIssues(await state()).some((i) => /nuk ka printer dhe asnjë ekran/.test(i.text)));
   } finally {
     await t.close();
   }
@@ -1204,8 +1132,6 @@ test("moving a bill between tills: it's paid at the new till, but a part-paid bi
     await ok("product.save", { name: "Kafe", price: 100, category: "Kafe" });
     await ok("stock.receive", { productId: 1, qty: 10 });
     for (const tableId of [1, 2]) for (let i = 0; i < 2; i++) await ok("order.add", { tableId, productId: 1, waiterId: 1 });
-    assert.match((await cmd("order.move", { tableId: 1, toTableId: 9 })).body, /nuk ka turn të hapur/);
-    await ok("shift.open", { posId: 2, opening: 0 });
     await ok("order.pay", { tableId: 2, payments: [{ method: "Cash", amount: 100 }], received: 100 });
     assert.match((await cmd("order.move", { tableId: 2, toTableId: 10 })).body, /pagesa të pjesshme/);
     await ok("order.move", { tableId: 1, toTableId: 9 });
@@ -2084,6 +2010,13 @@ test("Financat: sales less refunds, approved and pending expenses, till cash-out
     const list = (await t.call("GET", `/api/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cookie: boss })).json().expenses;
     assert.equal(list.length, 2);
     assert.equal((await t.call("DELETE", `/api/expenses/${pending.id}`, { cookie: boss })).statusCode, 200);
+    // Transaksione → Hyrje: money in by hand is income (once approved), not spending.
+    const moneyIn = (await add({ kind: "hyrje", amount: 400, category: "Evente", method: "Cash" })).json().expense;
+    assert.equal(moneyIn.kind, "hyrje");
+    const withIn = (await t.call("GET", `/api/finance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cookie: boss })).json();
+    assert.deepEqual([withIn.income, withIn.spent, withIn.netCash], [750 + 400, 300, 600 - 100 + 400]);
+    assert.equal((await add({ kind: "dalje", amount: 5, category: "X" })).statusCode, 400);
+    assert.equal((await t.call("DELETE", `/api/expenses/${moneyIn.id}`, { cookie: boss })).statusCode, 200);
     // Llogaritë: the till's and the bank's accounts carry their method's money; moves shift it.
     const accts = async () => Object.fromEntries((await t.call("GET", "/api/accounts", { cookie: boss })).json().accounts.map((a) => [a.name, a.balance]));
     assert.deepEqual(await accts(), { Arka: 600 - 100, Banka: 150 - 200 }, "cash 600 less 100 out; bank 150 less 200 spent");
@@ -2095,6 +2028,12 @@ test("Financat: sales less refunds, approved and pending expenses, till cash-out
     // Rooms of their own: a new table is placed only among its own zone's tables.
     assert.equal((await cmd("floor.rooms", { separate: true })).statusCode, 200);
     assert.equal((await t.call("GET", "/api/state", { cookie: boss })).json().state.separateRooms, true);
+    // Cilësimet → Porositë: photos on by default; the manager turns them off for every waiter.
+    assert.equal((await t.call("GET", "/api/state", { cookie: boss })).json().state.orderPhotos, true);
+    assert.equal((await cmd("menu.photos", { photos: false })).statusCode, 200);
+    assert.equal((await t.call("GET", "/api/state", { cookie: ana })).json().state.orderPhotos, false);
+    assert.equal((await cmd("menu.photos", { photos: "jo" })).statusCode, 400);
+    assert.equal((await t.call("POST", "/api/commands", { cookie: ana, body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: boss })).json().version, type: "menu.photos", payload: { photos: true } } })).statusCode, 403, "the manager's choice");
   } finally {
     await t.close();
   }
@@ -2148,5 +2087,101 @@ test("Importo me AI in Inventari and Shpenzimet: rows come back cleaned, unknown
     assert.match(timeout.json().error, /nuk u përgjigj në kohë/);
   } finally {
     await none.close();
+  }
+});
+
+test("an expense keeps one attachment: a real photo or PDF, the manager's only, gone with the expense", async () => {
+  const t = await setup();
+  try {
+    const cookie = t.cookieOf(await t.managerLogin());
+    const made = await t.call("POST", "/api/expenses", { cookie, body: { spentAt: new Date().toISOString(), amount: 1200, category: "Utilities", method: "Cash", status: "aprovuar" } });
+    const id = made.json().expense.id;
+    const upload = (name, dataUrl, c = cookie) => t.call("PUT", `/api/expenses/${id}/file`, { cookie: c, body: { name, dataUrl } });
+    const jpeg = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString("base64")}`;
+    const pdf = `data:application/pdf;base64,${Buffer.from("%PDF-1.4\n1 0 obj\n").toString("base64")}`;
+    // Not signed in, or a file that only claims to be a PDF: refused.
+    assert.equal((await upload("kupon.jpg", jpeg, null)).statusCode, 401);
+    assert.equal((await upload("fake.pdf", `data:application/pdf;base64,${Buffer.from("<script>").toString("base64")}`)).statusCode, 400);
+    assert.equal((await upload("kupon.jpg", jpeg)).statusCode, 200);
+    const from = new Date(Date.now() - 86400000).toISOString(), to = new Date(Date.now() + 86400000).toISOString();
+    const listed = (await t.call("GET", `/api/expenses?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cookie })).json().expenses[0];
+    assert.deepEqual(listed.file, { name: "kupon.jpg", type: "image/jpeg", size: 7 });
+    const file = await t.call("GET", `/api/expenses/${id}/file`, { cookie });
+    assert.equal(file.headers["content-type"], "image/jpeg");
+    assert.equal(file.headers["x-content-type-options"], "nosniff");
+    assert.deepEqual([...file.rawPayload], [0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    // A new file replaces the old one; removing it leaves the expense as it was.
+    assert.equal((await upload("fatura.pdf", pdf)).statusCode, 200);
+    assert.equal((await t.call("GET", `/api/expenses/${id}/file`, { cookie })).headers["content-type"], "application/pdf");
+    assert.equal((await t.call("DELETE", `/api/expenses/${id}/file`, { cookie })).statusCode, 200);
+    assert.equal((await t.call("GET", `/api/expenses/${id}/file`, { cookie })).statusCode, 404);
+    // Deleting the expense takes its file with it.
+    assert.equal((await upload("kupon.jpg", jpeg)).statusCode, 200);
+    assert.equal((await t.call("DELETE", `/api/expenses/${id}`, { cookie })).statusCode, 200);
+    assert.equal((await t.call("GET", `/api/expenses/${id}/file`, { cookie })).statusCode, 404);
+  } finally {
+    await t.close();
+  }
+});
+
+test("stations are retired: a venue's old station rows are ignored and tickets go by department", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const cmd = async (type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie: boss, body: { id: randomUUID(), version, type, payload } });
+    };
+    await cmd("department.create", { name: "Bar" });
+    await cmd("product.save", { name: "Espresso", price: 150, category: "Kafe", department: "Bar", trackStock: false });
+    // A station left over from before, switched off: it used to swallow the Bar's tickets.
+    await t.pool.query("INSERT INTO bluebar.stations(id,name,departments,areas,active) VALUES(1,'Bari vjetër','{Bar}','{}',false)");
+    const { state } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+    assert.deepEqual(state.stations, []);
+    const added = await cmd("order.add", { tableId: 1, productId: state.products.find((p) => p.name === "Espresso").id, waiterId: state.waiters[0].id });
+    assert.equal(added.statusCode, 200, added.body);
+    const sent = await cmd("order.send", { tableId: 1 });
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.deepEqual((await t.pool.query("SELECT department, station_id FROM bluebar.station_tickets")).rows.map((k) => [k.department, k.station_id]), [["Bar", null]]);
+    assert.equal((await cmd("station.save", { name: "X", departments: ["Bar"], areas: [] })).statusCode, 400, "no longer a command");
+    assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar.stations")).rows[0].n, 1, "the old row is kept, untouched");
+  } finally {
+    await t.close();
+  }
+});
+
+test("Cilësimet → Transaksione: each kind's own categories; a rename moves past transactions, a removal doesn't", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const put = (body, cookie = boss) => t.call("PUT", "/api/transaction-categories", { cookie, body });
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    assert.equal((await state()).transactionCategories, null, "the defaults until the manager changes them");
+    const spentAt = new Date().toISOString();
+    await t.call("POST", "/api/expenses", { cookie: boss, body: { spentAt, amount: 900, category: "Qira", method: "Cash", status: "aprovuar" } });
+    await t.call("POST", "/api/expenses", { cookie: boss, body: { spentAt, kind: "hyrje", amount: 300, category: "Qira", method: "Cash", status: "aprovuar" } });
+    assert.equal((await put({ kind: "shpenzim", categories: ["Qira", "Staff"] })).statusCode, 200);
+    assert.equal((await put({ kind: "hyrje", categories: ["Evente"] })).statusCode, 200);
+    assert.deepEqual((await state()).transactionCategories, { shpenzim: ["Qira", "Staff"], hyrje: ["Evente"] });
+    // Renaming moves that kind's transactions only.
+    assert.equal((await put({ kind: "shpenzim", categories: ["Qiraja", "Staff"], rename: { from: "Qira", to: "Qiraja" } })).statusCode, 200);
+    const rows = (await t.pool.query("SELECT kind, category FROM bluebar.expenses ORDER BY kind")).rows.map((r) => [r.kind, r.category]);
+    assert.deepEqual(rows, [["hyrje", "Qira"], ["shpenzim", "Qiraja"]]);
+    const usage = (await t.call("GET", "/api/transaction-categories/usage", { cookie: boss })).json().usage;
+    assert.deepEqual(usage.map((u) => [u.kind, u.category, u.count, u.total]).sort(), [["hyrje", "Qira", 1, 300], ["shpenzim", "Qiraja", 1, 900]]);
+    assert.equal((await t.call("GET", "/api/transaction-categories/usage", { cookie: ana })).statusCode, 403);
+    // Removing leaves the transactions as they are.
+    assert.equal((await put({ kind: "shpenzim", categories: ["Staff"] })).statusCode, 200);
+    assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar.expenses WHERE category = 'Qiraja'")).rows[0].n, 1);
+    // Icons ride along; one for a category no longer listed is dropped, a made-up key refused.
+    assert.equal((await put({ kind: "shpenzim", categories: ["Staff"], icons: { Staff: "people", Gone: "tag" } })).statusCode, 200);
+    assert.deepEqual((await state()).transactionCategories.icons, { shpenzim: { Staff: "people" } });
+    assert.equal((await put({ kind: "shpenzim", categories: ["Staff"], icons: { Staff: "<svg>" } })).statusCode, 400);
+    assert.equal((await put({ kind: "shpenzim", categories: ["Staff", "staff"] })).statusCode, 400, "no duplicates");
+    assert.equal((await put({ kind: "dalje", categories: ["X"] })).statusCode, 400);
+    assert.equal((await put({ kind: "shpenzim", categories: ["X"] }, ana)).statusCode, 403, "the manager's");
+  } finally {
+    await t.close();
   }
 });

@@ -5997,8 +5997,9 @@ body.order-open { overflow: hidden; }
 }
 .order-bill .order-list li > b { font: 600 13px ui-monospace, SFMono-Regular, Consolas, monospace; color: #1d1d1f; }
 .order-bill .quantity { border-color: #e4e4e4; }
-.order-bill .quantity button { min-height: 30px; width: 30px; }
-.order-bill .quantity span { font: 600 13px ui-monospace, SFMono-Regular, Consolas, monospace; }
+/* Big enough for a thumb in a hurry: 48px, the size of a fingertip. */
+.order-bill .quantity button { min-height: 48px; width: 48px; font-size: 24px; line-height: 1; }
+.order-bill .quantity span { min-width: 30px; font: 700 17px ui-monospace, SFMono-Regular, Consolas, monospace; }
 .order-bill-sum { padding-top: 8px; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: #555; }
 .order-bill-sum p { display: flex; justify-content: space-between; gap: 10px; margin: 4px 0; }
 .order-bill-total { margin-top: 8px !important; padding-top: 8px; border-top: 2px solid #1d1d1f; font-size: 15px; font-weight: 700; color: #1d1d1f; }
@@ -7605,3 +7606,140 @@ body:has(.app) { background: #f6f8fb; }
   .page-stats .fin-card-icon { width: 32px; height: 32px; }
   .page-stats .fin-card strong { font-size: 18px; }
 }
+
+/* Shpenzimet: an attachment on an expense (a photo of the receipt or a PDF). */
+.fin-file { display: inline-flex; align-items: center; gap: 4px; justify-self: start; width: fit-content; min-height: 0; margin-top: 4px; padding: 3px 9px; border: 0; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 650; box-shadow: none; }
+.fin-attach, .fin-attach-pick { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border-radius: 12px; font-size: 14px; }
+.fin-attach { border: 1px solid var(--card-line, #e3e8ee); background: #f7f9fc; color: var(--ink-strong, #10202d); }
+.fin-attach > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.fin-attach-pick { border: 1.5px dashed #c9d4e1; background: #fbfcfe; color: #5a6672; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease; }
+.fin-attach-pick:hover, .fin-attach-pick:focus-within { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+
+/* Transaksione: a sale in the list, and the filter above it. */
+.badge.blue { background: #e7f0fd; color: #1f5fbf; }
+.fin-seg.fin-filter { margin: 0 0 12px; max-width: 420px; }
+
+/* InfoTip: the small "i" and its explanation. */
+.info-tip {
+  display: inline-grid; place-items: center; width: 17px; height: 17px; min-height: 0; margin-left: 5px; padding: 0;
+  border: 1px solid #c9d3de; border-radius: 50%; background: #fff; color: #5a6673;
+  font: italic 600 11px/1 Georgia, serif; vertical-align: 1px; cursor: pointer;
+}
+.info-tip:hover, .info-tip:focus-visible { border-color: var(--blue, #2f80ed); color: var(--blue, #2f80ed); }
+.info-tip-body {
+  position: fixed; inset: auto; margin: 0; width: max-content; max-width: min(280px, calc(100vw - 16px));
+  padding: 10px 12px; border: 1px solid var(--card-line, #e3e8ee); border-radius: 10px; background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 40, 80, 0.14); color: #3c4652; font-size: 13px; font-weight: 400;
+  line-height: 1.45; text-align: left; text-transform: none; letter-spacing: 0; white-space: normal;
+}
+.info-tip-body:not([data-placed]) { opacity: 0; }
+.info-tip-body strong { display: block; margin-bottom: 3px; color: var(--ink-strong, #14202b); font-size: 13px; }
+.fin .fin-total.plus { color: var(--money-in); }
+.fin-seg.fin-filter button { white-space: nowrap; padding: 0 8px; }
+/* Kamarierët: the read-only team list (editing is in Cilësimet → Kamarierët). */
+.staff-row.staff-row-view { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.staff-row.staff-row-view > .badge { flex: none; }
+.order-photos-choice { max-width: 360px; }
+
+/* Transaksione: the list takes the page; "+ Veprim" opens the form as a dialog. */
+.fin-expenses { grid-template-columns: minmax(0, 1fr); }
+.tx-dialog { width: min(820px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 0; border-radius: 20px; background: #fff; color: var(--ink-strong, #0f1d2b); box-shadow: 0 40px 100px -30px rgba(10, 30, 60, 0.5); overflow: hidden; }
+.tx-dialog[open] { animation: dialog-in 220ms var(--ease-out); }
+.tx-dialog::backdrop { background: rgba(15, 23, 32, 0.42); }
+.tx { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100dvh - 32px); }
+.tx-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--card-line, #e6edf5); }
+.tx-head > div:first-of-type { flex: 1; min-width: 0; }
+.tx-head h2 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
+.tx-head p { margin: 2px 0 0; color: #66727f; font-size: 13px; }
+.tx-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; flex: none; }
+.tx-mark.in { background: #e8f5ec; color: var(--money-in, #1f8a4c); }
+.tx-mark.out { background: #fdecec; color: var(--money-out, #d14343); }
+.tx-mark.out svg { transform: rotate(90deg); }
+.tx-kind { flex: none; width: 210px; }
+.tx-kind button[aria-pressed="true"] { color: var(--ink-strong, #0f1d2b); font-weight: 650; }
+.tx-head .icon-button { border: 0; background: transparent; }
+.tx-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); overflow-y: auto; }
+.tx-side { display: grid; align-content: start; gap: 16px; padding: 20px; background: #f6f8fb; border-right: 1px solid var(--card-line, #e6edf5); }
+.tx-main { display: grid; align-content: start; gap: 16px; padding: 20px 22px; }
+.tx .field > span { display: inline-flex; align-items: center; gap: 6px; }
+.tx .field > span svg { color: #8794a1; }
+.tx select, .tx textarea { width: 100%; }
+.tx-amount input { min-height: 64px; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tx-foot { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--card-line, #e6edf5); }
+@media (max-width: 680px) {
+  .tx-dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; }
+  .tx { height: 100dvh; max-height: 100dvh; }
+  .tx-head { flex-wrap: wrap; }
+  .tx-kind { order: 3; width: 100%; }
+  .tx-body { grid-template-columns: minmax(0, 1fr); }
+  .tx-side { border-right: 0; border-bottom: 1px solid var(--card-line, #e6edf5); }
+  .tx-main { order: -1; }
+}
+@media (prefers-reduced-motion: reduce) { .tx-dialog[open] { animation: none; } }
+.tx .tx-back { justify-self: start; margin-top: 2px; font-size: 13px; }
+.tx-dialog .choice-layer { position: fixed; inset: 0; }
+
+/* Cilësimet → Transaksione: category tiles with an icon each. Blue stays the only accent;
+   red/green appear only where they mean money out / money in (icon tint, share bar). */
+.tx-cats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+.tx-cats-head h2 { margin: 0; color: var(--ink-strong); font-size: 19px; letter-spacing: -0.01em; }
+.tx-cats-head p { margin: 4px 0 0; color: #66727f; font-size: 13.5px; }
+.tx-cats-kind { flex: none; width: 250px; }
+.tx-cats-kind button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; }
+.tx-cats-kind button span { min-width: 20px; padding: 1px 6px; border-radius: 9999px; background: #e9eef4; color: #5a6673; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.tx-cats-kind button[aria-pressed="true"] span { background: var(--blue-soft); color: var(--blue); }
+.tx-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.tx-tile {
+  display: grid; grid-template-columns: auto 1fr; grid-template-areas: "icon icon" "name name" "total total" "count count" "share share";
+  align-content: start; width: 100%; min-height: 156px; padding: 16px; border: 1px solid var(--card-line); border-radius: 16px;
+  background: #fff; color: inherit; text-align: left; font-weight: 400; box-shadow: 0 1px 2px rgba(15, 40, 80, 0.04);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 120ms var(--ease-out);
+}
+.tx-tile:hover { border-color: #c9d6e4; box-shadow: 0 6px 18px -8px rgba(15, 40, 80, 0.18); }
+.tx-tile:active { transform: scale(0.98); }
+.tx-tile:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.tx-tile-icon { grid-area: icon; display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 14px; border-radius: 12px; background: #fdecec; color: var(--money-out); }
+.tx-tiles.hyrje .tx-tile-icon, .tx-tile-icon.hyrje { background: #e7f6ee; color: var(--money-in); }
+.tx-tile-name { grid-area: name; overflow: hidden; color: var(--ink-strong); font-size: 15px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.tx-tile-total { grid-area: total; margin-top: 6px; color: var(--ink-strong); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.tx-tile-count { grid-area: count; margin-top: 2px; color: #74808c; font-size: 12.5px; }
+.tx-tile-count.idle { margin-top: 6px; color: #a3adb7; }
+.tx-tile-share { grid-area: share; height: 4px; margin-top: 12px; border-radius: 9999px; background: #eef2f6; overflow: hidden; }
+.tx-tile-share i { display: block; height: 100%; border-radius: inherit; background: var(--money-out); }
+.tx-tiles.hyrje .tx-tile-share i { background: var(--money-in); }
+.tx-tile.add { border: 1.5px dashed #cdd8e4; background: transparent; box-shadow: none; }
+.tx-tile.add .tx-tile-icon { background: var(--blue-soft); color: var(--blue); }
+.tx-tile.add:hover { border-color: var(--blue); background: #f7fbff; }
+.tx-tile.add .tx-tile-name { color: var(--blue); }
+.tx-cats-note { margin: 14px 0 0; }
+.tx-cat-dialog { width: min(440px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 20px; background: #fff; box-shadow: 0 40px 100px -30px rgba(10, 30, 60, 0.5); }
+.tx-cat-dialog[open] { animation: dialog-in 200ms var(--ease-out); }
+.tx-cat-dialog::backdrop { background: rgba(15, 23, 32, 0.42); }
+.tx-cat-dialog form { display: grid; gap: 16px; padding: 20px; }
+.tx-cat-dialog header { display: flex; align-items: center; gap: 12px; }
+.tx-cat-dialog header .tx-tile-icon { margin: 0; }
+.tx-cat-dialog header div { flex: 1; min-width: 0; }
+.tx-cat-dialog h2 { margin: 0; font-size: 17px; }
+.tx-cat-dialog header p { margin: 2px 0 0; color: #66727f; font-size: 13px; }
+.tx-cat-dialog header .icon-button { border: 0; background: transparent; }
+.tx-cat-warn { margin: -8px 0 0; color: #8a5a00; font-size: 13px; }
+.tx-icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.tx-icon-grid button { display: grid; place-items: center; min-height: 46px; padding: 0; border: 1px solid var(--card-line); border-radius: 12px; background: #fff; color: #5a6673; }
+.tx-icon-grid button:hover { border-color: #c9d6e4; color: var(--ink-strong); }
+.tx-icon-grid button[aria-checked="true"] { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.tx-cat-dialog footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.tx-cat-remove { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--money-out); }
+@media (max-width: 680px) {
+  .tx-cats-head { flex-direction: column; gap: 12px; }
+  .tx-cats-kind { width: 100%; }
+  .tx-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tx-tile { min-height: 140px; padding: 14px; }
+  .tx-tile-total { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .tx-tile { transition: none; } .tx-tile:active { transform: none; } .tx-cat-dialog[open] { animation: none; } }
+.tx-cat-dialog footer button { min-height: 44px; padding: 0 20px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+.tx-cat-dialog footer .tx-cat-remove { padding: 0 8px; }
+.tx-icon-grid button { transition: none; }
+.tx-tiles > li { display: grid; }
+.tx-tile { height: 100%; }
+.tx-cat-dialog form > footer { margin: 0; padding: 4px 0 0; border: 0; min-height: 0; background: none; }

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useId } from "react";
 
 // BlueBar's mark: the "b." drawn once, white on whatever tile holds it.
 export const BrandMark = () => (
@@ -66,6 +66,17 @@ const paths = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   arrow: <path d="m9 5 7 7-7 7" />,
+  diagonal: <path d="M7 17 17 7M9 7h8v8" />,
+  truck: <path d="M3 7h11v9H3zM14 10h4l3 3v3h-7M7.5 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM17.5 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />,
+  home: <path d="M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5" />,
+  bolt: <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7z" />,
+  wrench: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />,
+  megaphone: <path d="M4 10v4h3l7 4V6l-7 4H4zM17.5 9a3 3 0 0 1 0 6M7 14l1 5h2" />,
+  tag: <path d="M3 12V4h8l10 10-8 8L3 12zM7.5 8.5h.01" />,
+  star: <path d="m12 4 2.5 5 5.5.8-4 3.9.9 5.5L12 16.6l-4.9 2.6.9-5.5-4-3.9 5.5-.8z" />,
+  music: <path d="M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z" />,
+  gift: <path d="M4 10h16v10H4zM3 7h18v3H3zM12 7v13M12 7c-1.5-3-5-3-5-1s3 1 5 1zm0 0c1.5-3 5-3 5-1s-3 1-5 1z" />,
+  trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />,
   chevronDown: <path d="m5 9 7 7 7-7" />,
   back: <path d="m14 5-7 7 7 7" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -167,6 +178,7 @@ const paths = {
       <path d="M18.5 2.5v4M16.5 4.5h4" />
     </>
   ),
+  paperclip: <path d="M20 11.5 12.5 19a5 5 0 0 1-7.1-7.1l7.8-7.8a3.3 3.3 0 0 1 4.7 4.7l-7.6 7.6a1.7 1.7 0 0 1-2.4-2.4L14.8 7" />,
   clipboard: (
     <>
       <rect x="5" y="4.5" width="14" height="17" rx="2.5" />
@@ -501,5 +513,30 @@ export function TableShapePicker({ value = "Drejtkëndësh", onChange }) {
         ))}
       </div>
     </fieldset>
+  );
+}
+
+// A small "i" next to a label: a click shows a short explanation. The browser's own popover
+// closes it on an outside click or Escape and keeps it above scrolling tables.
+export function InfoTip({ label, children }) {
+  const id = useId();
+  const place = (e) => {
+    const tip = e.currentTarget;
+    if (e.newState !== "open") return void delete tip.dataset.placed;
+    const r = document.querySelector(`[popovertarget="${CSS.escape(id)}"]`).getBoundingClientRect();
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - tip.offsetWidth / 2, innerWidth - tip.offsetWidth - 8));
+    const below = r.bottom + 6 + tip.offsetHeight < innerHeight;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${below ? r.bottom + 6 : r.top - tip.offsetHeight - 6}px`;
+    tip.dataset.placed = "1"; // hidden until placed, so it never flashes in the middle of the screen
+  };
+  return (
+    <>
+      <button type="button" className="info-tip" popoverTarget={id} aria-label={`Më shumë për: ${label}`}>i</button>
+      <span id={id} popover="auto" role="tooltip" className="info-tip-body" onToggle={place}>
+        <strong>{label}</strong>
+        {children}
+      </span>
+    </>
   );
 }

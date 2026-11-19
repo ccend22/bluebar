@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchState, sendCommand, venueSlug } from "./api.js";
-import { addItem, findLine, tableShift } from "./domain.js";
+import { addItem, findLine, withOpenShift } from "./domain.js";
 
 const empty = {
   products: [], categories: [], departments: [], waiters: [], tables: [], invoices: [], tickets: [], printers: [],
@@ -19,13 +19,15 @@ function readStorage(storageKey, fallback) {
 }
 
 function changeOrder(state, type, payload) {
+  // Like the server: the table's till opens its shift with the order.
+  const at = state.tables.find((item) => item.id === payload.tableId && item.active);
+  if (at) state = withOpenShift(state, at);
   if (type === "order.add") {
     const { tableId, productId, waiterId, ...details } = payload;
     return addItem(state, tableId, productId, waiterId, details);
   }
   const table = state.tables.find((item) => item.id === payload.tableId);
   if (!table?.active) throw Error("Tavolina nuk ekziston ose është joaktive.");
-  if (!tableShift(state, table)) throw Error("Turni është i mbyllur.");
   const target = findLine(table, payload);
   if (!target) throw Error("Produkti nuk është në porosi.");
   const lines = table.lines

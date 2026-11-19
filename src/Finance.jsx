@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { bill, money } from "./domain.js";
-import { deleteAccount, deleteExpense, fetchAccounts, fetchExpenses, fetchFinance, moveMoney, readExpenses, saveAccount, saveExpense } from "./api.js";
+import React, { useEffect, useRef, useState } from "react";
+import { bill, money, txCategories, txIcon } from "./domain.js";
+import { deleteAccount, deleteExpense, deleteExpenseFile, fetchAccounts, fetchExpenseFile, fetchExpenses, fetchFinance, moveMoney, readExpenses, saveAccount, saveExpense, saveExpenseFile, saveTransactionCategories, fetchCategoryUsage } from "./api.js";
+import { shrink } from "./OnlineMenu.jsx";
 import { saveDocumentRows, validDocumentDate } from "./documentImport.js";
 import { AiDocumentImport } from "./AiDocument.jsx";
-import { Icon } from "./components.jsx";
+import { Icon, SectionHeading } from "./components.jsx";
+import { ChoiceField } from "./ChoiceField.jsx";
 
 // Raportet: the period's money at a glance (Përmbledhje), where it sits (Llogaritë financiare),
 // what was sold (Shitjet: the sales reports, passed in) and the spending (Shpenzimet). Totals
@@ -34,10 +36,11 @@ const lek = (n) => money(Math.abs(n));
 const signed = (n, plus = "") => (n < 0 ? `−${lek(n)}` : `${plus}${lek(n)}`);
 const percent = (x) => `${(x * 100).toFixed(1)}%`;
 const DOTS = ["#2f80ed", "#7cc142", "#e5484d", "#f5a524", "#6e56cf", "#e93d82", "#12a594", "#f76b15", "#0090ff", "#a18072"];
-const CATEGORIES = ["Furnitorë", "Staff", "Qira", "Utilities", "Taksa", "Mirëmbajtje", "Transport", "Marketing", "Të tjera"];
 
-export function Finance({ state, notify, sales }) {
-  const [tab, setTab] = useState("overview");
+// mode "transactions" is its own page (Transaksione): every expense, money in and sale of a period.
+export function Finance({ state, notify, sales, mode = "reports" }) {
+  const moves = mode === "transactions";
+  const [tab, setTab] = useState(moves ? "expenses" : "overview");
   const [preset, setPreset] = useState("month");
   const [range, setRange] = useState(PRESETS[0][2]);
   const [data, setData] = useState(null);
@@ -72,14 +75,16 @@ export function Finance({ state, notify, sales }) {
       <header className="fin-head">
         <div>
           {/* The page's h1 is main.jsx's, kept for screen readers; this is the visible title. */}
-          <div className="fin-title" aria-hidden="true">Raportet</div>
-          <p>Pasqyra financiare: të ardhura, shpenzime dhe fluksi i parasë.</p>
+          <div className="fin-title" aria-hidden="true">{moves ? "Transaksione" : "Raportet"}</div>
+          <p>{moves ? "Shpenzimet, hyrjet dhe shitjet e periudhës, në një listë." : "Pasqyra financiare: të ardhura, shpenzime dhe fluksi i parasë."}</p>
         </div>
+        {!moves && (
         <div className="fin-tabs" role="tablist" aria-label="Raportet">
-          {[["overview", "chart", "Përmbledhje"], ["accounts", "card", "Llogaritë financiare"], ["sales", "receipt", "Shitjet"], ["expenses", "cash", "Shpenzimet"]].map(([key, icon, label]) => (
+          {[["overview", "chart", "Përmbledhje"], ["accounts", "card", "Llogaritë financiare"], ["sales", "receipt", "Shitjet"]].map(([key, icon, label]) => (
             <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}><Icon name={icon} size={17} /> {label}</button>
           ))}
         </div>
+        )}
       </header>
       {(tab === "overview" || tab === "expenses") && (
       <div className="fin-bar">
@@ -108,7 +113,7 @@ export function Finance({ state, notify, sales }) {
       {tab === "overview" && <Overview data={data} open={open} name={name} />}
       {tab === "accounts" && <Accounts notify={notify} />}
       {tab === "sales" && sales}
-      {tab === "expenses" && <Expenses expenses={expenses} name={name} notify={notify} onChange={reload} defaultDay={to} />}
+      {tab === "expenses" && <Expenses lists={{ shpenzim: txCategories(state, "shpenzim"), hyrje: txCategories(state, "hyrje") }} expenses={expenses} sales={state.invoices.filter((i) => { const d = day(new Date(i.date)); return d >= from && d <= to; })} name={name} notify={notify} onChange={reload} defaultDay={to} />}
     </div>
   );
 }
@@ -199,23 +204,66 @@ function Overview({ data, open, name }) {
   );
 }
 
-const blank = (date) => ({ date, amount: "", category: "", method: "Cash", status: "aprovuar", note: "" });
+const blank = (date) => ({ date, kind: "shpenzim", amount: "", category: "", method: "Cash", status: "aprovuar", note: "", file: null, attach: null, dropFile: false });
+const MAX_FILE = 2.5 * 1024 * 1024;
+// A file the manager picked, ready to upload: a photo is made smaller first; a PDF goes as it is.
+async function readAttachment(file) {
+  if (file.type.startsWith("image/")) return { name: file.name, dataUrl: await shrink(file, { size: 1800 }) };
+  if (file.type !== "application/pdf") throw new Error("Bashkëngjitni një foto ose një PDF.");
+  if (file.size > MAX_FILE) throw new Error("PDF-ja është më e madhe se 2.5 MB.");
+  const dataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error("Skedari nuk u hap."));
+    r.readAsDataURL(file);
+  });
+  return { name: file.name, dataUrl };
+}
+const openAttachment = async (id, notify) => {
+  // Opened before the download finishes, so the browser doesn't treat it as a pop-up.
+  const tab = window.open("", "_blank");
+  try {
+    const url = URL.createObjectURL(await fetchExpenseFile(id));
+    if (tab) tab.location.href = url;
+    else window.location.assign(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    tab?.close();
+    notify(err.message, "error");
+  }
+};
 
-function Expenses({ expenses, name, notify, onChange, defaultDay }) {
+function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay }) {
   const [draft, setDraft] = useState(() => blank(defaultDay));
+  // The form is a dialog: "+ Veprim" opens it empty, "Ndrysho" opens it with the row.
+  const dialog = useRef(null);
+  const [newCategory, setNewCategory] = useState(false);
+  const openForm = (d) => (setDraft(d), setNewCategory(false), dialog.current?.showModal());
+  const closeForm = () => dialog.current?.close();
+  const [show, setShow] = useState("out"); // expenses first: what a manager opens this page for
   const [busy, setBusy] = useState(false);
   const set = (field) => (e) => setDraft((d) => ({ ...d, [field]: e.target.value }));
   const body = (d) => ({
-    spentAt: new Date(`${d.date}T12:00`).toISOString(), amount: Number(d.amount), category: d.category.trim(),
+    spentAt: new Date(`${d.date}T12:00`).toISOString(), kind: d.kind || "shpenzim", amount: Number(d.amount), category: d.category.trim(),
     method: d.method, status: d.status, note: d.note.trim(),
   });
   const save = async (e) => {
     e.preventDefault();
+    if (!draft.category.trim()) return notify("Zgjidhni kategorinë.", "error");
     setBusy(true);
     try {
-      await saveExpense({ ...(draft.id && { id: draft.id }), ...body(draft) });
-      notify(draft.id ? "Shpenzimi u ndryshua." : "Shpenzimi u shtua.");
+      const { expense } = await saveExpense({ ...(draft.id && { id: draft.id }), ...body(draft) });
+      // A category typed in here joins its list, so it's there next time (and in Cilësimet).
+      const list = lists[draft.kind], typed = draft.category.trim();
+      if (!list.some((c) => c.toLocaleLowerCase("sq") === typed.toLocaleLowerCase("sq")))
+        await saveTransactionCategories(draft.kind, [...list, typed]).catch(() => {});
+      const id = expense?.id || draft.id;
+      // The receipt or invoice, if one was added, changed or taken off.
+      if (draft.attach) await saveExpenseFile(id, draft.attach.name, draft.attach.dataUrl);
+      else if (draft.dropFile && draft.file) await deleteExpenseFile(id);
+      notify(draft.id ? "Veprimi u ndryshua." : "Veprimi u shtua.");
       setDraft(blank(draft.date));
+      closeForm();
       onChange();
     } catch (err) {
       notify(err.message, "error");
@@ -231,34 +279,64 @@ function Expenses({ expenses, name, notify, onChange, defaultDay }) {
       notify(err.message, "error");
     }
   };
-  const total = expenses.reduce((s, x) => s + x.amount, 0);
-  const categories = [...new Set([...expenses.map((x) => x.category), ...CATEGORIES])];
+  // One list, newest first: expenses (−), money in (+) and the period's sales (+, read only).
+  const rows = [
+    ...expenses.map((x) => ({ ...x, at: x.spentAt, type: x.kind === "hyrje" ? "in" : "out" })),
+    ...sales.map((i) => ({ sale: i, id: `s${i.id}`, at: i.date, amount: i.total, type: "sale" })),
+  ]
+    .filter((r) => show === "all" || r.type === show)
+    .sort((a, b) => b.at.localeCompare(a.at));
+  const total = rows.reduce((s, r) => s + (r.type === "out" ? -r.amount : r.amount), 0);
+  // The dialog offers its kind's list; an older row keeps its own category even if it was removed.
+  const categories = [...new Set([...lists[draft.kind], ...(draft.category && !newCategory ? [draft.category] : [])])];
   return (
     <div className="fin-expenses">
       <section className="fin-list">
         <div className="fin-section">
           <span className="fin-section-icon spent"><Icon name="receipt" size={18} /></span>
-          <h2>Shpenzimet</h2>
+          <h2>Transaksione</h2>
           <span className="fin-chip">{name}</span>
-          <span className="fin-total">{lek(total)}</span>
-          <ExpensesAiImport categories={categories} defaultDay={defaultDay} notify={notify} onSaved={onChange} />
+          <span className={`fin-total ${total < 0 ? "minus" : "plus"}`}>{signed(total, "+")}</span>
+          <ExpensesAiImport categories={lists.shpenzim} defaultDay={defaultDay} notify={notify} onSaved={onChange} />
+          <button type="button" className="primary" onClick={() => openForm(blank(defaultDay))}><Icon name="plus" size={17} /> Veprim</button>
         </div>
-        {expenses.length ? (
+        <div className="fin-seg fin-filter" role="group" aria-label="Shfaq">
+          {[["all", "Të gjitha"], ["out", "Shpenzime"], ["in", "Hyrje"], ["sale", "Shitje"]].map(([v, l]) => (
+            <button key={v} type="button" aria-pressed={show === v} onClick={() => setShow(v)}>{l}</button>
+          ))}
+        </div>
+        {rows.length ? (
           <ul>
-            {expenses.map((x) => (
+            {rows.map((x) => x.sale ? (
+              <li key={x.id} className="sale">
+                <time>{shown(day(new Date(x.at)))}</time>
+                <div>
+                  <strong>Shitje · Fatura D-{x.sale.id}</strong>
+                  <small>{[x.sale.method === "Përzier" ? "Cash + Kartë" : x.sale.method === "Kartë" ? "Bankë" : "Cash", x.sale.table && `Tavolina ${x.sale.table}`].filter(Boolean).join(" · ")}</small>
+                </div>
+                <span className="badge blue">Shitje</span>
+                <b className="plus">+{lek(x.amount)}</b>
+                <div className="fin-actions" />
+              </li>
+            ) : (
               <li key={x.id} className={x.status === "pritje" ? "waiting" : ""}>
                 <time>{shown(day(new Date(x.spentAt)))}</time>
                 <div>
                   <strong>{x.category}</strong>
                   <small>{[x.method === "Cash" ? "Cash" : "Bankë", x.note, x.by].filter(Boolean).join(" · ")}</small>
+                  {x.file && (
+                    <button type="button" className="fin-file" onClick={() => openAttachment(x.id, notify)} title={x.file.name}>
+                      <Icon name="paperclip" size={14} /> {x.file.type === "application/pdf" ? "PDF" : "Foto"}
+                    </button>
+                  )}
                 </div>
-                {x.status === "pritje" ? <span className="badge amber">Në pritje</span> : <span className="badge green">Aprovuar</span>}
-                <b>−{lek(x.amount)}</b>
+                {x.status === "pritje" ? <span className="badge amber">Në pritje</span> : <span className="badge green">{x.type === "in" ? "Hyrje" : "Aprovuar"}</span>}
+                <b className={x.type === "in" ? "plus" : undefined}>{x.type === "in" ? "+" : "−"}{lek(x.amount)}</b>
                 <div className="fin-actions">
                   {x.status === "pritje" && (
                     <button type="button" onClick={() => act(() => saveExpense({ id: x.id, ...body({ ...x, date: day(new Date(x.spentAt)) }), status: "aprovuar" }), "Shpenzimi u aprovua.")}>Aprovo</button>
                   )}
-                  <button type="button" onClick={() => setDraft({ id: x.id, date: day(new Date(x.spentAt)), amount: String(x.amount), category: x.category, method: x.method, status: x.status, note: x.note })}>Ndrysho</button>
+                  <button type="button" onClick={() => openForm({ ...blank(day(new Date(x.spentAt))), id: x.id, kind: x.kind || "shpenzim", amount: String(x.amount), category: x.category, method: x.method, status: x.status, note: x.note, file: x.file })}>Ndrysho</button>
                   <button type="button" className="icon-button" aria-label={`Fshi shpenzimin ${x.category}`} onClick={() => confirm(`Të fshihet shpenzimi "${x.category}" (${lek(x.amount)})?`) && act(() => deleteExpense(x.id), "Shpenzimi u fshi.")}>
                     <Icon name="close" size={16} />
                   </button>
@@ -267,38 +345,250 @@ function Expenses({ expenses, name, notify, onChange, defaultDay }) {
             ))}
           </ul>
         ) : (
-          <p className="fin-empty">Asnjë shpenzim në këtë periudhë. Shtojeni të parin këtu pranë.</p>
+          <p className="fin-empty">Asnjë veprim në këtë periudhë. Shtoni të parin me "+ Veprim".</p>
         )}
       </section>
-      <form className="fin-form" onSubmit={save}>
-        <h2>{draft.id ? "Ndrysho shpenzimin" : "Shpenzim i ri"}</h2>
-        <div className="fin-form-pair">
-          <label className="field"><span>Data</span><input type="date" value={draft.date} onChange={set("date")} required /></label>
-          <label className="field"><span>Shuma (Lek)</span><input type="number" inputMode="numeric" min={1} max={100000000} value={draft.amount} onChange={set("amount")} placeholder="p.sh. 12000" required /></label>
-        </div>
-        <label className="field">
-          <span>Kategoria</span>
-          <input list="fin-categories" value={draft.category} onChange={set("category")} maxLength={40} placeholder="p.sh. Furnitorë" required />
-          <datalist id="fin-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
-        </label>
-        <div className="field">
-          <span>Mënyra</span>
-          <div className="fin-seg" role="group" aria-label="Mënyra e pagesës">
-            {[["Cash", "Cash"], ["Bankë", "Bankë / Kartë"]].map(([v, l]) => <button key={v} type="button" aria-pressed={draft.method === v} onClick={() => setDraft((d) => ({ ...d, method: v }))}>{l}</button>)}
+      <dialog ref={dialog} className="tx-dialog" aria-labelledby="tx-title" onClose={() => setDraft(blank(defaultDay))}>
+        <form className="tx" onSubmit={save}>
+          <header className="tx-head">
+            <span className={`tx-mark ${draft.kind === "hyrje" ? "in" : "out"}`} aria-hidden="true"><Icon name="diagonal" size={18} /></span>
+            <div>
+              <h2 id="tx-title">{draft.id ? "Ndrysho transaksionin" : "Transaksion i ri"}</h2>
+              <p>{draft.kind === "hyrje" ? "Regjistro një hyrje parash" : "Regjistro një shpenzim"}</p>
+            </div>
+            <div className="fin-seg tx-kind" role="group" aria-label="Lloji">
+              {[["hyrje", "Hyrje"], ["shpenzim", "Shpenzim"]].map(([v, l]) => <button key={v} type="button" aria-pressed={draft.kind === v} onClick={() => (setNewCategory(false), setDraft((d) => ({ ...d, kind: v, category: lists[v].includes(d.category) ? d.category : "" })))}>{l}</button>)}
+            </div>
+            <button type="button" className="icon-button" aria-label="Mbyll" onClick={closeForm}><Icon name="close" size={18} /></button>
+          </header>
+          <div className="tx-body">
+            <aside className="tx-side">
+              <label className="field"><span>Data</span><input type="date" value={draft.date} onChange={set("date")} required /></label>
+              <ChoiceField
+                label="Gjendja"
+                value={draft.status}
+                options={[{ value: "aprovuar", label: "Aprovuar" }, { value: "pritje", label: "Në pritje" }]}
+                onChange={(v) => setDraft((d) => ({ ...d, status: v }))}
+              />
+              {newCategory ? (
+                <label className="field">
+                  <span>Kategoria e re</span>
+                  <input value={draft.category} onChange={set("category")} maxLength={40} placeholder={draft.kind === "hyrje" ? "p.sh. Evente" : "p.sh. Furnitorë"} autoFocus required />
+                  <button type="button" className="text-button tx-back" onClick={() => (setNewCategory(false), setDraft((d) => ({ ...d, category: "" })))}>Zgjidh nga lista</button>
+                </label>
+              ) : (
+                <ChoiceField
+                  label="Kategoria"
+                  value={draft.category}
+                  options={[...categories.map((c) => ({ value: c, label: c })), { value: "\u0000new", label: "+ Kategori e re…" }]}
+                  onChange={(v) => (v === "\u0000new" ? (setNewCategory(true), setDraft((d) => ({ ...d, category: "" }))) : setDraft((d) => ({ ...d, category: v })))}
+                />
+              )}
+              <ChoiceField
+                label="Mënyra"
+                value={draft.method}
+                options={[{ value: "Cash", label: "Cash" }, { value: "Bankë", label: "Bankë / Kartë" }]}
+                onChange={(v) => setDraft((d) => ({ ...d, method: v }))}
+              />
+            </aside>
+            <div className="tx-main">
+              <label className="field tx-amount">
+                <span>Shuma (Lek)</span>
+                <input type="number" inputMode="numeric" min={1} max={100000000} value={draft.amount} onChange={set("amount")} placeholder="0" required />
+              </label>
+              <label className="field">
+                <span>Shënim</span>
+                <textarea rows={3} value={draft.note} onChange={set("note")} maxLength={200} placeholder={draft.kind === "hyrje" ? "p.sh. pagesë për eventin e së shtunës" : "p.sh. fatura e dritave, tetor"} />
+              </label>
+              <div className="field">
+                <span>Fatura / dokument</span>
+                {draft.attach || (draft.file && !draft.dropFile) ? (
+                  <div className="fin-attach">
+                    <Icon name="paperclip" size={16} />
+                    <span>{draft.attach?.name || draft.file.name}</span>
+                    <button type="button" className="text-button" onClick={() => setDraft((d) => ({ ...d, attach: null, dropFile: true }))}>Hiqe</button>
+                  </div>
+                ) : (
+                  <label className="fin-attach-pick">
+                    <Icon name="upload" size={18} />
+                    <span>Ngarko foto ose PDF (deri 2.5 MB)</span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="sr-only"
+                      onChange={async (e) => {
+                        const file = e.target.files[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        try {
+                          const attach = await readAttachment(file);
+                          setDraft((d) => ({ ...d, attach, dropFile: false }));
+                        } catch (err) {
+                          notify(err.message, "error");
+                        }
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="field">
-          <span>Gjendja</span>
-          <div className="fin-seg" role="group" aria-label="Gjendja">
-            {[["aprovuar", "Aprovuar"], ["pritje", "Në pritje"]].map(([v, l]) => <button key={v} type="button" aria-pressed={draft.status === v} onClick={() => setDraft((d) => ({ ...d, status: v }))}>{l}</button>)}
+          <footer className="tx-foot">
+            <button type="button" className="text-button" onClick={closeForm}>Anulo</button>
+            <button className="primary" disabled={busy}><Icon name="check" size={17} /> {busy ? "Po ruhet…" : draft.id ? "Ruaj ndryshimet" : "Ruaj transaksionin"}</button>
+          </footer>
+        </form>
+      </dialog>
+    </div>
+  );
+}
+
+// Cilësimet → Transaksione: the categories offered in the Transaksion dialog, as tiles with
+// an icon each. A tile opens a small editor (name, icon, remove); the dashed tile adds one.
+// Renaming moves past transactions too; removing leaves them be.
+const ICON_CHOICES = {
+  truck: "Kamion", people: "Njerëz", home: "Shtëpi", bolt: "Rrymë", receipt: "Faturë", wrench: "Riparim",
+  location: "Vendndodhje", megaphone: "Reklamë", stock: "Kuti", coffee: "Kafe", card: "Kartë", cash: "Para",
+  calendar: "Kalendar", music: "Muzikë", star: "Yll", gift: "Dhuratë", print: "Printer", tag: "Etiketë",
+};
+export function TransactionCategories({ state, notify, onSaved }) {
+  const [kind, setKind] = useState("shpenzim");
+  const [usage, setUsage] = useState([]);
+  const [version, setVersion] = useState(0);
+  const [editor, setEditor] = useState(null); // { from: name | null, name, icon }
+  const [busy, setBusy] = useState(false);
+  const dialog = useRef(null);
+  useEffect(() => {
+    fetchCategoryUsage().then((r) => setUsage(r.usage)).catch(() => {});
+  }, [version]);
+  const lists = { shpenzim: txCategories(state, "shpenzim"), hyrje: txCategories(state, "hyrje") };
+  const list = lists[kind];
+  const iconOf = (name) => txIcon(state, kind, name);
+  const used = (c) => usage.find((u) => u.kind === kind && u.category === c);
+  const top = Math.max(1, ...list.map((c) => used(c)?.total || 0));
+  const sign = kind === "hyrje" ? "+" : "−";
+  const open = (from) => {
+    setEditor({ from, name: from || "", icon: from ? iconOf(from) : "tag" });
+    requestAnimationFrame(() => dialog.current?.showModal());
+  };
+  const close = () => dialog.current?.close();
+  const icons = (names, renamed) => Object.fromEntries(names.map((n) => [n, n === renamed?.to ? renamed.icon : iconOf(n === renamed?.to ? renamed.from : n)]));
+  const save = async (next, message, rename, iconsMap) => {
+    setBusy(true);
+    try {
+      await saveTransactionCategories(kind, next, rename, iconsMap);
+      await onSaved?.();
+      setVersion((v) => v + 1);
+      notify(message);
+      return true;
+    } catch (err) {
+      notify(err.message, "error");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const exists = (name, except) => list.some((c) => c !== except && c.toLocaleLowerCase("sq") === name.toLocaleLowerCase("sq"));
+  const submit = async (e) => {
+    e.preventDefault();
+    const name = editor.name.trim();
+    if (!name) return;
+    if (exists(name, editor.from)) return notify(`"${name}" është tashmë në listë.`, "error");
+    const next = editor.from ? list.map((x) => (x === editor.from ? name : x)) : [...list, name];
+    const rename = editor.from && editor.from !== name ? { from: editor.from, to: name } : undefined;
+    const message = !editor.from ? `"${name}" u shtua.` : rename ? `"${editor.from}" u bë "${name}"${used(editor.from) ? ", edhe te veprimet e vjetra" : ""}.` : `"${name}" u ruajt.`;
+    if (await save(next, message, rename, icons(next, { from: editor.from || name, to: name, icon: editor.icon }))) close();
+  };
+  const remove = async () => {
+    const next = list.filter((x) => x !== editor.from);
+    if (await save(next, `"${editor.from}" u hoq. Veprimet e vjetra e mbajnë emrin.`, undefined, icons(next))) close();
+  };
+  const u = editor?.from && used(editor.from);
+  return (
+    <div className="settings-column settings-wide">
+      <section className="panel tx-cats">
+        <header className="tx-cats-head">
+          <div>
+            <h2>Kategoritë e transaksioneve</h2>
+            <p>Ato që zgjidhni te "+ Veprim". Klikoni një kategori për ta ndryshuar.</p>
           </div>
-        </div>
-        <label className="field"><span>Shënim (opsional)</span><input value={draft.note} onChange={set("note")} maxLength={200} placeholder="p.sh. fatura e dritave, tetor" /></label>
-        <div className="fin-form-actions">
-          {draft.id && <button type="button" onClick={() => setDraft(blank(draft.date))}>Anulo</button>}
-          <button className="primary" disabled={busy}><Icon name={draft.id ? "check" : "plus"} size={17} /> {busy ? "Po ruhet…" : draft.id ? "Ruaj ndryshimet" : "Shto shpenzimin"}</button>
-        </div>
-      </form>
+          <div className="fin-seg tx-cats-kind" role="tablist" aria-label="Lloji">
+            {[["shpenzim", "Shpenzime"], ["hyrje", "Hyrje"]].map(([v, l]) => (
+              <button key={v} type="button" role="tab" aria-selected={kind === v} aria-pressed={kind === v} onClick={() => setKind(v)}>
+                {l} <span>{lists[v].length}</span>
+              </button>
+            ))}
+          </div>
+        </header>
+        <ul className={`tx-tiles ${kind}`}>
+          {list.map((c) => {
+            const x = used(c);
+            return (
+              <li key={c}>
+                <button type="button" className="tx-tile" onClick={() => open(c)} aria-label={`${c}: ndrysho`}>
+                  <span className="tx-tile-icon" aria-hidden="true"><Icon name={iconOf(c)} size={22} /></span>
+                  <span className="tx-tile-name">{c}</span>
+                  {x ? (
+                    <>
+                      <b className="tx-tile-total">{sign}{lek(x.total)}</b>
+                      <span className="tx-tile-count">{x.count} {x.count === 1 ? "veprim" : "veprime"}</span>
+                      <span className="tx-tile-share" aria-hidden="true"><i style={{ width: `${Math.max(4, (x.total / top) * 100)}%` }} /></span>
+                    </>
+                  ) : (
+                    <span className="tx-tile-count idle">Ende pa veprime</span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+          <li>
+            <button type="button" className="tx-tile add" onClick={() => open(null)}>
+              <span className="tx-tile-icon" aria-hidden="true"><Icon name="plus" size={22} /></span>
+              <span className="tx-tile-name">Shto kategori</span>
+              <span className="tx-tile-count idle">{kind === "hyrje" ? "p.sh. Evente" : "p.sh. Pastrimi"}</span>
+            </button>
+          </li>
+        </ul>
+        <p className="helper tx-cats-note">Riemërtimi ndryshon edhe veprimet e vjetra. Heqja i lë ashtu siç janë.</p>
+      </section>
+      <dialog ref={dialog} className="tx-cat-dialog" aria-labelledby="tx-cat-title" onClose={() => setEditor(null)}>
+        {editor && (
+          <form onSubmit={submit}>
+            <header>
+              <span className={`tx-tile-icon ${kind}`} aria-hidden="true"><Icon name={editor.icon} size={22} /></span>
+              <div>
+                <h2 id="tx-cat-title">{editor.from ? "Ndrysho kategorinë" : "Kategori e re"}</h2>
+                <p>{kind === "hyrje" ? "Hyrje" : "Shpenzim"}{u ? ` · ${u.count} ${u.count === 1 ? "veprim" : "veprime"}, ${sign}${lek(u.total)}` : ""}</p>
+              </div>
+              <button type="button" className="icon-button" aria-label="Mbyll" onClick={close}><Icon name="close" size={18} /></button>
+            </header>
+            <label className="field">
+              <span>Emri</span>
+              <input value={editor.name} maxLength={40} autoFocus placeholder={kind === "hyrje" ? "p.sh. Evente" : "p.sh. Pastrimi"} onChange={(e) => setEditor((d) => ({ ...d, name: e.target.value }))} required />
+            </label>
+            {u && editor.name.trim() && editor.name.trim() !== editor.from && <p className="tx-cat-warn">{u.count} {u.count === 1 ? "veprim merr" : "veprime marrin"} emrin e ri.</p>}
+            <div className="field">
+              <span>Ikona</span>
+              <div className="tx-icon-grid" role="radiogroup" aria-label="Ikona">
+                {Object.entries(ICON_CHOICES).map(([n, label]) => (
+                  <button key={n} type="button" role="radio" aria-checked={editor.icon === n} aria-label={label} title={label} onClick={() => setEditor((d) => ({ ...d, icon: n }))}>
+                    <Icon name={n} size={20} />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <footer>
+              {editor.from && (
+                <button type="button" className="text-button tx-cat-remove" disabled={busy || list.length === 1} title={list.length === 1 ? "Duhet të paktën një kategori" : undefined} onClick={remove}>
+                  <Icon name="trash" size={16} /> Hiqe
+                </button>
+              )}
+              <button type="button" onClick={close}>Anulo</button>
+              <button className="primary" disabled={busy || !editor.name.trim()}>{editor.from ? "Ruaj" : "Shto"}</button>
+            </footer>
+          </form>
+        )}
+      </dialog>
     </div>
   );
 }

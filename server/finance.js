@@ -1,5 +1,6 @@
 // Financat: a period's money in one place, computed in the database.
 //  - income: what was sold (invoices) less what was refunded, by how it was paid;
+//  - other income entered by hand (Transaksione → Hyrje), approved, counts as income;
 //  - spending: the expenses the manager entered (approved, or pending) and the cash taken out
 //    of a till during a shift ("Turnet" → dalje), which is spending paid in cash;
 //  - by category: sales by the products' menu category, spending by its own category.
@@ -18,8 +19,8 @@ export async function finance(db, { from, to }) {
   );
   const refunded = (method) => Number(refunds.find((r) => r.method === method)?.amount || 0);
   const expenses = await one(
-    `SELECT category, method, status, sum(amount)::bigint AS amount FROM bluebar.expenses
-     WHERE spent_at >= $1 AND spent_at < $2 GROUP BY category, method, status`,
+    `SELECT kind, category, method, status, sum(amount)::bigint AS amount FROM bluebar.expenses
+     WHERE spent_at >= $1 AND spent_at < $2 GROUP BY kind, category, method, status`,
   );
   const tillOut = await one(
     `SELECT reason, sum(amount)::bigint AS amount FROM bluebar.cash_movements
@@ -44,6 +45,11 @@ export async function finance(db, { from, to }) {
   for (const c of categories) category(c.category).income += Number(c.amount);
   for (const e of expenses) {
     const amount = Number(e.amount);
+    // Money in (approved), entered by hand: income in its method and category. Pending: not yet.
+    if (e.kind === "hyrje") {
+      if (e.status !== "pritje") (income[e.method] += amount, category(e.category).income += amount);
+      continue;
+    }
     if (e.status === "pritje") {
       pending[e.method] += amount;
       category(e.category).pending += amount;
@@ -86,7 +92,8 @@ export async function accounts(db) {
   const one = async (sql) => (await db.query(sql)).rows[0];
   const sales = await one("SELECT COALESCE(sum(cash_amount), 0)::bigint AS cash, COALESCE(sum(card_amount), 0)::bigint AS card FROM bluebar.invoices");
   const refunds = (await db.query("SELECT method, sum(amount)::bigint AS amount FROM bluebar.refunds GROUP BY method")).rows;
-  const spent = (await db.query("SELECT method, sum(amount)::bigint AS amount FROM bluebar.expenses WHERE status = 'aprovuar' GROUP BY method")).rows;
+  const spent = (await db.query("SELECT method, sum(amount)::bigint AS amount FROM bluebar.expenses WHERE status = 'aprovuar' AND kind = 'shpenzim' GROUP BY method")).rows;
+  const added = (await db.query("SELECT method, sum(amount)::bigint AS amount FROM bluebar.expenses WHERE status = 'aprovuar' AND kind = 'hyrje' GROUP BY method")).rows;
   const tillOut = await one("SELECT COALESCE(sum(amount), 0)::bigint AS amount FROM bluebar.cash_movements WHERE kind = 'out'");
   const moves = (await db.query(
     `SELECT a.id, COALESCE((SELECT sum(amount) FROM bluebar.money_moves WHERE to_account = a.id), 0)::bigint AS inflow,
@@ -95,8 +102,8 @@ export async function accounts(db) {
   )).rows;
   const of = (list, method) => Number(list.find((r) => r.method === method)?.amount || 0);
   const flow = {
-    Cash: Number(sales.cash) - of(refunds, "Cash") - of(spent, "Cash") - Number(tillOut.amount),
-    Bankë: Number(sales.card) - of(refunds, "Kartë") - of(spent, "Bankë"),
+    Cash: Number(sales.cash) - of(refunds, "Cash") - of(spent, "Cash") + of(added, "Cash") - Number(tillOut.amount),
+    Bankë: Number(sales.card) - of(refunds, "Kartë") - of(spent, "Bankë") + of(added, "Bankë"),
   };
   return rows.map((a) => {
     const m = moves.find((x) => x.id === a.id);

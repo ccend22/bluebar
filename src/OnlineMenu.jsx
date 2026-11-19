@@ -459,7 +459,7 @@ export function OnlineMenuSettings({ venue, state, update, onVenueChange, import
               <div className="switch-row">
                 <span>
                   <strong>Klientët porosisin nga tavolina</strong>
-                  <small>{!enabled ? "Aktivizoni fillimisht menunë." : ordering ? "Me kodin QR të tavolinës, kur turni është i hapur. Kamarieri njoftohet me tingull." : "Tani klientët vetëm e shohin menunë."}</small>
+                  <small>{!enabled ? "Aktivizoni fillimisht menunë." : ordering ? "Me kodin QR të tavolinës. Kamarieri njoftohet me tingull." : "Tani klientët vetëm e shohin menunë."}</small>
                 </span>
                 <Switch on={ordering} disabled={busy || !enabled} label="Klientët porosisin nga tavolina" onToggle={() => save({ ordering: !ordering })} />
               </div>

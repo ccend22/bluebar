@@ -188,15 +188,17 @@ test("two tills in two zones, a bar station in each: tickets, bills and drawers 
     const tickets = run("order.send", { tableId }).tickets;
     return Object.fromEntries(tickets.map((k) => [k.department, [k.station, k.posId]]));
   };
-  // A till without an open shift takes no orders on its tables.
-  assert.throws(() => run("order.add", { tableId: 9, productId: kafe, waiterId: waiter }), /[Tt]urn/);
+  // A till opens its own shift (float 0) with the first order on its tables.
+  assert.ok(!shiftFor(s, 2));
+  run("order.add", { tableId: 9, productId: kafe, waiterId: waiter });
+  assert.equal(shiftFor(s, 2).opening, 0);
+  run("order.remove", { tableId: 9, productId: kafe });
   run("shift.open", { posId: 1, opening: 1000 });
-  run("shift.open", { posId: 2, opening: 500 });
   assert.deepEqual(order(1, kafe, pica), { Bar: [1, 1], Kuzhinë: [3, 1] });
   assert.deepEqual(order(9, kafe, pica), { Bar: [2, 2], Kuzhinë: [3, 2] });
   run("order.pay", { tableId: 1, method: "Cash", received: 800 });
   run("order.pay", { tableId: 9, method: "Kartë" });
-  assert.deepEqual([drawer(s, shiftFor(s, 1)).expected, drawer(s, shiftFor(s, 2)).expected], [1800, 500]);
+  assert.deepEqual([drawer(s, shiftFor(s, 1)).expected, drawer(s, shiftFor(s, 2)).expected], [1800, 0]);
   // The outside bar is off: the inside bar makes its drinks, the bill stays outside.
   run("station.toggle", { id: 2 });
   assert.deepEqual(order(10, kafe), { Bar: [1, 2] });
@@ -206,8 +208,11 @@ test("two tills in two zones, a bar station in each: tickets, bills and drawers 
   assert.equal(s.tickets.at(-1).table, 2);
   run("order.pay", { tableId: 2, method: "Cash", received: 100 });
   assert.equal(drawer(s, shiftFor(s, 1)).expected, 1900);
-  run("shift.close", { posId: 2, counted: 500 });
-  assert.throws(() => run("order.add", { tableId: 9, productId: kafe, waiterId: waiter }));
+  run("shift.close", { posId: 2, counted: 0 });
+  // The next order outside opens a new shift there.
+  run("order.add", { tableId: 9, productId: kafe, waiterId: waiter });
+  assert.equal(shiftFor(s, 2).opening, 0);
+  run("order.remove", { tableId: 9, productId: kafe });
   run("order.add", { tableId: 1, productId: kafe, waiterId: waiter });
   assert.equal(s.products.find((p) => p.id === kafe).stock, 47, "one stock for both tills: three sold, the open one only reserved");
   // A new zone no till or bar station claims: the first till's, and flagged under Stacionet.

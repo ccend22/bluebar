@@ -480,7 +480,6 @@ export function buildApp({
   const orderingAt = (venue, state, tableId) => {
     const table = state.tables.find((t) => t.id === tableId && t.active);
     if (!venue.menu_ordering || !table) return { open: false, reason: "off", message: "Porositë nga menuja nuk janë aktive." };
-    if (!tableShift(state, table)) return { open: false, reason: "closed", message: "Lokali nuk merr porosi tani." };
     return { open: true, table };
   };
   app.get("/api/menu/:slug/table/:table", async (request) => {
@@ -1210,11 +1209,14 @@ export function buildApp({
     finance(request.db, request.query));
   const expense = (r) => ({
     id: r.id, spentAt: new Date(r.spent_at).toISOString(), amount: r.amount, category: r.category,
-    method: r.method, status: r.status, note: r.note, by: r.created_by,
+    method: r.method, status: r.status, note: r.note, by: r.created_by, kind: r.kind || "shpenzim",
+    file: r.file_name ? { name: r.file_name, type: r.file_type, size: r.file_size } : null,
   });
   app.get("/api/expenses", { preValidation: session("manager"), schema: { querystring: period } }, async (request) => ({
     expenses: (await request.db.query(
-      "SELECT * FROM bluebar.expenses WHERE spent_at >= $1 AND spent_at < $2 ORDER BY spent_at DESC, created_at DESC LIMIT 1000",
+      `SELECT e.*, f.name AS file_name, f.type AS file_type, f.size AS file_size
+       FROM bluebar.expenses e LEFT JOIN bluebar.expense_files f ON f.expense_id = e.id
+       WHERE e.spent_at >= $1 AND e.spent_at < $2 ORDER BY e.spent_at DESC, e.created_at DESC LIMIT 1000`,
       [request.query.from, request.query.to],
     )).rows.map(expense),
   }));
@@ -1225,6 +1227,7 @@ export function buildApp({
     method: { type: "string", enum: ["Cash", "Bankë"] },
     status: { type: "string", enum: ["aprovuar", "pritje"] },
     note: { type: "string", maxLength: 200 },
+    kind: { type: "string", enum: ["shpenzim", "hyrje"] },
   } } };
   const expenseId = (request) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(request.params.id)) throw new AppError("Shpenzimi nuk ekziston.", 404);
@@ -1233,24 +1236,123 @@ export function buildApp({
   app.post("/api/expenses", { preValidation: session("manager"), schema: expenseBody }, async (request) => {
     const b = request.body;
     const row = (await request.db.query(
-      `INSERT INTO bluebar.expenses(id, spent_at, amount, category, method, status, note, created_by)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [randomUUID(), b.spentAt, b.amount, b.category.trim(), b.method, b.status, (b.note || "").trim(), request.user.name || null],
+      `INSERT INTO bluebar.expenses(id, spent_at, amount, category, method, status, note, created_by, kind)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [randomUUID(), b.spentAt, b.amount, b.category.trim(), b.method, b.status, (b.note || "").trim(), request.user.name || null, b.kind || "shpenzim"],
     )).rows[0];
     return { expense: expense(row) };
   });
   app.put("/api/expenses/:id", { preValidation: session("manager"), schema: expenseBody }, async (request) => {
     const b = request.body;
     const row = (await request.db.query(
-      `UPDATE bluebar.expenses SET spent_at=$2, amount=$3, category=$4, method=$5, status=$6, note=$7 WHERE id=$1 RETURNING *`,
-      [expenseId(request), b.spentAt, b.amount, b.category.trim(), b.method, b.status, (b.note || "").trim()],
+      `UPDATE bluebar.expenses SET spent_at=$2, amount=$3, category=$4, method=$5, status=$6, note=$7, kind=$8 WHERE id=$1 RETURNING *`,
+      [expenseId(request), b.spentAt, b.amount, b.category.trim(), b.method, b.status, (b.note || "").trim(), b.kind || "shpenzim"],
     )).rows[0];
     if (!row) throw new AppError("Shpenzimi nuk ekziston.", 404);
     return { expense: expense(row) };
   });
+  // Cilësimet → Transaksione shows how much each category is used: count and total, all time.
+  app.get("/api/transaction-categories/usage", { preValidation: session("manager") }, async (request) => ({
+    usage: (await request.db.query(
+      "SELECT kind, category, count(*)::int AS count, sum(amount)::bigint AS total FROM bluebar.expenses GROUP BY kind, category",
+    )).rows.map((r) => ({ kind: r.kind, category: r.category, count: r.count, total: Number(r.total) })),
+  }));
+  // Cilësimet → Transaksione: one kind's category list, replaced whole. A rename also moves
+  // that kind's past transactions to the new name, so a category never splits in two.
+  app.put("/api/transaction-categories", {
+    preValidation: session("manager"),
+    schema: { body: { type: "object", additionalProperties: false, required: ["kind", "categories"], properties: {
+      kind: { type: "string", enum: ["shpenzim", "hyrje"] },
+      categories: { type: "array", maxItems: 60, items: { type: "string", minLength: 1, maxLength: 40, pattern: "\\S" } },
+      // Each category's icon, by name (a key of the app's icon set).
+      icons: { type: "object", maxProperties: 60, additionalProperties: { type: "string", pattern: "^[a-z]{2,20}$" } },
+      rename: { type: "object", additionalProperties: false, required: ["from", "to"], properties: {
+        from: { type: "string", minLength: 1, maxLength: 40 }, to: { type: "string", minLength: 1, maxLength: 40, pattern: "\\S" } } },
+    } } },
+  }, async (request) => {
+    const { kind, rename, icons } = request.body;
+    const categories = request.body.categories.map((c) => c.trim());
+    const seen = new Set();
+    for (const c of categories) {
+      const key = c.toLocaleLowerCase("sq");
+      if (seen.has(key)) throw new AppError(`Kategoria "${c}" është dy herë.`);
+      seen.add(key);
+    }
+    const client = await request.db.connect();
+    try {
+      await client.query("BEGIN");
+      const current = (await client.query("SELECT transaction_categories AS c FROM bluebar.control WHERE id = 1 FOR UPDATE")).rows[0]?.c || {};
+      const next = { ...current, [kind]: categories };
+      // Only the icons of categories still in the list are kept.
+      if (icons) next.icons = { ...current.icons, [kind]: Object.fromEntries(Object.entries(icons).filter(([name]) => categories.includes(name))) };
+      await client.query("UPDATE bluebar.control SET transaction_categories = $1 WHERE id = 1", [JSON.stringify(next)]);
+      if (rename && rename.from !== rename.to.trim())
+        await client.query("UPDATE bluebar.expenses SET category = $3 WHERE kind = $1 AND category = $2", [kind, rename.from, rename.to.trim()]);
+      await client.query("COMMIT");
+      await bumpRevision(request.db);
+      return { transactionCategories: next };
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  });
   app.delete("/api/expenses/:id", { preValidation: session("manager") }, async (request) => {
     const gone = (await request.db.query("DELETE FROM bluebar.expenses WHERE id=$1 RETURNING id", [expenseId(request)])).rows.length;
     if (!gone) throw new AppError("Shpenzimi nuk ekziston.", 404);
+    return { ok: true };
+  });
+  // An expense's attachment: a photo of the receipt or a PDF, checked by its first bytes (not by
+  // what the browser claims), up to 2.5 MB; one per expense, replaced on upload.
+  const FILE_KINDS = {
+    "image/jpeg": (d) => d[0] === 0xff && d[1] === 0xd8 && d[2] === 0xff,
+    "image/png": (d) => d.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    "image/webp": (d) => d.subarray(0, 4).toString("latin1") === "RIFF" && d.subarray(8, 12).toString("latin1") === "WEBP",
+    "application/pdf": (d) => d.subarray(0, 5).toString("latin1") === "%PDF-",
+  };
+  const MAX_FILE = 2_621_440;
+  const readFile = (dataUrl) => {
+    const m = /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/]+=*)$/.exec(dataUrl);
+    const data = m && Buffer.from(m[2], "base64");
+    if (!data?.length || !FILE_KINDS[m[1]](data)) throw new AppError("Bashkëngjitni një foto (JPEG, PNG, WebP) ose një PDF.", 400);
+    if (data.length > MAX_FILE) throw new AppError("Skedari është më i madh se 2.5 MB.", 413);
+    return { type: m[1], data };
+  };
+  const ownExpense = async (request) => {
+    const id = expenseId(request);
+    if (!(await request.db.query("SELECT 1 FROM bluebar.expenses WHERE id=$1", [id])).rows.length) throw new AppError("Shpenzimi nuk ekziston.", 404);
+    return id;
+  };
+  app.put("/api/expenses/:id/file", {
+    preValidation: session("manager"),
+    bodyLimit: 3_600_000,
+    schema: { body: { type: "object", additionalProperties: false, required: ["name", "dataUrl"], properties: {
+      name: { type: "string", minLength: 1, maxLength: 120 }, dataUrl: { type: "string", maxLength: 3_500_000 },
+    } } },
+  }, async (request) => {
+    const id = await ownExpense(request);
+    const { type, data } = readFile(request.body.dataUrl);
+    const name = request.body.name.replace(/[\u0000-\u001f/\\]/g, "").trim().slice(0, 120) || "dokument";
+    await request.db.query(
+      `INSERT INTO bluebar.expense_files(expense_id, name, type, data, size) VALUES($1,$2,$3,$4,$5)
+       ON CONFLICT (expense_id) DO UPDATE SET name=$2, type=$3, data=$4, size=$5, created_at=now()`,
+      [id, name, type, data, data.length],
+    );
+    return { file: { name, type, size: data.length } };
+  });
+  app.get("/api/expenses/:id/file", { preValidation: session("manager") }, async (request, reply) => {
+    const row = (await request.db.query("SELECT name, type, data FROM bluebar.expense_files WHERE expense_id=$1", [expenseId(request)])).rows[0];
+    if (!row) throw new AppError("Ky shpenzim nuk ka dokument.", 404);
+    // Shown in the browser, never run: a fixed type from our own list, and no sniffing.
+    reply.header("Content-Type", row.type);
+    reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(row.name)}`);
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Cache-Control", "private, no-store");
+    return reply.send(row.data);
+  });
+  app.delete("/api/expenses/:id/file", { preValidation: session("manager") }, async (request) => {
+    await request.db.query("DELETE FROM bluebar.expense_files WHERE expense_id=$1", [await ownExpense(request)]);
     return { ok: true };
   });
   // Llogaritë financiare: the accounts, their balances, and money moved by hand.
@@ -1573,9 +1675,6 @@ export function buildApp({
                 "ticket.done",
                 "ticket.transfer",
                 "ticket.accept",
-                "station.save",
-                "station.toggle",
-                "station.delete",
                 "printer.save",
                 "printer.delete",
                 "table.save",
@@ -1607,6 +1706,7 @@ export function buildApp({
                 "reservation.slots",
                 "floor.style",
                 "floor.rooms",
+                "menu.photos",
               ],
             },
             payload: { type: "object" },

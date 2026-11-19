@@ -4,6 +4,7 @@ import { Icon } from "./components.jsx";
 
 export function ChoiceField({
   label,
+  info = null, // an <InfoTip>, shown after the label but not read as part of it
   options,
   value,
   defaultValue,
@@ -107,7 +108,7 @@ export function ChoiceField({
 
   return (
     <div className={`${compact ? "compact-select" : "field"} choice-field`}>
-      <span id={`${id}-label`}>{label}</span>
+      <span><span id={`${id}-label`}>{label}</span>{info}</span>
       {name && <input type="hidden" name={name} value={selectedValue ?? ""} />}
       <button
         ref={trigger}
@@ -148,7 +149,9 @@ export function ChoiceField({
               })}
             </div>
           </div>
-        </div>, document.body,
+        </div>,
+        // Inside a dialog the list must live in the dialog too, or it opens behind it.
+        trigger.current?.closest("dialog") || document.body,
       )}
     </div>
   );
