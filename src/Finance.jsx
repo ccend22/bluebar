@@ -334,10 +334,10 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay }
                 <b className={x.type === "in" ? "plus" : undefined}>{x.type === "in" ? "+" : "−"}{lek(x.amount)}</b>
                 <div className="fin-actions">
                   {x.status === "pritje" && (
-                    <button type="button" onClick={() => act(() => saveExpense({ id: x.id, ...body({ ...x, date: day(new Date(x.spentAt)) }), status: "aprovuar" }), "Shpenzimi u aprovua.")}>Aprovo</button>
+                    <button type="button" onClick={() => act(() => saveExpense({ id: x.id, ...body({ ...x, date: day(new Date(x.spentAt)) }), status: "aprovuar" }), "Veprimi u aprovua.")}>Aprovo</button>
                   )}
                   <button type="button" onClick={() => openForm({ ...blank(day(new Date(x.spentAt))), id: x.id, kind: x.kind || "shpenzim", amount: String(x.amount), category: x.category, method: x.method, status: x.status, note: x.note, file: x.file })}>Ndrysho</button>
-                  <button type="button" className="icon-button" aria-label={`Fshi shpenzimin ${x.category}`} onClick={() => confirm(`Të fshihet shpenzimi "${x.category}" (${lek(x.amount)})?`) && act(() => deleteExpense(x.id), "Shpenzimi u fshi.")}>
+                  <button type="button" className="icon-button" aria-label={`Fshi veprimin ${x.category}`} onClick={() => confirm(`Të fshihet ${x.type === "in" ? "hyrja" : "shpenzimi"} "${x.category}" (${lek(x.amount)})?`) && act(() => deleteExpense(x.id), x.type === "in" ? "Hyrja u fshi." : "Shpenzimi u fshi.")}>
                     <Icon name="close" size={16} />
                   </button>
                 </div>
