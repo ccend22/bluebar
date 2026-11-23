@@ -3035,9 +3035,9 @@ footer > span:last-child {
   .floor-app .floor { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .floor-app .floor-toolbar { flex-shrink: 0; gap: 6px; margin-bottom: 8px; }
   .floor-app .floor-plan-viewport { flex: 1; min-height: 0; overflow: hidden; }
-  .floor-app .floor-plan { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: start; gap: 7px; width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; overflow-y: auto; padding: 8px; }
-  .floor-app .fp-table { position: relative; top: auto !important; left: auto !important; width: 100% !important; height: 76px !important; min-width: 0; min-height: 76px; transform: none !important; }
-  .floor-app .fp-body { transform: none !important; }
+  .floor-app .floor-plan:not(.editing) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: start; gap: 7px; width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; overflow-y: auto; padding: 8px; }
+  .floor-app .floor-plan:not(.editing) .fp-table { position: relative; top: auto !important; left: auto !important; width: 100% !important; height: 76px !important; min-width: 0; min-height: 76px; transform: none !important; }
+  .floor-app .floor-plan:not(.editing) .fp-body { transform: none !important; }
   .floor-app .floor-layout.has-order .floor { display: none; }
   .floor-app .order { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .floor-app .order-heading { flex-shrink: 0; }
@@ -4683,10 +4683,10 @@ textarea {
   .title-row h1 {
     font-size: 20px;
   }
-  .floor-app .floor-plan {
+  .floor-app .floor-plan:not(.editing) {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
-  .floor-app .fp-table {
+  .floor-app .floor-plan:not(.editing) .fp-table {
     height: 64px !important;
     min-height: 64px;
   }
@@ -6795,14 +6795,14 @@ html:has(.onboard-salla[data-theme="dark"]) { background: #0d1c26; }
 }
 /* Phones: the room becomes a grid of tiles; the tabletop fills each one. */
 @media screen and (max-width: 760px), screen and (max-height: 500px) and (pointer: coarse) {
-  .floor-app .fp-chair, .floor-app .fp-sprite { display: none; }
-  .floor-app .look-3d .fp-top { inset: 0; border-radius: 12px; }
+  .floor-app .floor-plan:not(.editing) :is(.fp-chair, .fp-sprite) { display: none; }
+  .floor-app .look-3d:not(.editing) .fp-top { inset: 0; border-radius: 12px; }
   /* Phones lay tables out as a grid of cards: no floor grid behind them, a plain dark bar. */
-  .floor-app .floor-plan.look-3d:not([style*="--floor"]) { background-image: none; }
-  .floor-app .look-3d .fp-table.shape-bar .fp-top { background: #1f2d3b; }
-  .floor-app .look-3d .fp-table.reserved:not(.occupied) .fp-tag { max-width: 94%; }
-  .floor-app .look-3d .fp-table.has-sprite { border-radius: 12px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.17' numOctaves='4' seed='11'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .24 0 0 0 0 .1 1.5 0 0 0 -.5'/%3E%3C/filter%3E%3Cfilter id='h'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.003 0.06' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .93 0 0 0 0 .8 1.2 0 0 0 -.62'/%3E%3C/filter%3E%3Crect width='360' height='180' fill='%23c8925c'/%3E%3Crect width='360' height='180' filter='url(%23h)'/%3E%3Crect width='360' height='180' filter='url(%23g)'/%3E%3C/svg%3E") center / 280px 140px; }
-  .floor-app .look-3d .fp-table .fp-body { padding: 4px; }
+  .floor-app .floor-plan.look-3d:not(.editing):not([style*="--floor"]) { background-image: none; }
+  .floor-app .look-3d:not(.editing) .fp-table.shape-bar .fp-top { background: #1f2d3b; }
+  .floor-app .look-3d:not(.editing) .fp-table.reserved:not(.occupied) .fp-tag { max-width: 94%; }
+  .floor-app .look-3d:not(.editing) .fp-table.has-sprite { border-radius: 12px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.17' numOctaves='4' seed='11'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .24 0 0 0 0 .1 1.5 0 0 0 -.5'/%3E%3C/filter%3E%3Cfilter id='h'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.003 0.06' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .93 0 0 0 0 .8 1.2 0 0 0 -.62'/%3E%3C/filter%3E%3Crect width='360' height='180' fill='%23c8925c'/%3E%3Crect width='360' height='180' filter='url(%23h)'/%3E%3Crect width='360' height='180' filter='url(%23g)'/%3E%3C/svg%3E") center / 280px 140px; }
+  .floor-app .look-3d:not(.editing) .fp-table .fp-body { padding: 4px; }
 }
 
 /* ---- Ndrysho sallën (src/RoomEditor.jsx): the same big room, editable in place ---- */
@@ -6827,7 +6827,6 @@ html:has(.onboard-salla[data-theme="dark"]) { background: #0d1c26; }
 .room-drawing.floor { aspect-ratio: 1; object-fit: cover; }
 .room-panel-foot { display: flex; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .room-panel-foot button { flex: 1; font-size: 13px; }
-.room-draft { margin-top: 0; }
 .subtle-button.danger { color: var(--red); }
 @media (max-width: 1050px) {
   .room-edit-body.with-panel { grid-template-columns: minmax(0, 1fr); }
@@ -6837,10 +6836,8 @@ html:has(.onboard-salla[data-theme="dark"]) { background: #0d1c26; }
 /* Tavolinat: the room is the page. Its title stays for screen readers and the keyboard, out of
    sight; "Ndrysho sallën" sits by the filters and "Mbaro" with the room's tools. */
 .floor-app .title-row { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.room-done { margin-left: 4px; }
 @media (max-width: 1500px) {
   .room-edit-hint { display: none; }
-  .room-done { margin-left: auto; }
 }
 
 /* Tavolinat's toolbar: the zone, state and "Ndrysho sallën" controls one height, apart. */
@@ -7027,7 +7024,6 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .fin-title { color: var(--ink-strong); font-size: 30px; font-weight: 750; letter-spacing: -0.03em; }
 .fin-head p { margin: 4px 0 0; color: #5a6673; font-size: 14px; }
 .fin-head .fin-tabs { margin-left: 0; }
-.room-done[aria-pressed="true"] { border-color: var(--blue) !important; background: #e6f0fc; color: var(--blue); }
 /* Llogaritë financiare. */
 .acc { display: grid; gap: 18px; }
 .acc-head, .acc-group, .acc-form { border: 1px solid var(--card-line); border-radius: 18px; background: #fff; box-shadow: var(--card-shadow); }
@@ -7415,7 +7411,28 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 
 /* Ndrysho sallën: the buttons on one row, "Ndrysho sallën" at its end; the hint on its own line below. */
 .room-edit-tools .room-edit-hint { order: 2; flex-basis: 100%; margin-left: 0; text-align: right; }
-.room-edit-tools .room-done { order: 1; margin-left: auto; }
+.room-edit-actions { order: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.room-edit-actions button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.room-edit-actions .icon-button { justify-content: center; width: 44px; padding: 0; }
+.room-edit-actions [aria-pressed="true"] { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+.room-color-mark {
+  width: 15px; aspect-ratio: 1; border-radius: 50%;
+  background: conic-gradient(#774e38 0 25%, #dbc4a3 0 50%, #68725a 0 75%, #365878 0);
+  outline: 1px solid rgba(27, 35, 42, .16);
+}
+.room-colors { gap: 14px; }
+.room-color-target { margin: -4px 0 0; color: var(--muted); font-size: 13px; }
+.room-color-control { min-inline-size: 0; margin: 0; padding: 8px 0 0; border: 0; border-top: 1px solid var(--line); }
+.room-color-control legend { padding: 0 8px 0 0; color: var(--ink-strong); font-size: 14px; font-weight: 650; }
+.room-color-swatches { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.room-color-swatches button { min-width: 0; min-height: 40px; padding: 0; border: 1px solid rgba(29, 35, 42, .2); border-radius: 9px; background: var(--swatch); }
+.room-color-swatches button:hover { background: var(--swatch); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .65); }
+.room-color-swatches button[aria-pressed="true"] { outline: 2px solid var(--blue); outline-offset: 2px; }
+.room-color-custom, .room-color-custom label { display: flex; align-items: center; gap: 8px; }
+.room-color-custom { justify-content: space-between; margin-top: 10px; font-size: 12px; }
+.room-color-custom input[type="color"] { width: 40px; height: 40px; min-height: 0; padding: 4px; cursor: pointer; }
+.room-color-custom .text-button { padding-inline: 6px; font-size: 12px; }
+.room-colors .helper { margin: 0; }
 
 /* The summary cards on top of each page, compact: icon, label and number in one row. */
 .page-stats { gap: 12px; margin-bottom: 16px; }
@@ -7501,15 +7518,10 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .tx .tx-back { justify-self: start; margin-top: 2px; font-size: 13px; }
 .tx-dialog .choice-layer { position: fixed; inset: 0; }
 
-/* Cilësimet → Transaksione: category tiles with an icon each. Blue stays the only accent;
-   red/green appear only where they mean money out / money in (icon tint, share bar). */
+/* Cilësimet → Transaksione: shared category tiles and their all-time activity. */
 .tx-cats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
 .tx-cats-head h2 { margin: 0; color: var(--ink-strong); font-size: 19px; letter-spacing: -0.01em; }
 .tx-cats-head p { margin: 4px 0 0; color: #66727f; font-size: 13.5px; }
-.tx-cats-kind { flex: none; width: 250px; }
-.tx-cats-kind button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; }
-.tx-cats-kind button span { min-width: 20px; padding: 1px 6px; border-radius: 9999px; background: #e9eef4; color: #5a6673; font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.tx-cats-kind button[aria-pressed="true"] span { background: var(--blue-soft); color: var(--blue); }
 .tx-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .tx-tile {
   display: grid; grid-template-columns: auto 1fr; grid-template-areas: "icon icon" "name name" "total total" "count count" "share share";
@@ -7519,15 +7531,13 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 }
 .tx-tile:hover { border-color: #c9d6e4; box-shadow: 0 6px 18px -8px rgba(15, 40, 80, 0.18); }
 .tx-tile:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-.tx-tile-icon { grid-area: icon; display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 14px; border-radius: 12px; background: #fdecec; color: var(--money-out); }
-.tx-tiles.hyrje .tx-tile-icon, .tx-tile-icon.hyrje { background: #e7f6ee; color: var(--money-in); }
+.tx-tile-icon { grid-area: icon; display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 14px; border-radius: 12px; background: var(--blue-soft); color: var(--blue); }
 .tx-tile-name { grid-area: name; overflow: hidden; color: var(--ink-strong); font-size: 15px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .tx-tile-total { grid-area: total; margin-top: 6px; color: var(--ink-strong); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .tx-tile-count { grid-area: count; margin-top: 2px; color: #74808c; font-size: 12.5px; }
 .tx-tile-count.idle { margin-top: 6px; color: #a3adb7; }
 .tx-tile-share { grid-area: share; height: 4px; margin-top: 12px; border-radius: 9999px; background: #eef2f6; overflow: hidden; }
-.tx-tile-share i { display: block; height: 100%; border-radius: inherit; background: var(--money-out); }
-.tx-tiles.hyrje .tx-tile-share i { background: var(--money-in); }
+.tx-tile-share i { display: block; height: 100%; border-radius: inherit; background: var(--blue); }
 .tx-tile.add { border: 1.5px dashed #cdd8e4; background: transparent; box-shadow: none; }
 .tx-tile.add .tx-tile-icon { background: var(--blue-soft); color: var(--blue); }
 .tx-tile.add:hover { border-color: var(--blue); background: #f7fbff; }
@@ -7551,7 +7561,6 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .tx-cat-remove { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--money-out); }
 @media (max-width: 680px) {
   .tx-cats-head { flex-direction: column; gap: 12px; }
-  .tx-cats-kind { width: 100%; }
   .tx-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .tx-tile { min-height: 140px; padding: 14px; }
   .tx-tile-total { font-size: 16px; }
@@ -7670,7 +7679,7 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .fo-sign-text { overflow: hidden; padding: 0 0.6em; color: #fff; font-size: clamp(9px, calc(var(--cell, 110px) * 0.085), 15px); font-weight: 650; letter-spacing: 0.01em; text-overflow: ellipsis; white-space: nowrap; }
 /* Phones show the tables as a grid of cards: the room's objects have no place there. */
 @media screen and (max-width: 760px), screen and (max-height: 500px) and (pointer: coarse) {
-  .floor-app .fp-object { display: none; }
+  .floor-app .floor-plan:not(.editing) .fp-object { display: none; }
 }
 
 /* Menaxho sallën → Salla: the floor swatches and the library of objects. */
@@ -7833,7 +7842,60 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .object-foot .danger-soft:hover { border-color: #f1b2ab; background: #fff4f2; }
 .object-tip { margin: -6px 0 0; font-size: 12px; }
 .room-flat-note { margin: 0; padding: 12px 14px; border-radius: 12px; background: #f4f7fb; }
+
+.floor-plan.look-3d .fp-table.has-table-color:not(.occupied):not(.reserved) .fp-top,
+.floor-plan.look-3d.editing .fp-table.has-table-color .fp-top {
+  background: linear-gradient(140deg, rgba(255, 255, 255, .25), transparent 43%, rgba(12, 17, 24, .24)), var(--table-color);
+}
+.floor-plan:not(.look-3d) .fp-table.has-table-color:not(.occupied):not(.reserved) {
+  border-color: var(--table-color);
+  background: color-mix(in srgb, var(--table-color) 18%, var(--card, white));
+}
+.floor-plan.look-3d .fp-table.has-chair-color .fp-chair::after {
+  background: radial-gradient(circle at 40% 34%, color-mix(in srgb, var(--chair-color) 74%, white), var(--chair-color) 70%);
+}
+.floor-plan.editing .fp-object.drafted-color:not(.selected) { outline: 1.5px solid #e0a400; outline-offset: 2px; }
+.fp-object.fo-wall.has-object-color, .fp-object.fo-counter.has-object-color {
+  background: linear-gradient(175deg, rgba(255, 255, 255, .24), transparent 42%, rgba(0, 0, 0, .2)), var(--object-color);
+}
+.fp-object.fo-window.has-object-color {
+  background: linear-gradient(90deg, #3d444c 0 8%, transparent 8% 92%, #3d444c 92%), linear-gradient(180deg, #ffffff63, transparent), var(--object-color);
+}
+.fp-object.fo-rug.has-object-color {
+  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .1) 0 4px, transparent 4px 10px), var(--object-color);
+}
+.fp-object.fo-sign.has-object-color {
+  background: linear-gradient(180deg, #0008, #000a), var(--object-color);
+}
+.fp-object.has-object-color .fo-seat-art i {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .22), rgba(0, 0, 0, .16)), var(--object-color);
+}
+.fp-object.has-object-color .fo-cushions i {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .33), transparent), var(--object-color);
+}
+.fp-object.fo-plant.has-object-color {
+  --leaf-mid: color-mix(in srgb, var(--object-color) 86%, white);
+  --leaf-light: color-mix(in srgb, var(--object-color) 70%, white);
+}
+
+.mcp-settings .field { margin-block: 18px 6px; }
+.mcp-settings-link { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
+.mcp-settings-link input { min-width: 0; width: 100%; }
+.mcp-settings-link button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.mcp-settings .helper { margin-block: 12px 16px; }
+.mcp-settings .button-like { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.mcp-settings-feedback { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 520px) {
+  .mcp-settings-link { grid-template-columns: 1fr; }
+  .mcp-settings-link button { justify-self: start; }
+}
 .room-edit-body .room-panel { max-height: calc(100dvh - 200px); }
+@media screen and (max-width: 760px), screen and (max-height: 500px) and (pointer: coarse) {
+  .floor-app main:has(.room-edit) { overflow-y: auto; overscroll-behavior: contain; }
+  .room-edit-body { flex: none; }
+  .room-edit-body > .floor-plan-viewport { min-height: 0; aspect-ratio: 16 / 10; padding: 8px 5px; }
+  .room-edit-body .room-panel { max-height: none; }
+}
 /* A taken table's details scale with the table itself, so they always fit its top; "Lek"
    only where there is room for it. */
 .look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar),

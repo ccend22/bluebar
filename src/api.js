@@ -44,6 +44,7 @@ export const sendCommand = (command) =>
 const send = (method, path, body) =>
   request(path, { method, body: JSON.stringify(body ?? {}) });
 export const fetchSession = () => request("/auth/session");
+export const fetchMcpIntegration = () => request("/integrations/mcp");
 export const fetchLoginWaiters = () => request("/auth/waiters");
 export const loginWaiter = (waiterId, pin) => send("POST", "/auth/waiter-login", { waiterId, pin });
 export const loginWaiterPattern = (waiterId, pattern) => send("POST", "/auth/waiter-pattern", { waiterId, pattern });

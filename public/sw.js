@@ -70,8 +70,10 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
-  // The guests' online menu is its own page: never cache it as BlueBar's offline shell.
-  if (url.pathname.startsWith("/menu")) return;
+  // Guest pages and OAuth transactions must never become BlueBar's offline shell.
+  if (url.pathname.startsWith("/menu") || url.pathname.startsWith("/oauth/") ||
+    ["/authorize", "/mcp", "/register", "/token", "/revoke"].includes(url.pathname) ||
+    url.pathname.startsWith("/.well-known/")) return;
   if (request.mode === "navigate") event.respondWith(page(request));
   else if (url.pathname.startsWith("/assets/")) event.respondWith(asset(request));
 });

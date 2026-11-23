@@ -77,6 +77,7 @@ export function buildApp({
     venueSlug: process.env.BLUEBILL_VENUE_SLUG,
   },
   secretKey = process.env.BLUEBAR_SECRET_KEY,
+  mcpOrigin = null,
   // Albanian → the online menu's other languages (null: no translation, the menu shows Albanian).
   translate = deeplTranslator(process.env.DEEPL_API_KEY),
   // A waiter's spoken order → menu products (null: no voice ordering).
@@ -386,6 +387,12 @@ export function buildApp({
     return start(request, reply, manager.id);
   });
   app.get("/api/venue", async request => publicVenue(request.venue));
+  app.get("/api/integrations/mcp", { preValidation: session("manager") }, async (request) => {
+    if (!mcpOrigin) return { endpoint: null };
+    const connections = new URL("/oauth/bluebar/connections", mcpOrigin);
+    connections.searchParams.set("business", request.venue.slug);
+    return { endpoint: new URL("/mcp", mcpOrigin).href, connections: connections.href, business: request.venue.slug };
+  });
 
   // ---- Online menu. Guests see only products the manager left visible, and only
   // their guest-facing fields: never stock, departments or anything about orders.
@@ -1253,15 +1260,14 @@ export function buildApp({
       "SELECT kind, category, count(*)::int AS count, sum(amount)::bigint AS total FROM bluebar.expenses GROUP BY kind, category",
     )).rows.map((r) => ({ kind: r.kind, category: r.category, count: r.count, total: Number(r.total) })),
   }));
-  // Cilësimet → Transaksione: one kind's category list, replaced whole. A rename also moves
-  // that kind's past transactions to the new name, so a category never splits in two.
+  // Shared settings update both lists together. Older clients can still update a single kind.
   app.put("/api/transaction-categories", {
     preValidation: session("manager"),
     schema: { body: { type: "object", additionalProperties: false, required: ["kind", "categories"], properties: {
-      kind: { type: "string", enum: ["shpenzim", "hyrje"] },
-      categories: { type: "array", maxItems: 60, items: { type: "string", minLength: 1, maxLength: 40, pattern: "\\S" } },
+      kind: { type: "string", enum: ["shpenzim", "hyrje", "all"] },
+      categories: { type: "array", maxItems: 120, items: { type: "string", minLength: 1, maxLength: 40, pattern: "\\S" } },
       // Each category's icon, by name (a key of the app's icon set).
-      icons: { type: "object", maxProperties: 60, additionalProperties: { type: "string", pattern: "^[a-z]{2,20}$" } },
+      icons: { type: "object", maxProperties: 120, additionalProperties: { type: "string", pattern: "^[a-z]{2,20}$" } },
       rename: { type: "object", additionalProperties: false, required: ["from", "to"], properties: {
         from: { type: "string", minLength: 1, maxLength: 40 }, to: { type: "string", minLength: 1, maxLength: 40, pattern: "\\S" } } },
     } } },
@@ -1278,14 +1284,21 @@ export function buildApp({
     try {
       await client.query("BEGIN");
       const current = (await client.query("SELECT transaction_categories AS c FROM bluebar.control WHERE id = 1 FOR UPDATE")).rows[0]?.c || {};
-      const next = { ...current, [kind]: categories };
-      // Only the icons of categories still in the list are kept.
-      if (icons) next.icons = { ...current.icons, [kind]: Object.fromEntries(Object.entries(icons).filter(([name]) => categories.includes(name))) };
-      await client.query("UPDATE bluebar.control SET transaction_categories = $1 WHERE id = 1", [JSON.stringify(next)]);
-      if (rename && rename.from !== rename.to.trim())
-        await client.query("UPDATE bluebar.expenses SET category = $3 WHERE kind = $1 AND category = $2", [kind, rename.from, rename.to.trim()]);
+      const kinds = kind === "all" ? ["shpenzim", "hyrje"] : [kind];
+      const next = { ...current };
+      for (const key of kinds) {
+        next[key] = categories;
+        if (icons) next.icons = { ...next.icons, [key]: Object.fromEntries(Object.entries(icons).filter(([name]) => categories.includes(name))) };
+      }
+      await client.query("UPDATE bluebar.control SET transaction_categories = $1, version = version + 1 WHERE id = 1", [JSON.stringify(next)]);
+      if (rename && rename.from !== rename.to.trim()) {
+        if (kind === "all") {
+          await client.query("UPDATE bluebar.expenses SET category = $2 WHERE lower(category) = lower($1)", [rename.from, rename.to.trim()]);
+        } else {
+          await client.query("UPDATE bluebar.expenses SET category = $3 WHERE kind = $1 AND category = $2", [kind, rename.from, rename.to.trim()]);
+        }
+      }
       await client.query("COMMIT");
-      await bumpRevision(request.db);
       return { transactionCategories: next };
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});

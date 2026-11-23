@@ -118,7 +118,7 @@ export function Finance({ state, notify, sales, mode = "reports", period, setPer
       {tab === "overview" && <Overview data={data} open={open} name={name} go={go} />}
       {tab === "accounts" && <Accounts notify={notify} />}
       {tab === "sales" && sales}
-      {tab === "expenses" && <Expenses lists={{ shpenzim: txCategories(state, "shpenzim"), hyrje: txCategories(state, "hyrje") }} expenses={expenses} sales={state.invoices.filter((i) => { const d = day(new Date(i.date)); return d >= from && d <= to; })} name={name} notify={notify} onChange={reload} defaultDay={to} show={show} setShow={setShow} go={go} />}
+      {tab === "expenses" && <Expenses categoryList={txCategories(state)} expenses={expenses} sales={state.invoices.filter((i) => { const d = day(new Date(i.date)); return d >= from && d <= to; })} name={name} notify={notify} onChange={reload} defaultDay={to} show={show} setShow={setShow} go={go} />}
     </div>
   );
 }
@@ -239,7 +239,7 @@ const openAttachment = async (id, notify) => {
   }
 };
 
-function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, show, setShow, go }) {
+function Expenses({ categoryList, expenses, sales, name, notify, onChange, defaultDay, show, setShow, go }) {
   const confirm = useConfirm();
   const [draft, setDraft] = useState(() => blank(defaultDay));
   // The form is a dialog: "+ Veprim" opens it empty, "Ndrysho" opens it with the row.
@@ -259,10 +259,9 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, 
     setBusy(true);
     try {
       const { expense } = await saveExpense({ ...(draft.id && { id: draft.id }), ...body(draft) });
-      // A category typed in here joins its list, so it's there next time (and in Cilësimet).
-      const list = lists[draft.kind], typed = draft.category.trim();
-      if (!list.some((c) => c.toLocaleLowerCase("sq") === typed.toLocaleLowerCase("sq")))
-        await saveTransactionCategories(draft.kind, [...list, typed]).catch(() => {});
+      const typed = draft.category.trim();
+      if (!categoryList.some((c) => c.toLocaleLowerCase("sq") === typed.toLocaleLowerCase("sq")))
+        await saveTransactionCategories("all", [...categoryList, typed]).catch(() => {});
       const id = expense?.id || draft.id;
       // The receipt or invoice, if one was added, changed or taken off.
       if (draft.attach) await saveExpenseFile(id, draft.attach.name, draft.attach.dataUrl);
@@ -306,8 +305,8 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, 
     .filter((r) => show === "all" || r.type === show)
     .sort((a, b) => b.at.localeCompare(a.at));
   const total = rows.reduce((s, r) => s + (r.type === "out" ? -r.amount : r.amount), 0);
-  // The dialog offers its kind's list; an older row keeps its own category even if it was removed.
-  const categories = [...new Set([...lists[draft.kind], ...(draft.category && !newCategory ? [draft.category] : [])])];
+  // An older row keeps its own category even if it was removed from settings.
+  const categories = [...new Set([...categoryList, ...(draft.category && !newCategory ? [draft.category] : [])])];
   return (
     <div className="fin-expenses">
       <section className="fin-list">
@@ -316,7 +315,7 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, 
           <h2>Transaksione</h2>
           <span className="fin-chip">{name}</span>
           <span className={`fin-total ${total < 0 ? "minus" : "plus"}`}>{signed(total, "+")}</span>
-          <ExpensesAiImport categories={lists.shpenzim} defaultDay={defaultDay} notify={notify} onSaved={onChange} />
+          <ExpensesAiImport categories={categoryList} defaultDay={defaultDay} notify={notify} onSaved={onChange} />
           <button type="button" className="primary" onClick={() => openForm(blank(defaultDay))}><Icon name="plus" size={17} /> Veprim</button>
         </div>
         <div className="fin-seg fin-filter" role="group" aria-label="Shfaq">
@@ -377,7 +376,7 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, 
               <p>{draft.kind === "hyrje" ? "Regjistro një hyrje parash" : "Regjistro një shpenzim"}</p>
             </div>
             <div className="fin-seg tx-kind" role="group" aria-label="Lloji">
-              {[["hyrje", "Hyrje"], ["shpenzim", "Shpenzim"]].map(([v, l]) => <button key={v} type="button" aria-pressed={draft.kind === v} onClick={() => (setNewCategory(false), setDraft((d) => ({ ...d, kind: v, category: lists[v].includes(d.category) ? d.category : "" })))}>{l}</button>)}
+              {[["hyrje", "Hyrje"], ["shpenzim", "Shpenzim"]].map(([v, l]) => <button key={v} type="button" aria-pressed={draft.kind === v} onClick={() => setDraft((d) => ({ ...d, kind: v }))}>{l}</button>)}
             </div>
             <button type="button" className="icon-button" aria-label="Mbyll" onClick={closeForm}><Icon name="close" size={18} /></button>
           </header>
@@ -472,7 +471,6 @@ const ICON_CHOICES = {
   calendar: "Kalendar", music: "Muzikë", star: "Yll", gift: "Dhuratë", print: "Printer", tag: "Etiketë",
 };
 export function TransactionCategories({ state, notify, onSaved }) {
-  const [kind, setKind] = useState("shpenzim");
   const [usage, setUsage] = useState([]);
   const [version, setVersion] = useState(0);
   const [editor, setEditor] = useState(null); // { from: name | null, name, icon }
@@ -481,22 +479,26 @@ export function TransactionCategories({ state, notify, onSaved }) {
   useEffect(() => {
     fetchCategoryUsage().then((r) => setUsage(r.usage)).catch(() => {});
   }, [version]);
-  const lists = { shpenzim: txCategories(state, "shpenzim"), hyrje: txCategories(state, "hyrje") };
-  const list = lists[kind];
-  const iconOf = (name) => txIcon(state, kind, name);
-  const used = (c) => usage.find((u) => u.kind === kind && u.category === c);
+  const list = txCategories(state);
+  const iconOf = (name) => txIcon(state, name);
+  const byCategory = new Map();
+  for (const row of usage) {
+    const key = row.category.toLocaleLowerCase("sq");
+    const previous = byCategory.get(key) || { total: 0, count: 0 };
+    byCategory.set(key, { total: previous.total + row.total, count: previous.count + row.count });
+  }
+  const used = (name) => byCategory.get(name.toLocaleLowerCase("sq"));
   const top = Math.max(1, ...list.map((c) => used(c)?.total || 0));
-  const sign = kind === "hyrje" ? "+" : "−";
   const open = (from) => {
     setEditor({ from, name: from || "", icon: from ? iconOf(from) : "tag" });
     requestAnimationFrame(() => dialog.current?.showModal());
   };
   const close = () => dialog.current?.close();
-  const icons = (names, renamed) => Object.fromEntries(names.map((n) => [n, n === renamed?.to ? renamed.icon : iconOf(n === renamed?.to ? renamed.from : n)]));
+  const icons = (names, edited) => Object.fromEntries(names.map((n) => [n, n === edited?.name ? edited.icon : iconOf(n)]));
   const save = async (next, message, rename, iconsMap) => {
     setBusy(true);
     try {
-      await saveTransactionCategories(kind, next, rename, iconsMap);
+      await saveTransactionCategories("all", next, rename, iconsMap);
       await onSaved?.();
       setVersion((v) => v + 1);
       notify(message);
@@ -517,7 +519,7 @@ export function TransactionCategories({ state, notify, onSaved }) {
     const next = editor.from ? list.map((x) => (x === editor.from ? name : x)) : [...list, name];
     const rename = editor.from && editor.from !== name ? { from: editor.from, to: name } : undefined;
     const message = !editor.from ? `"${name}" u shtua.` : rename ? `"${editor.from}" u bë "${name}"${used(editor.from) ? ", edhe te veprimet e vjetra" : ""}.` : `"${name}" u ruajt.`;
-    if (await save(next, message, rename, icons(next, { from: editor.from || name, to: name, icon: editor.icon }))) close();
+    if (await save(next, message, rename, icons(next, { name, icon: editor.icon }))) close();
   };
   const remove = async () => {
     const next = list.filter((x) => x !== editor.from);
@@ -530,17 +532,10 @@ export function TransactionCategories({ state, notify, onSaved }) {
         <header className="tx-cats-head">
           <div>
             <h2>Kategoritë e transaksioneve</h2>
-            <p>Ato që zgjidhni te "+ Veprim". Klikoni një kategori për ta ndryshuar.</p>
-          </div>
-          <div className="fin-seg tx-cats-kind" role="tablist" aria-label="Lloji">
-            {[["shpenzim", "Shpenzime"], ["hyrje", "Hyrje"]].map(([v, l]) => (
-              <button key={v} type="button" role="tab" aria-selected={kind === v} aria-pressed={kind === v} onClick={() => setKind(v)}>
-                {l} <span>{lists[v].length}</span>
-              </button>
-            ))}
+            <p>E njëjta listë për të gjitha veprimet. Zgjidhni një kategori për ta ndryshuar.</p>
           </div>
         </header>
-        <ul className={`tx-tiles ${kind}`}>
+        <ul className="tx-tiles">
           {list.map((c) => {
             const x = used(c);
             return (
@@ -550,7 +545,7 @@ export function TransactionCategories({ state, notify, onSaved }) {
                   <span className="tx-tile-name">{c}</span>
                   {x ? (
                     <>
-                      <b className="tx-tile-total">{sign}{lek(x.total)}</b>
+                      <b className="tx-tile-total">{lek(x.total)}</b>
                       <span className="tx-tile-count">{x.count} {x.count === 1 ? "veprim" : "veprime"}</span>
                       <span className="tx-tile-share" aria-hidden="true"><i style={{ width: `${Math.max(4, (x.total / top) * 100)}%` }} /></span>
                     </>
@@ -565,7 +560,6 @@ export function TransactionCategories({ state, notify, onSaved }) {
             <button type="button" className="tx-tile add" onClick={() => open(null)}>
               <span className="tx-tile-icon" aria-hidden="true"><Icon name="plus" size={22} /></span>
               <span className="tx-tile-name">Shto kategori</span>
-              <span className="tx-tile-count idle">{kind === "hyrje" ? "p.sh. Evente" : "p.sh. Pastrimi"}</span>
             </button>
           </li>
         </ul>
@@ -575,16 +569,16 @@ export function TransactionCategories({ state, notify, onSaved }) {
         {editor && (
           <form onSubmit={submit}>
             <header>
-              <span className={`tx-tile-icon ${kind}`} aria-hidden="true"><Icon name={editor.icon} size={22} /></span>
+              <span className="tx-tile-icon" aria-hidden="true"><Icon name={editor.icon} size={22} /></span>
               <div>
                 <h2 id="tx-cat-title">{editor.from ? "Ndrysho kategorinë" : "Kategori e re"}</h2>
-                <p>{kind === "hyrje" ? "Hyrje" : "Shpenzim"}{u ? ` · ${u.count} ${u.count === 1 ? "veprim" : "veprime"}, ${sign}${lek(u.total)}` : ""}</p>
+                {u && <p>{u.count} {u.count === 1 ? "veprim" : "veprime"} · {lek(u.total)}</p>}
               </div>
               <button type="button" className="icon-button" aria-label="Mbyll" onClick={close}><Icon name="close" size={18} /></button>
             </header>
             <label className="field">
               <span>Emri</span>
-              <input value={editor.name} maxLength={40} autoFocus placeholder={kind === "hyrje" ? "p.sh. Evente" : "p.sh. Pastrimi"} onChange={(e) => setEditor((d) => ({ ...d, name: e.target.value }))} required />
+              <input value={editor.name} maxLength={40} autoFocus placeholder="p.sh. Evente" onChange={(e) => setEditor((d) => ({ ...d, name: e.target.value }))} required />
             </label>
             {u && editor.name.trim() && editor.name.trim() !== editor.from && <p className="tx-cat-warn">{u.count} {u.count === 1 ? "veprim merr" : "veprime marrin"} emrin e ri.</p>}
             <div className="field">

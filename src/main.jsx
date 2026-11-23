@@ -14,6 +14,7 @@ import { StaffOverview, StaffSettings } from "./Staff.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
+import { Integrations } from "./Integrations.jsx";
 import { PAPERS, paperWidth, printFitted, setPaperWidth } from "./printPaper.js";
 import { InvoiceEditForm } from "./InvoiceEdit.jsx";
 import { DesktopInstall, NetworkPrinters } from "./NetworkPrinters.jsx";
@@ -116,11 +117,12 @@ const SETTINGS_TABS = [
   ["Stafi dhe hyrja", "people", "Hyrja e stafit dhe rrjeti i lokalit"],
   ["Kamarierët", "user", "Profilet, PIN-i dhe pattern-i"],
   ["Porositë", "list", "Menuja e kamarierit: me foto ose pa"],
-  ["Transaksione", "cash", "Kategoritë e shpenzimeve dhe hyrjeve"],
+  ["Transaksione", "cash", "Kategoritë e përbashkëta"],
   ["Kasat", "coffee", "Arkat dhe zonat e tyre"],
   ["Repartet dhe kategoritë", "menu", "Ku përgatitet porosia dhe grupet e menusë"],
   ["Menuja online", "menu", "Kodi QR dhe porositë e klientëve"],
   ["Fiskalizimi", "receipt", "Lidhja me BlueBill dhe tatimet"],
+  ["Integrime", "sparkle", "Lidhja MCP për ChatGPT dhe Claude"],
   ["Llogaria ime", "user", "Emri, PIN-i dhe kjo pajisje"],
 ];
 // Which settings topic fixes each group of the configuration check (Produktet has its own page).
@@ -346,10 +348,8 @@ function App({ user, onLogout, onUserChange }) {
     [cancelling, setCancelling] = useState(false),
     [deleteConfirmId, setDeleteConfirmId] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
-    // Table management works on an unsaved draft — new tables, edited area/shape/seats,
-    // moved/resized tables — shown live everywhere and saved with one "Konfirmo".
-    // Ndrysho sallën: changes not yet confirmed, by table id (each a whole table.save row).
     [roomDraft, setRoomDraft] = useState({}),
+    [roomObjectColors, setRoomObjectColors] = useState({}),
     [orderMode, setOrderMode] = useState("summary"),
     [fiscalizeChoice, setFiscalizeChoice] = useState(false),
     [ticketPrint, setTicketPrint] = useState(null),
@@ -443,15 +443,30 @@ function App({ user, onLogout, onUserChange }) {
   const draftTable = (id, patch) =>
     setRoomDraft((draft) => {
       const t = state.tables.find((x) => x.id === id);
+      if (!t) return draft;
       const saved = { label: t.label || "", area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats, posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation };
       const next = { ...saved, ...draft[id], ...patch };
+      for (const key of ["tableColor", "chairColor"]) {
+        if (next[key] === (t[key] ?? null)) delete next[key];
+      }
       // Changed back by hand: nothing pending for it any more.
       const { [id]: _, ...rest } = draft;
-      return Object.keys(saved).every((k) => saved[k] === next[k]) ? rest : { ...draft, [id]: next };
+      return Object.keys(next).every((k) => saved[k] === next[k]) ? rest : { ...draft, [id]: next };
     });
+  const draftObjectColor = (id, color) => {
+    const object = state.floorObjects?.find((item) => item.id === id);
+    setRoomObjectColors((draft) => {
+      const { [id]: _, ...rest } = draft;
+      return !object || (object.color ?? null) === color ? rest : { ...rest, [id]: color };
+    });
+  };
+  const clearRoomDraft = () => {
+    setRoomDraft({});
+    setRoomObjectColors({});
+  };
   // false = the manager chose to stay and keep the changes they haven't confirmed.
   const leaveRoomDraft = async () => {
-    if (Object.keys(roomDraft).length && !await confirm({
+    if ((Object.keys(roomDraft).length || Object.keys(roomObjectColors).length) && !await confirm({
       title: "Hidh poshtë ndryshimet?",
       description: "Ndryshimet e pakonfirmuara në planin e sallës do të humbasin.",
       action: "Hidh poshtë",
@@ -459,8 +474,13 @@ function App({ user, onLogout, onUserChange }) {
       icon: "edit",
       destructive: true,
     })) return false;
-    setRoomDraft({});
+    clearRoomDraft();
     return true;
+  };
+  const closeRoomEditor = () => {
+    setFloorSelected(null);
+    setManageTables(false);
+    setSelected(null);
   };
 
   // Porositë opens the full order window only when asked ("Ndrysho porosinë"); paying from
@@ -1148,14 +1168,13 @@ function App({ user, onLogout, onUserChange }) {
                   selected={floorSelected}
                   onSelect={setFloorSelected}
                   onDone={async () => {
-                    if (!await leaveRoomDraft()) return;
-                    setFloorSelected(null);
-                    setManageTables(false);
-                    setSelected(null);
+                    if (await leaveRoomDraft()) closeRoomEditor();
                   }}
+                  onSaved={() => { clearRoomDraft(); closeRoomEditor(); }}
                   draft={roomDraft}
                   onDraft={draftTable}
-                  onDiscard={() => setRoomDraft({})}
+                  objectColors={roomObjectColors}
+                  onObjectColor={draftObjectColor}
                 />
               ) : (
                 <>
@@ -2140,6 +2159,7 @@ function App({ user, onLogout, onUserChange }) {
                     <Fiscalization onChange={() => database.refresh()} />
                   </div>
                 )}
+                {settingsTab === "Integrime" && <Integrations notify={notify} />}
                 {settingsTab === "Llogaria ime" && (
                   <div className="settings-column settings-wide">
                     <AccountSettings name={user.name} onChange={onUserChange} />

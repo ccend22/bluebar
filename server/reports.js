@@ -7,6 +7,41 @@
 // in the period — a shift that runs past midnight belongs to the day it opened.
 const iso = (v) => (v == null ? null : new Date(v).toISOString());
 
+// Calendar dates in BlueBar's local timezone. Use one snapshot for all the aggregates.
+export async function salesSummary(db, { from, to }) {
+  const { rows: [sales] } = await db.query(`
+    WITH bounds AS (
+      SELECT $1::date::timestamp AT TIME ZONE 'Europe/Tirane' AS starts,
+        ($2::date + 1)::timestamp AT TIME ZONE 'Europe/Tirane' AS ends
+    ), paid AS (
+      SELECT i.id, i.total FROM bluebar.invoices i CROSS JOIN bounds b
+      WHERE i.created_at >= b.starts AND i.created_at < b.ends
+    ), products AS (
+      SELECT l.name, sum(l.qty - l.comp)::integer AS quantity,
+        sum((l.qty - l.comp)::bigint * l.price)::bigint AS "lineTotalLek"
+      FROM bluebar.invoice_lines l JOIN paid ON paid.id = l.invoice_id
+      WHERE l.qty > l.comp
+      GROUP BY l.name
+      ORDER BY quantity DESC, "lineTotalLek" DESC, l.name LIMIT 20
+    )
+    SELECT count(*)::integer AS "invoiceCount", COALESCE(sum(total), 0)::bigint AS "salesLek",
+      (SELECT COALESCE(sum(r.amount), 0)::bigint FROM bluebar.refunds r CROSS JOIN bounds b
+        WHERE r.created_at >= b.starts AND r.created_at < b.ends) AS "refundsLek",
+      (SELECT COALESCE(jsonb_agg(p ORDER BY p.quantity DESC, p."lineTotalLek" DESC, p.name), '[]'::jsonb)
+        FROM products p) AS "topProducts"
+    FROM paid
+  `, [from, to]);
+  const salesLek = Number(sales.salesLek), refundsLek = Number(sales.refundsLek);
+  return {
+    invoiceCount: sales.invoiceCount,
+    salesLek,
+    refundsLek,
+    netSalesLek: salesLek - refundsLek,
+    averageInvoiceLek: sales.invoiceCount ? Math.round(salesLek / sales.invoiceCount) : null,
+    topProducts: sales.topProducts,
+  };
+}
+
 export async function report(db, { from, to, basis = "day", pos, shift, area, waiter }) {
   const params = [from, to];
   const where = [basis === "shift" ? "s.opened >= $1 AND s.opened < $2" : "i.created_at >= $1 AND i.created_at < $2"];

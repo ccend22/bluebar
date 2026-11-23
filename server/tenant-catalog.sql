@@ -47,3 +47,27 @@ ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS menu_secret text;
 -- The LuxHotel account (Firebase uid of the LuxHotel PMS) whose owner signs in as this
 -- business's manager with "Hyr me LuxHotel". One business per LuxHotel account.
 ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS luxhotel_uid text UNIQUE;
+
+-- OAuth connections name the business before a request can select a tenant schema.
+-- Only hashes of authorization codes and bearer credentials are stored.
+CREATE TABLE IF NOT EXISTS bluebar_catalog.mcp_connections (
+  id uuid PRIMARY KEY,
+  venue_slug text NOT NULL REFERENCES bluebar_catalog.venues(slug) ON DELETE CASCADE,
+  manager_id integer NOT NULL,
+  client_id text NOT NULL,
+  redirect_uri text NOT NULL,
+  resource text NOT NULL,
+  approval_hash text UNIQUE NOT NULL,
+  code_hash text UNIQUE,
+  code_challenge text NOT NULL,
+  code_expires_at timestamptz NOT NULL,
+  access_hash text UNIQUE,
+  access_expires_at timestamptz,
+  refresh_hash text UNIQUE,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  revoked_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS mcp_connections_venue_idx ON bluebar_catalog.mcp_connections(venue_slug);
+CREATE INDEX IF NOT EXISTS mcp_connections_expiry_idx ON bluebar_catalog.mcp_connections(expires_at);
+ALTER TABLE bluebar_catalog.mcp_connections ADD COLUMN IF NOT EXISTS scopes text[] NOT NULL DEFAULT ARRAY['bluebar.read'];

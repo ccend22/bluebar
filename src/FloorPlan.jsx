@@ -102,10 +102,11 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
   };
+  const useSprite = t.sprite && look === "3d" && !t.tableColor && !t.chairColor;
   return (
     <div
       ref={ref}
-      className={`fp-table ${shapeClass[t.shape] || "shape-rect"} ${occupied ? "occupied" : reservation ? "reserved" : ""} ${t.sprite && look === "3d" ? "has-sprite" : ""} ${drafted ? "drafted" : ""} ${isSelected ? "selected" : ""} ${editing ? "editing" : ""} ${live ? `dragging ${live.ok ? "" : "blocked"}` : ""}`}
+      className={`fp-table ${shapeClass[t.shape] || "shape-rect"} ${occupied ? "occupied" : reservation ? "reserved" : ""} ${useSprite ? "has-sprite" : ""} ${t.tableColor ? "has-table-color" : ""} ${t.chairColor ? "has-chair-color" : ""} ${drafted ? "drafted" : ""} ${isSelected ? "selected" : ""} ${editing ? "editing" : ""} ${live ? `dragging ${live.ok ? "" : "blocked"}` : ""}`}
       style={{
         left: `${center.posX}%`,
         top: `${center.posY}%`,
@@ -113,6 +114,8 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
         height: `${size.height}%`,
         transform: `translate(-50%, -50%) rotate(${t.rotation}deg)`,
         "--chair": `${chairWidth}%`,
+        "--table-color": t.tableColor,
+        "--chair-color": t.chairColor,
       }}
       onPointerDown={drag((ev, canvas, from) => {
         const dx = ((ev.clientX - from.x) / canvas.width) * 100, dy = ((ev.clientY - from.y) / canvas.height) * 100;
@@ -129,7 +132,7 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(t)}
     >
       {look === "3d" &&
-        (t.sprite ? (
+        (useSprite ? (
           // The venue's own table, drawn from a photo (seen from above, chairs and all).
           <img className="fp-sprite" src={floorAssetUrl(t.sprite)} alt="" draggable="false" />
         ) : (
@@ -213,7 +216,7 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
 // objects: the room's walls, doors, plants… (FloorObjects.jsx), under the tables; material: the
 // floor when no photo floor is laid. While editing, selectedObject / onSelectObject /
 // onObjectChange(id, patch) arrange them the way tables are.
-export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, material, objects = [], editing, drafted, selected, onSelectTable, onLayoutChange, selectedObject, onSelectObject, onObjectChange }) {
+export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, material, objects = [], objectColors, editing, drafted, selected, onSelectTable, onLayoutChange, selectedObject, onSelectObject, onObjectChange }) {
   // The block a dragged table is aiming at: green if free, red if taken.
   const [ghost, setGhost] = useState(null);
   // The lines a moving object lined up with (FloorObjects.jsx snapPosition).
@@ -253,6 +256,8 @@ export function FloorPlan({ tables, waiters = [], reservations, look = "3d", tex
           <FloorObject
             key={o.id}
             o={o}
+            color={objectColors && Object.hasOwn(objectColors, o.id) ? objectColors[o.id] : o.color}
+            changedColor={objectColors && Object.hasOwn(objectColors, o.id)}
             editing={editing}
             isSelected={selectedObject === o.id}
             onSelect={(id) => (onSelectTable(null), onSelectObject?.(id))}

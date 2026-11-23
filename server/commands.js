@@ -90,6 +90,11 @@ const dim = (v, fallback) => range(v, 4, 60, fallback, "Madhësia e tavolinës �
 const rotation = (v, fallback) =>
   v === undefined ? fallback : requireRange(((v % 360) + 360) % 360, 0, 359, "Rrotullimi i tavolinës është i pavlefshëm.");
 const seats = (v, fallback) => (v === undefined ? fallback : integer(v, 1, 12));
+const furnitureColor = (value) => {
+  if (value === null) return null;
+  if (typeof value !== "string" || !/^#[a-f0-9]{6}$/i.test(value)) fail("Zgjidhni një ngjyrë të vlefshme.");
+  return value.toLowerCase();
+};
 const requirePct = (v) => requireRange(v, 0, 100, "Pozicioni i tavolinës është i pavlefshëm.");
 const requireDim = (v) => requireRange(v, 4, 60, "Madhësia e tavolinës është e pavlefshme.");
 const unique = (items, value, except) => {
@@ -593,6 +598,7 @@ export function applyCommand(state, type, payload, actor = null) {
       if (!Array.isArray(p.objects) || p.objects.length > 150) fail("Deri në 150 objekte në sallë.");
       const num = (v, min, max) => (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? Math.round(v * 100) / 100 : fail("Objekti është jashtë sallës."));
       const ids = new Set();
+      const savedColors = new Map((state.floorObjects || []).map((object) => [object.id, object.color]));
       const objects = p.objects.map((o) => {
         if (!o || typeof o !== "object") fail("Objekt i pavlefshëm.");
         if (!FLOOR_OBJECTS.includes(o.kind)) fail("Lloj objekti i panjohur.");
@@ -600,10 +606,13 @@ export function applyCommand(state, type, payload, actor = null) {
         ids.add(o.id);
         const text = o.text === undefined || o.text === null ? undefined : String(o.text).trim().slice(0, 30);
         const area = o.area === undefined || o.area === null ? undefined : name(o.area, 40);
+        // Moves and resizing may carry an older copy of the object. Colors of existing objects
+        // belong to the separate room draft. A new object can inherit a duplicate's color.
+        const color = savedColors.has(o.id) ? savedColors.get(o.id) : o.color == null ? null : furnitureColor(o.color);
         return {
           id: o.id, kind: o.kind,
           x: num(o.x, -10, 110), y: num(o.y, -10, 110), w: num(o.w, 0.3, 100), h: num(o.h, 0.3, 100), r: num(o.r ?? 0, 0, 359),
-          ...(text !== undefined && { text }), ...(area !== undefined && { area }),
+          ...(text !== undefined && { text }), ...(area !== undefined && { area }), ...(color && { color }),
         };
       });
       next = { ...state, floorObjects: objects };
@@ -1149,6 +1158,8 @@ export function applyCommand(state, type, payload, actor = null) {
         label: label.trim(),
         // Its 3D drawing is set on the floor editor (PUT /api/floor/tables/:id/sprite), not here.
         sprite: existing?.sprite ?? null,
+        tableColor: p.tableColor === undefined ? existing?.tableColor ?? null : furnitureColor(p.tableColor),
+        chairColor: p.chairColor === undefined ? existing?.chairColor ?? null : furnitureColor(p.chairColor),
         area,
         shape: shapeValue,
         active: existing?.active ?? true,
@@ -1171,11 +1182,30 @@ export function applyCommand(state, type, payload, actor = null) {
       break;
     }
     case "tables.save": {
-      // Several table.save changes (new tables, edits, positions) confirmed at once:
-      // all or nothing, each item validated exactly like a single table.save.
-      if (!Array.isArray(p.tables) || !p.tables.length || p.tables.length > 100)
+      // Save room drafts together, preserving concurrent non-color fields of objects.
+      const objectColors = p.objectColors ?? [];
+      if (!Array.isArray(p.tables) || p.tables.length > 100 ||
+        !Array.isArray(objectColors) || objectColors.length > 150 || (!p.tables.length && !objectColors.length))
         fail("Nuk ka ndryshime për t'u ruajtur.");
       next = p.tables.reduce((current, item) => applyCommand(current, "table.save", item, actor).state, state);
+      if (objectColors.length) {
+        const objects = state.floorObjects || [];
+        const known = new Set(objects.map((object) => object.id));
+        const colors = new Map();
+        for (const change of objectColors) {
+          if (!change || !known.has(change.id) || colors.has(change.id)) fail("Objekti nuk ekziston ose përsëritet.");
+          colors.set(change.id, furnitureColor(change.color));
+        }
+        next = {
+          ...next,
+          floorObjects: objects.map((object) => {
+            if (!colors.has(object.id)) return object;
+            const { color: previous, ...rest } = object;
+            const color = colors.get(object.id);
+            return color ? { ...rest, color } : rest;
+          }),
+        };
+      }
       break;
     }
     case "table.toggle": {

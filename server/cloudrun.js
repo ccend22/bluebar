@@ -8,21 +8,32 @@ import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { createPool, provider } from "./db.js";
 import { buildApp } from "./app.js";
+import { createMcpHttp, isMcpPath } from "./mcp-http.js";
 
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
 const list = (v) => (v || "").split(",").map((x) => x.trim()).filter(Boolean);
+const pool = createPool();
+const trustProxy = (_address, hop) => hop === 0;
 const app = buildApp({
-  pool: createPool(),
+  pool,
   provider: provider(),
+  mcpOrigin: process.env.BLUEBAR_MCP_ORIGIN,
   origins: list(process.env.APP_ORIGINS),
   allowedHosts: list(process.env.ALLOWED_HOSTS),
   allowedIps: list(process.env.WAITER_ALLOWED_IPS),
   // Google's front end is the one hop in front: the client's IP is the last
   // X-Forwarded-For entry (the one it added), never one a client wrote itself.
-  trustProxy: (_address, hop) => hop === 0,
+  trustProxy,
   secureCookies: true,
 });
 await app.ready();
+const mcp = process.env.BLUEBAR_MCP_ORIGIN ? createMcpHttp({
+  pool,
+  origin: process.env.BLUEBAR_MCP_ORIGIN,
+  signingKey: process.env.BLUEBAR_MCP_SIGNING_KEY,
+  extraRedirects: list(process.env.BLUEBAR_MCP_REDIRECT_URIS),
+  trustProxy,
+}) : null;
 
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
@@ -74,6 +85,10 @@ async function page(req, res) {
     path = decodeURIComponent((req.url || "/").split("?")[0]);
   } catch {
     return res.writeHead(400).end(); // a broken %-escape: refused, never a crash
+  }
+  if (isMcpPath(path)) {
+    if (!mcp) return res.writeHead(404).end();
+    return mcp(req, res);
   }
   if (path.startsWith("/api/")) return app.server.emit("request", req, res);
   if (req.method !== "GET" && req.method !== "HEAD") return res.writeHead(405).end();

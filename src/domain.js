@@ -108,18 +108,36 @@ export const posOf = (state, table) =>
 // A slip still waiting at its department: not ready, not cancelled, and its order not yet
 // paid. Once the table has paid there's no order left, so it leaves Repartet.
 export const ticketWaiting = (k) => !k.doneAt && !k.cancelledAt && !k.invoice;
-// Transaksione's categories: the venue's own lists (Cilësimet → Transaksione), else these.
+// Combine the venue's saved category lists, including those created before categories were shared.
 export const TX_CATEGORIES = {
   shpenzim: ["Furnitorë", "Staff", "Qira", "Utilities", "Taksa", "Mirëmbajtje", "Transport", "Marketing", "Të tjera"],
   hyrje: ["Evente", "Qira e marrë", "Sponsorizime", "Të tjera"],
 };
-export const txCategories = (state, kind) => state.transactionCategories?.[kind] ?? TX_CATEGORIES[kind];
+export function txCategories(state) {
+  const lists = state.transactionCategories;
+  const names = new Map();
+  for (const kind of ["shpenzim", "hyrje"]) {
+    for (const name of lists?.[kind] ?? TX_CATEGORIES[kind]) {
+      const key = name.toLocaleLowerCase("sq");
+      if (!names.has(key)) names.set(key, name);
+    }
+  }
+  return [...names.values()];
+}
 // Each category's icon: the one the manager picked, else a fitting default, else a tag.
 const TX_ICONS = {
   Furnitorë: "truck", Staff: "people", Qira: "home", Utilities: "bolt", Taksa: "receipt", Mirëmbajtje: "wrench",
   Transport: "location", Marketing: "megaphone", Evente: "music", "Qira e marrë": "home", Sponsorizime: "star",
 };
-export const txIcon = (state, kind, name) => state.transactionCategories?.icons?.[kind]?.[name] || TX_ICONS[name] || "tag";
+export function txIcon(state, name) {
+  const icons = state.transactionCategories?.icons;
+  const key = name.toLocaleLowerCase("sq");
+  for (const kind of ["shpenzim", "hyrje"]) {
+    const icon = Object.entries(icons?.[kind] ?? {}).find(([category]) => category.toLocaleLowerCase("sq") === key)?.[1];
+    if (icon) return icon;
+  }
+  return TX_ICONS[name] || "tag";
+}
 export const shiftFor = (state, posId) => state.openShifts.find((s) => s.posId === posId) || null;
 export const tableShift = (state, table) => shiftFor(state, posOf(state, table));
 // No shift to open by hand: the first order at a table opens its till's shift, from 0 Lek.

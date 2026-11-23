@@ -71,3 +71,8 @@ Serveri zgjidh skemën nga katalogu dhe kërkon sesion të vlefshëm në atë sk
 Cookies dhe sessionStorage të komandave në pritje ndahen sipas biznesit, duke lejuar lokale të ndryshme në skeda të ndryshme. Biznesi ruan gjendjen pas logout/refresh. Krijimi i biznesit dhe migrimet serializohen me advisory lock dhe kryhen në transaksion; biznesi i dyfishuar refuzohet pa ndryshuar të dhëna. Regjistrimi kufizohet në databazë në 5 përpjekje/orë/IP.
 
 Publikimi: provoni `npm run db:migrate` dhe `node scripts/verify-tenants-branch.js` në degë Neon të izoluar (verifikon `verifyTenants()` nga `server/verify-tenants.js` kundrejt Postgres real, jo vetëm PGlite). Pastaj aplikoni migrimin additive në production përpara publikimit të API-së. Kodi i vjetër vazhdon të funksionojë me biznesin `bluebar`; të dhënat ekzistuese nuk pastrohen. `npm run db:migrate` përditëson edhe skemat e të gjitha bizneseve të krijuara më vonë.
+
+## BlueBar MCP
+
+The [BlueBar MCP guide](docs/MCP.md) covers the HTTPS connector for ChatGPT and
+Claude, venue permissions, Cloud Run configuration, and local verification.

@@ -43,9 +43,9 @@ function Plant() {
     <svg viewBox="0 0 100 100" className="fo-art">
       <circle cx="50" cy="50" r="17" fill="#3b3f44" />
       <circle cx="50" cy="50" r="14" fill="#5a4636" />
-      {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => leaf(a + 10, 46, 13, "#2f7a45"))}
-      {[22, 77, 132, 187, 242, 297, 352].map((a) => leaf(a, 36, 11, "#4e9b5c"))}
-      {[60, 170, 280].map((a) => leaf(a, 24, 8, "#7cbd74"))}
+      {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => leaf(a + 10, 46, 13, "var(--object-color, #2f7a45)"))}
+      {[22, 77, 132, 187, 242, 297, 352].map((a) => leaf(a, 36, 11, "var(--leaf-mid, #4e9b5c)"))}
+      {[60, 170, 280].map((a) => leaf(a, 24, 8, "var(--leaf-light, #7cbd74)"))}
     </svg>
   );
 }
@@ -55,7 +55,7 @@ function Door() {
   return (
     <svg viewBox="0 0 100 100" className="fo-art">
       <path d="M8 6 A86 86 0 0 1 94 92" fill="rgba(255,255,255,0.18)" stroke="rgba(40,45,52,0.55)" strokeWidth="1.4" strokeDasharray="4 3" />
-      <rect x="3" y="4" width="6" height="90" rx="1.5" fill="#7b5a3d" stroke="#4d3826" strokeWidth="1" />
+      <rect x="3" y="4" width="6" height="90" rx="1.5" fill="var(--object-color, #7b5a3d)" stroke="#4d3826" strokeWidth="1" />
       <rect x="0" y="92" width="100" height="6" rx="1" fill="#4a535e" />
       <circle cx="6" cy="92" r="3" fill="#c9cfd6" />
     </svg>
@@ -167,7 +167,7 @@ export function snapPosition(o, targets) {
 }
 
 // One object in the room. editing: it can be taken hold of; selected: handles to turn and size.
-export function FloorObject({ o: saved, editing, isSelected, onSelect, onChange, targets = [], onGuides }) {
+export function FloorObject({ o: saved, color, changedColor, editing, isSelected, onSelect, onChange, targets = [], onGuides }) {
   const [live, setLive] = useState(null);
   const liveRef = useRef(null);
   const ref = useRef(null);
@@ -220,8 +220,8 @@ export function FloorObject({ o: saved, editing, isSelected, onSelect, onChange,
   return (
     <div
       ref={ref}
-      className={`fp-object fo-${o.kind} ${isSelected ? "selected" : ""} ${live && liveRef.current ? "dragging" : ""} ${live?.sizing ? "sizing" : ""}`}
-      style={{ left: `${o.x}%`, top: `${o.y}%`, width: `${o.w}%`, height: `${o.h}%`, transform: `translate(-50%, -50%) rotate(${o.r || 0}deg)` }}
+      className={`fp-object fo-${o.kind} ${isSelected ? "selected" : ""} ${color ? "has-object-color" : ""} ${changedColor ? "drafted-color" : ""} ${live && liveRef.current ? "dragging" : ""} ${live?.sizing ? "sizing" : ""}`}
+      style={{ left: `${o.x}%`, top: `${o.y}%`, width: `${o.w}%`, height: `${o.h}%`, transform: `translate(-50%, -50%) rotate(${o.r || 0}deg)`, "--object-color": color }}
       role={editing ? "button" : undefined}
       tabIndex={editing ? 0 : undefined}
       aria-label={editing ? `${kind.name}${o.text ? `: ${o.text}` : ""}` : undefined}

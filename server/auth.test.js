@@ -8,7 +8,7 @@ import { buildApp } from "./app.js";
 import { pruneTickets } from "./commands.js";
 import { execute, readSnapshot } from "./repository.js";
 import { createManager, ipPolicy, setWaiterPattern, setWaiterPin } from "./auth.js";
-import { configIssues } from "../src/domain.js";
+import { configIssues, txCategories, txIcon } from "../src/domain.js";
 
 const OUTSIDE = "203.0.113.9";
 async function setup(options = {}) {
@@ -80,6 +80,24 @@ test("manager signs in with a PIN; sessions are HttpOnly and revocable", async (
     assert.equal((await t.call("GET", "/api/state")).statusCode, 401);
     await t.call("POST", "/api/auth/logout", { cookie, body: {} });
     assert.equal((await t.call("GET", "/api/state", { cookie })).statusCode, 401);
+  } finally {
+    await t.close();
+  }
+});
+
+test("MCP integration settings give managers the configured URL and their business code", async () => {
+  const t = await setup({ mcpOrigin: "https://bluebar.example" });
+  try {
+    const path = "/api/integrations/mcp";
+    const boss = t.cookieOf(await t.managerLogin());
+    const waiter = t.cookieOf(await t.waiterLogin(1, "482913"));
+    assert.equal((await t.call("GET", path)).statusCode, 401);
+    assert.equal((await t.call("GET", path, { cookie: waiter })).statusCode, 403);
+    assert.deepEqual((await t.call("GET", path, { cookie: boss })).json(), {
+      endpoint: "https://bluebar.example/mcp",
+      connections: "https://bluebar.example/oauth/bluebar/connections?business=bluebar",
+      business: "bluebar",
+    });
   } finally {
     await t.close();
   }
@@ -2043,6 +2061,19 @@ test("Financat: sales less refunds, approved and pending expenses, till cash-out
     const room = (await t.call("GET", "/api/state", { cookie: ana })).json().state;
     assert.deepEqual(room.floorObjects, [{ id: "w1", kind: "wall", x: 10, y: 50, w: 25, h: 1.6, r: 90 }, { id: "s1", kind: "sign", x: 5, y: 90, w: 10, h: 5, r: 0, text: "Hyrja", area: "Salla" }]);
     assert.equal(room.floorMaterial, "walnut");
+    const table = room.tables[0];
+    const tableEdit = { id: table.id, area: table.area, shape: table.shape, tableColor: "#315F70", chairColor: "#d6c38e" };
+    assert.equal((await cmd("tables.save", { tables: [tableEdit], objectColors: [{ id: "w1", color: "url(bad)" }] })).statusCode, 400);
+    const getRoom = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    assert.equal((await getRoom()).tables[0].tableColor, null);
+    assert.equal((await cmd("tables.save", { tables: [tableEdit], objectColors: [{ id: "w1", color: "#775533" }] })).statusCode, 200);
+    const painted = await getRoom();
+    assert.deepEqual([painted.tables[0].tableColor, painted.tables[0].chairColor], ["#315f70", "#d6c38e"]);
+    assert.deepEqual(painted.floorObjects[0], { ...room.floorObjects[0], color: "#775533" });
+    assert.equal((await cmd("floor.objects", { objects: [{ ...room.floorObjects[0], x: 15 }, painted.floorObjects[1]] })).statusCode, 200);
+    assert.equal((await getRoom()).floorObjects[0].color, "#775533");
+    assert.equal((await cmd("tables.save", { tables: [], objectColors: [{ id: "w1", color: null }] })).statusCode, 200);
+    assert.equal((await getRoom()).floorObjects[0].color, undefined);
     for (const bad of [[{ ...wall, kind: "piano" }], [{ ...wall, x: 500 }], [wall, wall], [{ ...wall, id: "<b>" }]])
       assert.equal((await cmd("floor.objects", { objects: bad })).statusCode, 400);
     assert.equal((await cmd("floor.material", { material: "carpet" })).statusCode, 400);
@@ -2164,7 +2195,7 @@ test("stations are retired: a venue's old station rows are ignored and tickets g
   }
 });
 
-test("Cilësimet → Transaksione: each kind's own categories; a rename moves past transactions, a removal doesn't", async () => {
+test("Cilësimet → Transaksione shares categories and renames across both types while retaining legacy writes", async () => {
   const t = await setup();
   try {
     const boss = t.cookieOf(await t.managerLogin());
@@ -2195,6 +2226,18 @@ test("Cilësimet → Transaksione: each kind's own categories; a rename moves pa
     assert.equal((await put({ kind: "shpenzim", categories: ["Staff", "staff"] })).statusCode, 400, "no duplicates");
     assert.equal((await put({ kind: "dalje", categories: ["X"] })).statusCode, 400);
     assert.equal((await put({ kind: "shpenzim", categories: ["X"] }, ana)).statusCode, 403, "the manager's");
+    assert.deepEqual(txCategories(await state()), ["Staff", "Evente"]);
+    await t.call("POST", "/api/expenses", { cookie: boss, body: { spentAt, amount: 120, category: "staff", method: "Cash", status: "aprovuar" } });
+    await t.call("POST", "/api/expenses", { cookie: boss, body: { spentAt, kind: "hyrje", amount: 600, category: "Staff", method: "Cash", status: "aprovuar" } });
+    assert.equal((await put({
+      kind: "all", categories: ["Ekipi", "Evente"], rename: { from: "Staff", to: "Ekipi" }, icons: { Ekipi: "people" },
+    })).statusCode, 200);
+    const shared = await state();
+    assert.deepEqual(shared.transactionCategories.shpenzim, ["Ekipi", "Evente"]);
+    assert.deepEqual(shared.transactionCategories.hyrje, ["Ekipi", "Evente"]);
+    assert.deepEqual(txCategories(shared), ["Ekipi", "Evente"]);
+    assert.equal(txIcon(shared, "Ekipi"), "people");
+    assert.deepEqual((await t.pool.query("SELECT kind FROM bluebar.expenses WHERE category='Ekipi' ORDER BY kind")).rows.map((r) => r.kind), ["hyrje", "shpenzim"]);
   } finally {
     await t.close();
   }
