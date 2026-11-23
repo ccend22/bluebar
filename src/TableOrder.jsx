@@ -624,7 +624,7 @@ export function TableOrder({
               label="Dorëzo te"
               name="waiterId"
               options={state.waiters
-                .filter((w) => w.active && w.id !== table.waiter && (!w.posId || w.posId === here))
+                .filter((w) => w.active && w.id !== table.waiter && (!w.area || w.area === table.area))
                 .map((w) => ({ value: String(w.id), label: w.name }))}
             />
             <p className="helper">Kolegu e merr tavolinën me gjithë porosinë dhe pagesat e bëra.</p>

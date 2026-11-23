@@ -27,7 +27,7 @@ const PRESETS = [
   ["all", "Të gjitha", () => ["2020-01-01", today()]],
 ];
 // What the period is called: "Nëntor 2026" for a calendar month, its dates otherwise.
-const periodName = ([from, to]) => {
+export const periodName = ([from, to]) => {
   const a = start(from), b = start(to);
   const wholeMonth = a.getDate() === 1 && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
   return wholeMonth ? `${MONTHS[a.getMonth()]} ${a.getFullYear()}` : `${shown(from)} – ${shown(to)}`;
@@ -38,11 +38,15 @@ const percent = (x) => `${(x * 100).toFixed(1)}%`;
 const DOTS = ["#2f80ed", "#7cc142", "#e5484d", "#f5a524", "#6e56cf", "#e93d82", "#12a594", "#f76b15", "#0090ff", "#a18072"];
 
 // mode "transactions" is its own page (Transaksione): every expense, money in and sale of a period.
-export function Finance({ state, notify, sales, mode = "reports" }) {
+// The period is shared with the other Shitjet dhe financat pages (kept in main.jsx), so a month
+// picked here is the month Faturat and Transaksione show too; go opens them.
+export const firstPeriod = () => ({ preset: "month", range: PRESETS[0][2]() });
+export function Finance({ state, notify, sales, mode = "reports", period, setPeriod, show, setShow, go }) {
   const moves = mode === "transactions";
   const [tab, setTab] = useState(moves ? "expenses" : "overview");
-  const [preset, setPreset] = useState("month");
-  const [range, setRange] = useState(PRESETS[0][2]);
+  const { preset, range } = period;
+  const setPreset = (p) => setPeriod((x) => ({ ...x, preset: p }));
+  const setRange = (r) => setPeriod((x) => ({ ...x, range: r }));
   const [data, setData] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [error, setError] = useState("");
@@ -110,21 +114,21 @@ export function Finance({ state, notify, sales, mode = "reports" }) {
       </div>
       )}
       {error && <p className="ai-error" role="alert">{error}</p>}
-      {tab === "overview" && <Overview data={data} open={open} name={name} />}
+      {tab === "overview" && <Overview data={data} open={open} name={name} go={go} />}
       {tab === "accounts" && <Accounts notify={notify} />}
       {tab === "sales" && sales}
-      {tab === "expenses" && <Expenses lists={{ shpenzim: txCategories(state, "shpenzim"), hyrje: txCategories(state, "hyrje") }} expenses={expenses} sales={state.invoices.filter((i) => { const d = day(new Date(i.date)); return d >= from && d <= to; })} name={name} notify={notify} onChange={reload} defaultDay={to} />}
+      {tab === "expenses" && <Expenses lists={{ shpenzim: txCategories(state, "shpenzim"), hyrje: txCategories(state, "hyrje") }} expenses={expenses} sales={state.invoices.filter((i) => { const d = day(new Date(i.date)); return d >= from && d <= to; })} name={name} notify={notify} onChange={reload} defaultDay={to} show={show} setShow={setShow} go={go} />}
     </div>
   );
 }
 
-function Overview({ data, open, name }) {
+function Overview({ data, open, name, go }) {
   if (!data) return <div className="fin-loading" role="status">Po ngarkohen financat…</div>;
   const cards = [
-    ["income", "check", "Të ardhura (paguar)", lek(data.income), `${data.invoices} fatura`],
-    ["waiting", "clock", "Të ardhura (pritje)", lek(open), "Porositë e hapura tani"],
-    ["spent", "arrow", "Shpenzime (aprovuar)", lek(data.spent), name],
-    ["pending", "info", "Shpenzime (pritje)", lek(data.pending), name],
+    ["income", "check", "Të ardhura (paguar)", lek(data.income), `${data.invoices} fatura`, go.invoices, "Shiko faturat e periudhës"],
+    ["waiting", "clock", "Të ardhura (pritje)", lek(open), "Porositë e hapura tani", go.orders, "Shiko porositë e hapura"],
+    ["spent", "arrow", "Shpenzime (aprovuar)", lek(data.spent), name, () => go.transactions("out"), "Shiko shpenzimet"],
+    ["pending", "info", "Shpenzime (pritje)", lek(data.pending), name, () => go.transactions("out"), "Shiko shpenzimet në pritje"],
   ];
   return (
     <>
@@ -134,13 +138,14 @@ function Overview({ data, open, name }) {
         <span className="fin-chip">{name}</span>
       </div>
       <div className="fin-cards">
-        {cards.map(([tone, icon, label, value, note]) => (
-          <article key={tone} className={`fin-card ${tone}`}>
+        {/* Each card opens the page behind its figure, for the same period. */}
+        {cards.map(([tone, icon, label, value, note, open, hint]) => (
+          <button type="button" key={tone} className={`fin-card ${tone}`} onClick={open} title={hint}>
             <span className="fin-card-icon"><Icon name={icon} size={20} /></span>
             <h3>{label}</h3>
             <strong>{value}</strong>
-            <small>{note}</small>
-          </article>
+            <small>{note} <Icon name="arrow" size={13} /></small>
+          </button>
         ))}
       </div>
       <div className="fin-panels">
@@ -233,14 +238,13 @@ const openAttachment = async (id, notify) => {
   }
 };
 
-function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay }) {
+function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, show, setShow, go }) {
   const [draft, setDraft] = useState(() => blank(defaultDay));
   // The form is a dialog: "+ Veprim" opens it empty, "Ndrysho" opens it with the row.
   const dialog = useRef(null);
   const [newCategory, setNewCategory] = useState(false);
   const openForm = (d) => (setDraft(d), setNewCategory(false), dialog.current?.showModal());
   const closeForm = () => dialog.current?.close();
-  const [show, setShow] = useState("out"); // expenses first: what a manager opens this page for
   const [busy, setBusy] = useState(false);
   const set = (field) => (e) => setDraft((d) => ({ ...d, [field]: e.target.value }));
   const body = (d) => ({
@@ -308,7 +312,8 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay }
         {rows.length ? (
           <ul>
             {rows.map((x) => x.sale ? (
-              <li key={x.id} className="sale">
+              <li key={x.id} className="sale" role="button" tabIndex={0} title="Hape te Faturat"
+                onClick={() => go.invoice(x.sale)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), go.invoice(x.sale))}>
                 <time>{shown(day(new Date(x.at)))}</time>
                 <div>
                   <strong>Shitje · Fatura D-{x.sale.id}</strong>
@@ -316,7 +321,7 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay }
                 </div>
                 <span className="badge blue">Shitje</span>
                 <b className="plus">+{lek(x.amount)}</b>
-                <div className="fin-actions" />
+                <div className="fin-actions"><Icon name="arrow" size={16} /></div>
               </li>
             ) : (
               <li key={x.id} className={x.status === "pritje" ? "waiting" : ""}>

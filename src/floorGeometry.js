@@ -124,3 +124,9 @@ export function arrange(tables) {
   }
   return moves;
 }
+
+// The room's inside on screen (inside its wall border), the box every percent is measured in.
+export function roomBox(plan) {
+  const r = plan.getBoundingClientRect();
+  return { left: r.left + plan.clientLeft, top: r.top + plan.clientTop, width: plan.clientWidth, height: plan.clientHeight };
+}

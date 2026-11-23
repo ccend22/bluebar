@@ -6,9 +6,8 @@ const STEPS = ["Ngarko", "Shiko", "Sukses"];
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// While the AI reads: what it's doing, typed letter by letter; a constellation of five dots
-// that light and join one after another (the pattern pad's own gesture); and the seconds, so a
-// long wait never looks frozen. After half a minute it says plainly that Google is slow.
+// While the AI reads: what it's doing, typed letter by letter, and the seconds, so a long wait
+// never looks frozen. After half a minute it says plainly that Google is slow.
 export function AiReading({ steps }) {
   const [seconds, setSeconds] = useState(0);
   const [typed, setTyped] = useState(0);
@@ -26,17 +25,8 @@ export function AiReading({ steps }) {
     const id = setInterval(() => setTyped((n) => (n >= phrase.length ? (clearInterval(id), n) : n + 1)), 28);
     return () => clearInterval(id);
   }, [phrase]);
-  // Five dots on a gentle arc; one more lights every 3 s, then they start over.
-  const lit = (Math.floor(seconds / 3) % 6) || 0;
-  const dots = [[8, 26], [26, 12], [46, 22], [66, 8], [84, 20]];
   return (
     <div className="ai-reading" role="status">
-      <svg className="ai-constellation" viewBox="0 0 92 34" aria-hidden="true">
-        {dots.slice(1).map(([x, y], i) => (
-          <line key={i} x1={dots[i][0]} y1={dots[i][1]} x2={x} y2={y} className={i + 1 < lit ? "on" : ""} />
-        ))}
-        {dots.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3.4" className={i < lit ? "on" : ""} />)}
-      </svg>
       <span className="ai-reading-text">
         <b aria-hidden="true">{phrase.slice(0, typed)}<i className="ai-caret" /></b>
         <span className="sr-only">AI po lexon. Prisni pak.</span>
@@ -48,31 +38,45 @@ export function AiReading({ steps }) {
   );
 }
 
-// Over the photo while it's read: viewfinder corners, a reading line sweeping down and up, and
-// small frames flashing where the line passes, like a scanner picking out lines of text. The
-// frames are abstract marks, never invented content.
-export function ScanMarks() {
-  const [marks, setMarks] = useState([]);
+// Over the photo while it's read: the photo softens under a fine grid that a soft light wanders
+// across, its cells light up here and there (single pieces, now and then a larger box), and
+// in the middle five dots on a gentle arc join as the wait goes on (the pattern pad's own
+// gesture). Each link snaps in whole, ever further apart; the last joins only when the AI is done.
+const DOTS = [[8, 26], [26, 12], [46, 22], [66, 8], [84, 20]];
+export const scanDone = () => new Promise((resolve) => setTimeout(resolve, 650));
+const CELL = 14; // px, the same as .ai-grid's background-size
+export function ScanMarks({ done }) {
+  const box = useRef(null);
+  const [seconds, setSeconds] = useState(0);
+  const [squares, setSquares] = useState([]);
   useEffect(() => {
-    if (reducedMotion()) return;
-    const start = performance.now();
-    let id = 0;
-    const timer = setInterval(() => {
-      // Where the line is now: the same 2.4 s down-and-up as its CSS sweep.
-      const phase = ((performance.now() - start) / 2400) % 2;
-      const eased = (t) => (1 - Math.cos(Math.PI * t)) / 2;
-      const y = (phase < 1 ? eased(phase) : 1 - eased(phase - 1)) * 92 + 2;
-      const w = 12 + Math.random() * 30;
-      const mark = { id: ++id, x: 4 + Math.random() * (92 - w), y: Math.min(94, Math.max(2, y + (Math.random() - 0.5) * 4)), w };
-      setMarks((list) => [...list.slice(-9), mark]);
-    }, 260);
-    return () => clearInterval(timer);
+    const start = Date.now();
+    const id = setInterval(() => setSeconds((Date.now() - start) / 1000), 200);
+    if (reducedMotion()) return () => clearInterval(id);
+    let n = 0;
+    const flash = setInterval(() => {
+      const { offsetWidth: w = 0, offsetHeight: h = 0 } = box.current || {};
+      const k = Math.random() < 0.8 ? 1 : 2 + Math.floor(Math.random() * 2);
+      const col = Math.floor(Math.random() * Math.max(1, w / CELL - k)), row = Math.floor(Math.random() * Math.max(1, h / CELL - k));
+      setSquares((list) => [...list.slice(-21), { id: ++n, x: col * CELL, y: row * CELL, size: k * CELL, box: k > 1 }]);
+    }, 110);
+    return () => (clearInterval(id), clearInterval(flash));
   }, []);
+  // How far along the four links: quick at first, ever slower, never past 92 % until it's done.
+  const reach = done ? 4 : 4 * 0.92 * (1 - Math.exp(-seconds / 15));
+  const part = (i) => (reach >= i + 1 ? 1 : 0);
   return (
-    <span className="ai-scan" aria-hidden="true">
-      <i className="ai-corner tl" /><i className="ai-corner tr" /><i className="ai-corner bl" /><i className="ai-corner br" />
-      {marks.map((m) => <i key={m.id} className="ai-mark" style={{ left: `${m.x}%`, top: `${m.y}%`, width: `${m.w}%` }} />)}
-      <i className="ai-beam" />
+    <span ref={box} className={`ai-scan ${done ? "done" : ""}`} aria-hidden="true">
+      <i className="ai-grid" />
+      {squares.map((s) => <i key={s.id} className={`ai-square ${s.box ? "box" : ""}`} style={{ left: s.x, top: s.y, width: s.size }} />)}
+      <span className="ai-scan-card">
+        <svg className="ai-constellation" viewBox="0 0 92 34">
+          {DOTS.slice(1).map(([x, y], i) => (
+            <line key={i} x1={DOTS[i][0]} y1={DOTS[i][1]} x2={x} y2={y} pathLength="1" style={{ strokeDashoffset: 1 - part(i) }} />
+          ))}
+          {DOTS.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3.4" className={i <= Math.floor(reach) ? "on" : ""} />)}
+        </svg>
+      </span>
     </span>
   );
 }
@@ -132,7 +136,7 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
       const input = source.file ? { image: await shrink(source.file, { size: 2000 }) } : { text: source.text };
       const found = await read(input, note.trim());
       if (!found.length) setError("AI nuk gjeti asgjë për të shtuar. Provoni një foto më të qartë.");
-      else (setRows(found), setStep(1));
+      else (setBusy("done"), await scanDone(), setRows(found), setStep(1));
     } catch (e) {
       setError(e.message);
     }
@@ -193,7 +197,7 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
                 <div className={`ai-preview ${busy ? "scanning" : ""}`}>
                   <span className="ai-shot">
                     {source.url ? <img src={source.url} alt="Dokumenti" /> : <pre>{source.text.slice(0, 600)}</pre>}
-                    {busy && <ScanMarks />}
+                    {busy && <ScanMarks done={busy === "done"} />}
                   </span>
                   <button type="button" disabled={busy} onClick={() => setSource(null)}>Ndrysho</button>
                 </div>

@@ -829,7 +829,7 @@ test("Turnet: cash in/out feeds the expected drawer, counts must add up, waiters
   }
 });
 
-test("Kasat: each till has its own shift and drawer, waiters stay at their till, stock is shared", async () => {
+test("Kasat: each till has its own shift and drawer, waiters stay in their room, stock is shared", async () => {
   const t = await setup();
   try {
     const boss = t.cookieOf(await t.managerLogin());
@@ -847,7 +847,7 @@ test("Kasat: each till has its own shift and drawer, waiters stay at their till,
     await ok(boss, "pos.save", { id: 1, name: "Bari brenda", areas: ["Salla"] });
     await ok(boss, "pos.save", { name: "Bari jashtë", areas: ["Tarraca"] });
     assert.equal((await cmd(boss, "pos.save", { name: "bari JASHTË", areas: [] })).statusCode, 400, "names are unique");
-    await ok(boss, "waiter.pos", { waiterId: 1, posId: 2 });
+    await ok(boss, "waiter.area", { waiterId: 1, area: "Tarraca" });
     await ok(boss, "product.save", { name: "Espresso", price: 100, category: "Kafe" });
     await ok(boss, "stock.receive", { productId: 1, qty: 5 });
     await ok(boss, "shift.open", { posId: 1, opening: 1000 });
@@ -2033,6 +2033,20 @@ test("Financat: sales less refunds, approved and pending expenses, till cash-out
     assert.equal((await cmd("menu.photos", { photos: false })).statusCode, 200);
     assert.equal((await t.call("GET", "/api/state", { cookie: ana })).json().state.orderPhotos, false);
     assert.equal((await cmd("menu.photos", { photos: "jo" })).statusCode, 400);
+    // Menaxho sallën: the room's objects and its floor; kept as sent, cleaned, the manager's.
+    const state0 = (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    assert.deepEqual([state0.floorObjects, state0.floorMaterial], [[], "oak"]);
+    const wall = { id: "w1", kind: "wall", x: 10, y: 50, w: 25, h: 1.6, r: 90, extra: "dropped" };
+    const sign = { id: "s1", kind: "sign", x: 5, y: 90, w: 10, h: 5, r: 0, text: "  Hyrja  ", area: "Salla" };
+    assert.equal((await cmd("floor.objects", { objects: [wall, sign] })).statusCode, 200);
+    assert.equal((await cmd("floor.material", { material: "walnut" })).statusCode, 200);
+    const room = (await t.call("GET", "/api/state", { cookie: ana })).json().state;
+    assert.deepEqual(room.floorObjects, [{ id: "w1", kind: "wall", x: 10, y: 50, w: 25, h: 1.6, r: 90 }, { id: "s1", kind: "sign", x: 5, y: 90, w: 10, h: 5, r: 0, text: "Hyrja", area: "Salla" }]);
+    assert.equal(room.floorMaterial, "walnut");
+    for (const bad of [[{ ...wall, kind: "piano" }], [{ ...wall, x: 500 }], [wall, wall], [{ ...wall, id: "<b>" }]])
+      assert.equal((await cmd("floor.objects", { objects: bad })).statusCode, 400);
+    assert.equal((await cmd("floor.material", { material: "carpet" })).statusCode, 400);
+    assert.equal((await t.call("POST", "/api/commands", { cookie: ana, body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: boss })).json().version, type: "floor.objects", payload: { objects: [] } } })).statusCode, 403, "the manager's room");
     assert.equal((await t.call("POST", "/api/commands", { cookie: ana, body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: boss })).json().version, type: "menu.photos", payload: { photos: true } } })).statusCode, 403, "the manager's choice");
   } finally {
     await t.close();
@@ -2181,6 +2195,84 @@ test("Cilësimet → Transaksione: each kind's own categories; a rename moves pa
     assert.equal((await put({ kind: "shpenzim", categories: ["Staff", "staff"] })).statusCode, 400, "no duplicates");
     assert.equal((await put({ kind: "dalje", categories: ["X"] })).statusCode, 400);
     assert.equal((await put({ kind: "shpenzim", categories: ["X"] }, ana)).statusCode, 403, "the manager's");
+  } finally {
+    await t.close();
+  }
+});
+
+test("Cilësimet → Repartet dhe kategoritë: rename carries products and printers along; delete is safe", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (type, payload, cookie = boss) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    await cmd("department.create", { name: "Bar" });
+    await cmd("category.create", { name: "Kafe" });
+    await cmd("category.create", { name: "Bosh" });
+    assert.equal((await cmd("product.save", { name: "Espresso", price: 150, category: "Kafe", department: "Bar", trackStock: false })).statusCode, 200);
+    assert.equal((await cmd("printer.save", { name: "Printeri i barit", host: "192.168.1.50", port: 9100, width: 48, departments: ["Bar"], receipts: false })).statusCode, 200);
+    // Rename: the product and the printer follow.
+    assert.equal((await cmd("department.rename", { from: "Bar", name: "Banaku" })).statusCode, 200);
+    assert.equal((await cmd("category.rename", { from: "Kafe", name: "Kafeja" })).statusCode, 200);
+    let s = await state();
+    const espresso = s.products.find((x) => x.name === "Espresso");
+    assert.deepEqual([espresso.department, espresso.category], ["Banaku", "Kafeja"]);
+    assert.deepEqual(s.printers[0].departments, ["Banaku"]);
+    assert.ok(s.departments.includes("Banaku") && !s.departments.includes("Bar"));
+    assert.equal((await cmd("category.rename", { from: "Kafeja", name: "bosh" })).statusCode, 400, "no duplicates");
+    // A category with products stays; an empty one goes.
+    assert.equal((await cmd("category.delete", { name: "Kafeja" })).statusCode, 400);
+    assert.equal((await cmd("category.delete", { name: "Bosh" })).statusCode, 200);
+    // A department goes: its products wait for a new one, printers stop printing it.
+    assert.equal((await cmd("department.delete", { name: "Banaku" })).statusCode, 200);
+    s = await state();
+    assert.equal(s.products.find((x) => x.name === "Espresso").department, null);
+    assert.deepEqual(s.printers[0].departments, []);
+    assert.ok(!s.departments.includes("Banaku") && !s.categories.includes("Bosh"));
+    assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar.departments WHERE name IN ('Bar','Banaku')")).rows[0].n, 0, "gone from the database too");
+    assert.equal((await cmd("department.create", { name: "Ëmbëltore" }, ana)).statusCode, 403);
+    assert.equal((await cmd("category.delete", { name: "Kafeja" }, ana)).statusCode, 403);
+  } finally {
+    await t.close();
+  }
+});
+
+test("Kamarierët: a waiter works one room or all; removed once switched off, kept only for history", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const cmd = async (type, payload) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie: boss, body: { id: randomUUID(), version, type, payload } });
+    };
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    assert.equal((await cmd("waiter.create", { name: "Dea Lika", area: "Tarraca" })).statusCode, 200);
+    let dea = (await state()).waiters.find((w) => w.name === "Dea Lika");
+    assert.equal(dea.area, "Tarraca");
+    assert.equal((await cmd("waiter.area", { waiterId: dea.id, area: "Hëna" })).statusCode, 400, "only rooms that have tables");
+    assert.equal((await cmd("waiter.area", { waiterId: dea.id, area: null })).statusCode, 200);
+    assert.equal((await t.call("PUT", `/api/accounts/waiters/${dea.id}/pin`, { cookie: boss, body: { pin: "731905" } })).statusCode, 200);
+    assert.equal((await t.waiterLogin(dea.id, "731905")).statusCode, 200, "signs in with the PIN given at creation");
+    // An invoice in her name, then removal: on first try refused while active.
+    await cmd("product.save", { name: "Çaj", price: 120, category: "Kafe", trackStock: false });
+    const tea = (await state()).products.find((p) => p.name === "Çaj").id;
+    await cmd("order.add", { tableId: 2, productId: tea, waiterId: dea.id });
+    await cmd("order.pay", { tableId: 2, method: "Cash", received: 120 });
+    assert.equal((await cmd("waiter.delete", { waiterId: dea.id })).statusCode, 400, "switch off first");
+    assert.equal((await cmd("waiter.toggle", { waiterId: dea.id })).statusCode, 200);
+    assert.equal((await cmd("waiter.delete", { waiterId: dea.id })).statusCode, 200);
+    const s = await state();
+    dea = s.waiters.find((w) => w.id === dea.id);
+    assert.equal(dea.deleted, true);
+    assert.ok(s.invoices.some((i) => i.waiter === dea.id), "the invoice still names her");
+    assert.equal((await t.waiterLogin(dea.id, "731905")).statusCode, 401, "can't sign in any more");
+    assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar.accounts WHERE waiter_id = $1", [dea.id])).rows[0].n, 0);
+    assert.equal((await cmd("waiter.toggle", { waiterId: dea.id })).statusCode, 400, "a removed waiter stays removed");
+    assert.equal((await cmd("waiter.create", { name: "Dea Lika" })).statusCode, 200, "the name is free again");
   } finally {
     await t.close();
   }

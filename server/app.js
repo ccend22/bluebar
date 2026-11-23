@@ -240,10 +240,14 @@ export function buildApp({
       }));
       return { ...data, state: { ...state, waiters }, provider };
     }
-    // A waiter assigned to one till sees only that till's tables and shift.
-    const own = state.waiters.find((w) => w.id === user.waiterId)?.posId;
+    // A waiter given one room sees only its tables, and the shifts and slips of the tills
+    // that serve them.
+    const own = state.waiters.find((w) => w.id === user.waiterId)?.area;
+    const ownTables = state.tables.filter((t) => t.active && (!own || t.area === own));
+    const ownTills = new Set(ownTables.map((t) => posOf(state, t)));
+    const mineTable = (id) => { const t = state.tables.find((x) => x.id === id); return Boolean(t) && (!own || t.area === own); };
     const openShifts = state.openShifts
-      .filter((x) => !own || x.posId === own)
+      .filter((x) => !own || ownTills.has(x.posId))
       .map(({ id, posId, opened }) => ({ id, posId, opened }));
     return {
       ...data,
@@ -254,19 +258,11 @@ export function buildApp({
         movements: [],
         refunds: [],
         invoices: state.invoices.filter((i) => openShifts.some((x) => x.id === i.shiftId)),
-        tables: state.tables.filter((t) => t.active && (!own || posOf(state, t) === own)),
-        guestOrders: (state.guestOrders || []).filter((g) => {
-          const t = state.tables.find((x) => x.id === g.table);
-          return t && (!own || posOf(state, t) === own);
-        }),
-        guestAlerts: (state.guestAlerts || []).filter((g) => {
-          const t = state.tables.find((x) => x.id === g.table);
-          return t && (!own || posOf(state, t) === own);
-        }),
-        // Station tickets of other tills' tables are none of this waiter's business.
-        tickets: own
-          ? state.tickets.filter((k) => (k.posId ?? posOf(state, state.tables.find((t) => t.id === k.table) || {})) === own)
-          : state.tickets,
+        tables: ownTables,
+        guestOrders: (state.guestOrders || []).filter((g) => mineTable(g.table)),
+        guestAlerts: (state.guestAlerts || []).filter((g) => mineTable(g.table)),
+        // Slips of other rooms' tables are none of this waiter's business.
+        tickets: own ? state.tickets.filter((k) => mineTable(k.table)) : state.tickets,
       },
       provider,
     };
@@ -556,7 +552,7 @@ export function buildApp({
     // times running), it stays waiting and staff accept it by hand: never lost.
     const table = state.tables.find((t) => t.id === tableId);
     const active = state.waiters.filter((w) => w.active);
-    const waiterId = table.waiter ?? (active.find((w) => w.posId === posOf(state, table)) ?? active[0])?.id;
+    const waiterId = table.waiter ?? (active.find((w) => w.area === table.area) ?? active.find((w) => !w.area) ?? active[0])?.id;
     let status = "pending";
     for (let attempt = 0; waiterId && attempt < 3 && status === "pending"; attempt++) {
       try {
@@ -1690,12 +1686,17 @@ export function buildApp({
                 "guest.reject",
                 "guest.seen",
                 "department.create",
+                "department.rename",
+                "department.delete",
+                "category.rename",
+                "category.delete",
                 "stock.receive",
                 "stock.adjust",
                 "product.stockRules",
                 "waiter.create",
                 "waiter.toggle",
-                "waiter.pos",
+                "waiter.area",
+                "waiter.delete",
                 "pos.save",
                 "pos.delete",
                 "shift.open",
@@ -1707,6 +1708,8 @@ export function buildApp({
                 "floor.style",
                 "floor.rooms",
                 "menu.photos",
+                "floor.objects",
+                "floor.material",
               ],
             },
             payload: { type: "object" },
@@ -1731,7 +1734,7 @@ export function buildApp({
       const result = ["order.add", "order.remove"].includes(body.type)
         ? await executeOrderPatch(request.db, body, user)
         : await execute(request.db, body, user);
-      if (["product.save", "category.create"].includes(body.type)) await translateSaved(request.db, body.type, body.payload, result.state);
+      if (["product.save", "category.create", "category.rename"].includes(body.type)) await translateSaved(request.db, body.type, body.payload, result.state);
       // Best effort, like a single save: the menu keeps the Albanian until the next try.
       if (body.type === "products.import" && translate) await translateMissing(request.db).catch(() => {});
       return present(result, request);

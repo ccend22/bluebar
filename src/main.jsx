@@ -8,7 +8,9 @@ import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
 import { AiImport, ProductImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
-import { Finance, TransactionCategories } from "./Finance.jsx";
+import { Finance, TransactionCategories, firstPeriod, periodName } from "./Finance.jsx";
+import { MenuSetup } from "./MenuSetup.jsx";
+import { StaffOverview, StaffSettings } from "./Staff.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
 import { AccountSettings, LoginModeSettings, ManagerLoginSettings } from "./LoginModeSettings.jsx";
 import { Fiscalization } from "./Fiscalization.jsx";
@@ -19,7 +21,6 @@ import { PointsOfSale } from "./PointsOfSale.jsx";
 import { ConfigCheck } from "./StationSetup.jsx";
 import { OrderHistory } from "./OrderHistory.jsx";
 import { PaymentForm, RefundForm } from "./PaymentDialog.jsx";
-import { WaiterPatternEditor } from "./PatternPad.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
 import { RoomEditor } from "./RoomEditor.jsx";
 import { arrange, collisions } from "./floorGeometry.js";
@@ -29,7 +30,7 @@ import { Orders } from "./Orders.jsx";
 import { Stations, useStationPrinting } from "./Stations.jsx";
 import { TableOrder } from "./TableOrder.jsx";
 import { useInstall, useOnline } from "./pwa.js";
-import { fetchSession, fiscalizeInvoice, logout, reprintDocument, setUnauthorizedHandler, setWaiterPin } from "./api.js";
+import { fetchSession, fiscalizeInvoice, logout, reprintDocument, setUnauthorizedHandler } from "./api.js";
 import {
   Icon,
   Search,
@@ -117,6 +118,7 @@ const SETTINGS_TABS = [
   ["Porositë", "list", "Menuja e kamarierit: me foto ose pa"],
   ["Transaksione", "cash", "Kategoritë e shpenzimeve dhe hyrjeve"],
   ["Kasat", "coffee", "Arkat dhe zonat e tyre"],
+  ["Repartet dhe kategoritë", "menu", "Ku përgatitet porosia dhe grupet e menusë"],
   ["Menuja online", "menu", "Kodi QR dhe porositë e klientëve"],
   ["Fiskalizimi", "receipt", "Lidhja me BlueBill dhe tatimet"],
   ["Llogaria ime", "user", "Emri, PIN-i dhe kjo pajisje"],
@@ -314,8 +316,6 @@ function App({ user, onLogout, onUserChange }) {
     [category, setCategory] = useState("Të gjitha"),
     [query, setQuery] = useState("");
   const [notice, setNotice] = useState(null),
-    [pinFor, setPinFor] = useState(null),
-    [patternFor, setPatternFor] = useState(null),
     [waiter, setWaiter] = useState(
       () => user.waiterId ?? state.waiters.find((w) => w.active)?.id,
     );
@@ -332,6 +332,10 @@ function App({ user, onLogout, onUserChange }) {
     [bulkOpen, setBulkOpen] = useState(false),
     [deliveryOpen, setDeliveryOpen] = useState(false),
     [paymentFilter, setPaymentFilter] = useState("Të gjitha"),
+    // Shitjet dhe financat: Faturat, Transaksione and Raportet look at one period together.
+    [finPeriod, setFinPeriod] = useState(firstPeriod),
+    [txShow, setTxShow] = useState("out"),
+    [invoicesInPeriod, setInvoicesInPeriod] = useState(false),
     [stockFilter, setStockFilter] = useState("Të gjitha"),
     [settingsTab, setSettingsTab] = useState(() => {
       // Back on the topic last open in this browser tab, not always the first one.
@@ -436,14 +440,15 @@ function App({ user, onLogout, onUserChange }) {
       return false;
     }
   };
-  const nav = (p) => {
+  // then: what to set once the page has changed (showPage clears the open invoice, filters…).
+  const nav = (p, then) => {
     if (!leaveRoomDraft()) return;
     // The page cross-fades into the next one where the browser can (the navigation stays put);
     // otherwise, and for anyone asking for less motion, it just swaps.
     if (p !== page && document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches)
       // A transition cut short (another tap, the tab hidden) is not an error: the page has changed.
-      document.startViewTransition(() => flushSync(() => showPage(p))).ready.catch(() => {});
-    else showPage(p);
+      document.startViewTransition(() => flushSync(() => (showPage(p), then?.()))).ready.catch(() => {});
+    else (showPage(p), then?.());
     setTimeout(() => heading.current?.focus(), 0);
   };
   // Opening a product brings its whole form into view: one short move, then no scrolling to reach "Ruaj".
@@ -492,6 +497,8 @@ function App({ user, onLogout, onUserChange }) {
     setNotice(null);
   };
   // Deactivated tables ("Menaxho tavolinat") drop off the floor but stay listed there for reactivation.
+  // The rooms (table zones) a waiter can be given.
+  const roomNames = [...new Set(state.tables.filter((t) => t.active).map((t) => t.area))].sort((a, b) => a.localeCompare(b, "sq"));
   const activeTables = state.tables.filter((t) => t.active),
     areas = [
       "Të gjitha",
@@ -525,8 +532,18 @@ function App({ user, onLogout, onUserChange }) {
       matches(p.name, query) &&
       (category === "Të gjitha" || p.category === category),
   );
+  const [periodFrom, periodTo] = finPeriod.range;
+  const inPeriod = (i) => { const d = new Date(i.date).toLocaleDateString("sv-SE"); return d >= periodFrom && d <= periodTo; };
+  // The links between the three pages, each carrying the shared period.
+  const finGo = {
+    invoices: () => nav("Faturat", () => setInvoicesInPeriod(true)),
+    invoice: (i) => nav("Faturat", () => (setInvoicesInPeriod(true), setReceipt(i), setFiscalizeChoice(false))),
+    transactions: (show) => nav("Transaksione", () => setTxShow(show)),
+    orders: () => nav("Porositë"),
+  };
   const filteredInvoices = state.invoices.filter(
     (i) =>
+      (!invoicesInPeriod || inPeriod(i)) &&
       matches(`D-${i.id}`, query) &&
       (paymentFilter === "Të gjitha" || i.method === paymentFilter),
   );
@@ -1272,6 +1289,8 @@ function App({ user, onLogout, onUserChange }) {
                           reservations={reservedToday}
                           look={state.floorStyle}
                           texture={state.floorTexture}
+                          material={state.floorMaterial}
+                          objects={(state.floorObjects || []).filter((o) => !separateRooms || o.area === room)}
                           editing={false}
                           selected={selected}
                           onSelectTable={(t) => t && selectTable(t)}
@@ -1391,7 +1410,20 @@ function App({ user, onLogout, onUserChange }) {
                       value={paymentFilter}
                       onChange={setPaymentFilter}
                     />
+                    {/* The same period Raportet and Transaksione show; on, the list keeps to it. */}
+                    <button type="button" className={invoicesInPeriod ? "filter-chip active" : "filter-chip"} aria-pressed={invoicesInPeriod} onClick={() => setInvoicesInPeriod((v) => !v)}>
+                      <Icon name="calendar" size={15} />
+                      {periodName(finPeriod.range)}
+                      {invoicesInPeriod && <Icon name="close" size={14} />}
+                    </button>
                   </div>
+                  {invoicesInPeriod && (
+                    <div className="period-links">
+                      <span>{filteredInvoices.length} fatura · {money(filteredInvoices.reduce((s, i) => s + i.total, 0))} në {periodName(finPeriod.range)}</span>
+                      <button type="button" className="text-button" onClick={() => finGo.transactions("sale")}>Te Transaksione <Icon name="arrow" size={14} /></button>
+                      <button type="button" className="text-button" onClick={() => nav("Raportet")}>Te Raportet <Icon name="arrow" size={14} /></button>
+                    </div>
+                  )}
                   {filteredInvoices.length ? (
                     <div className="table-scroll">
                       <table className="responsive-table invoice-table">
@@ -1473,7 +1505,7 @@ function App({ user, onLogout, onUserChange }) {
                         <button
                           onClick={() =>
                             state.invoices.length
-                              ? (setQuery(""), setPaymentFilter("Të gjitha"))
+                              ? (setQuery(""), setPaymentFilter("Të gjitha"), setInvoicesInPeriod(false))
                               : nav("Tavolinat")
                           }
                         >
@@ -1816,12 +1848,16 @@ function App({ user, onLogout, onUserChange }) {
 
             {page === "Produktet" && bulkOpen && <ProductImport state={state} update={update} onClose={() => setBulkOpen(false)} />}
             {page === "Produktet" && (
-              <div className="management-layout products-layout">
+              <div className={`management-layout products-layout ${editor ? "" : "no-aside"}`}>
                 <section className="panel">
                   <SectionHeading icon="menu"
                     title="Menuja e lokalit"
-                    description={`${state.products.length} produkte · ${state.departments.length} reparte`}
-                  />
+                    description={`${state.products.length} produkte · ${state.departments.length} reparte · ${state.categories.length} kategori`}
+                  >
+                    <button type="button" className="ms-shortcut" onClick={() => { setSettingsTab("Repartet dhe kategoritë"); try { sessionStorage.setItem("settings-tab", "Repartet dhe kategoritë"); } catch {} nav("Cilësimet"); }}>
+                      <Icon name="settings" size={16} /> Repartet dhe kategoritë
+                    </button>
+                  </SectionHeading>
                   <div className="toolbar toolbar-stack">
                     <Search
                       label="Kërko në menu"
@@ -2034,175 +2070,18 @@ function App({ user, onLogout, onUserChange }) {
                     </section>
                     </div>
                   )}
-                  <section className="panel">
-                    <SectionHeading icon="coffee"
-                      title="Repartet e përgatitjes"
-                      description="Ku përgatitet porosia: bar, kuzhinë, ëmbëltore. Çdo repart mund të ketë printerin e vet."
-                    />
-                    <div className="category-list">
-                      {state.departments.map((d) => (
-                        <span key={d} className="department-chip">
-                          <span>{d}</span>
-                          <Badge>
-                            {state.products.filter((p) => p.department === d).length}
-                          </Badge>
-                        </span>
-                      ))}
-                    </div>
-                    <form
-                      className="stack-form category-form"
-                      onSubmit={async (e) => {
-                        const formElement = e.currentTarget;
-                        e.preventDefault();
-                        const name = new FormData(e.currentTarget)
-                          .get("department")
-                          .trim();
-                        if (!name)
-                          return notify("Vendosni emrin e repartit.", "error");
-                        if (
-                          state.departments.some(
-                            (d) => d.toLowerCase() === name.toLowerCase(),
-                          )
-                        )
-                          return notify("Ky repart ekziston tashmë.", "error");
-                        if (
-                          await update(
-                            "department.create",
-                            { name },
-                            "Reparti u shtua.",
-                          )
-                        )
-                          formElement.reset();
-                      }}
-                    >
-                      <Field
-                        label="Repart i ri"
-                        name="department"
-                        placeholder="p.sh. Grill"
-                        maxLength={40}
-                        required
-                      />
-                      <button aria-label="Shto repart">
-                        <Icon name="plus" size={16} />
-                        Shto
-                      </button>
-                    </form>
-                  </section>
-                  <section className="panel">
-                    <SectionHeading icon="list"
-                      title="Kategoritë e menusë"
-                      description="Grupet e menusë që sheh kamarieri: kafe, pije, birra…"
-                    />
-                    <div className="category-list">
-                      {state.categories.map((c) => (
-                        <button
-                          key={c}
-                          onClick={() =>
-                            setCategory(category === c ? "Të gjitha" : c)
-                          }
-                          aria-pressed={category === c}
-                        >
-                          <span>{c}</span>
-                          <Badge>
-                            {
-                              state.products.filter((p) => p.category === c)
-                                .length
-                            }
-                          </Badge>
-                        </button>
-                      ))}
-                    </div>
-                    <form
-                      className="stack-form category-form"
-                      onSubmit={async (e) => {
-                        const formElement = e.currentTarget;
-                        e.preventDefault();
-                        const name = new FormData(e.currentTarget)
-                          .get("category")
-                          .trim();
-                        if (!name)
-                          return notify(
-                            "Vendosni emrin e kategorisë së menusë.",
-                            "error",
-                          );
-                        if (
-                          state.categories.some(
-                            (c) => c.toLowerCase() === name.toLowerCase(),
-                          )
-                        )
-                          return notify(
-                            "Kjo kategori menuje ekziston tashmë.",
-                            "error",
-                          );
-                        if (
-                          await update(
-                            "category.create",
-                            { name },
-                            "Kategoria e menusë u shtua.",
-                          )
-                        )
-                          formElement.reset();
-                      }}
-                    >
-                      <Field
-                        label="Kategori e re e menusë"
-                        name="category"
-                        placeholder="p.sh. Kokteje"
-                        maxLength={40}
-                        required
-                      />
-                      <button aria-label="Shto kategori menuje">
-                        <Icon name="plus" size={16} />
-                        Shto
-                      </button>
-                    </form>
-                  </section>
                 </aside>
               </div>
             )}
 
             {page === "Rezervimet" && <Reservations state={state} update={update} role={role} />}
             {page === "Kamarierët" && (
-              // The team at a glance; adding waiters, PINs and patterns is in Cilësimet → Kamarierët.
-              <section className="panel">
-                <SectionHeading icon="people"
-                  title="Ekipi i shërbimit"
-                  description={`${state.waiters.filter((w) => w.active).length} aktivë · ${state.waiters.length} profile gjithsej`}
-                >
-                  <button type="button" onClick={() => { setSettingsTab("Kamarierët"); try { sessionStorage.setItem("settings-tab", "Kamarierët"); } catch {} nav("Cilësimet"); }}>
-                    <Icon name="settings" size={16} /> Ndrysho te Cilësimet
-                  </button>
-                </SectionHeading>
-                <div className="staff-list">
-                  {state.waiters.map((w) => {
-                    const assigned = state.tables.filter((t) => t.lines.length && t.waiter === w.id);
-                    return (
-                      <div className="staff-row staff-row-view" key={w.id}>
-                        <div className="staff-person">
-                          <span className={`avatar ${w.active ? "" : "inactive"}`}>
-                            {w.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
-                          </span>
-                          <div>
-                            <strong>{w.name}</strong>
-                            <small>
-                              {assigned.length
-                                ? `${assigned.length} tavolina · ${money(assigned.reduce((sum, t) => sum + bill(t).remaining, 0))}`
-                                : "Pa porosi të hapura"}
-                              {state.pointsOfSale.length > 1 && ` · ${state.pointsOfSale.find((k) => k.id === w.posId)?.name || "Të gjitha kasat"}`}
-                            </small>
-                          </div>
-                        </div>
-                        <Badge tone={w.active ? "green" : ""}>{w.active ? "Aktiv" : "Joaktiv"}</Badge>
-                      </div>
-                    );
-                  })}
-                </div>
-                {!state.waiters.length && <Empty icon="people" title="Ende pa kamarierë">Shtojini te Cilësimet → Kamarierët.</Empty>}
-              </section>
+              // The team and its day; adding waiters, PINs and rooms is in Cilësimet → Kamarierët.
+              <StaffOverview state={state} rooms={roomNames} onEdit={() => { setSettingsTab("Kamarierët"); try { sessionStorage.setItem("settings-tab", "Kamarierët"); } catch {} nav("Cilësimet"); }} />
             )}
 
-            {page === "Raportet" && <Finance state={state} notify={notify} sales={<Reports state={state} />} />}
-            {page === "Transaksione" && <Finance state={state} notify={notify} mode="transactions" />}
+            {page === "Raportet" && <Finance state={state} notify={notify} sales={<Reports state={state} />} period={finPeriod} setPeriod={setFinPeriod} show={txShow} setShow={setTxShow} go={finGo} />}
+            {page === "Transaksione" && <Finance state={state} notify={notify} mode="transactions" period={finPeriod} setPeriod={setFinPeriod} show={txShow} setShow={setTxShow} go={finGo} />}
             {page === "Cilësimet" && (
               <>
               {/* One topic at a time instead of ten panels on one page: a side list on wide screens,
@@ -2254,205 +2133,16 @@ function App({ user, onLogout, onUserChange }) {
                     </div>
                   </>
                 )}
+                {settingsTab === "Repartet dhe kategoritë" && <MenuSetup state={state} update={update} />}
                 {settingsTab === "Kasat" && (
                   <div className="settings-column settings-wide">
                     <PointsOfSale state={state} update={update} />
                   </div>
                 )}
                 {settingsTab === "Kamarierët" && (
-                  <>
                   <div className="settings-column settings-wide">
-                <section className="panel">
-                  <SectionHeading icon="people"
-                    title="Ekipi i shërbimit"
-                    description={`${state.waiters.filter((w) => w.active).length} aktivë · ${state.waiters.length} profile gjithsej`}
-                  />
-                  <div className="toolbar">
-                    <Search
-                      label="Kërko kamarier"
-                      placeholder="Kërko me emër…"
-                      value={query}
-                      onChange={setQuery}
-                    />
+                    <StaffSettings state={state} update={update} notify={notify} refresh={database.refresh} rooms={roomNames} waiter={waiter} setWaiter={setWaiter} />
                   </div>
-                  <div className="staff-list">
-                    {state.waiters
-                      .filter((w) => matches(w.name, query))
-                      .map((w) => {
-                        const assigned = state.tables.filter(
-                            (t) => t.lines.length && t.waiter === w.id,
-                          ),
-                          last =
-                            state.waiters.filter((x) => x.active).length ===
-                              1 && w.active;
-                        return (
-                          <div className="staff-row" key={w.id}>
-                            <div className="staff-person">
-                              <span className={`avatar ${w.active ? "" : "inactive"}`}>
-                                {w.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
-                              </span>
-                              <div>
-                                <strong>{w.name}</strong>
-                                <small>
-                                  {w.pinShared && <b className="pin-shared">PIN i njëjtë me një tjetër: vendosni një PIN të ri · </b>}
-                                  {w.hasPin && w.hasPattern ? "PIN dhe pattern"
-                                    : w.hasPin ? "Hyn me PIN"
-                                    : w.hasPattern ? "Hyn me pattern"
-                                    : "Pa hyrje"}
-                                  {" · "}
-                                  {assigned.length
-                                    ? `${assigned.length} tavolina · ${money(assigned.reduce((s, t) => s + bill(t).remaining, 0))}`
-                                    : "Pa porosi të hapura"}
-                                </small>
-                                <div className="staff-status">
-                              <Badge tone={w.active ? "green" : ""}>{w.active ? "Aktiv" : "Joaktiv"}</Badge>
-                              {state.pointsOfSale.length > 1 && (
-                                <div className="staff-pos">
-                                  <ChoiceField
-                                    compact
-                                    label="Kasa"
-                                    value={String(w.posId ?? "")}
-                                    options={[
-                                      { value: "", label: "Të gjitha" },
-                                      ...state.pointsOfSale.map((k) => ({ value: String(k.id), label: k.name })),
-                                    ]}
-                                    onChange={(v) =>
-                                      update("waiter.pos", { waiterId: w.id, posId: v ? Number(v) : null }, "Kasa e kamarierit u ruajt.")
-                                    }
-                                  />
-                                </div>
-                              )}
-                            </div>
-                              </div>
-                            </div>
-                            {/* Same size, same row: every action of the profile. */}
-                            <div className="staff-buttons">
-                              <button type="button" onClick={() => { setPatternFor(null); setPinFor(pinFor === w.id ? null : w.id); }}>
-                                {w.hasPin ? "Ndrysho PIN" : "Vendos PIN"}
-                              </button>
-                              <button type="button" onClick={() => { setPinFor(null); setPatternFor(patternFor === w.id ? null : w.id); }}>
-                                {w.hasPattern ? "Ndrysho pattern" : "Vendos pattern"}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={assigned.length > 0 || last}
-                                title={assigned.length ? "Ka porosi të hapura" : last ? "Duhet të paktën një profil aktiv" : undefined}
-                                onClick={() => {
-                                  if (waiter === w.id) setWaiter(state.waiters.find((x) => x.active && x.id !== w.id)?.id || w.id);
-                                  update("waiter.toggle", { waiterId: w.id }, w.active ? "Profili u çaktivizua." : "Profili u aktivizua.");
-                                }}
-                              >
-                                {w.active ? "Çaktivizo" : "Aktivizo"}
-                              </button>
-                            </div>
-                            {pinFor === w.id && (
-                              <form
-                                className="inline-form staff-pin-form"
-                                onSubmit={async (e) => {
-                                  e.preventDefault();
-                                  try {
-                                    await setWaiterPin(w.id, new FormData(e.currentTarget).get("pin"));
-                                    await database.refresh();
-                                    setPinFor(null);
-                                    notify("PIN-i u ruajt.");
-                                  } catch (err) {
-                                    notify(err.message, "error");
-                                  }
-                                }}
-                              >
-                                <input
-                                  name="pin"
-                                  aria-label={`PIN i ri për ${w.name}`}
-                                  type="password"
-                                  inputMode="numeric"
-                                  pattern="[0-9]{6}"
-                                  maxLength={6}
-                                  placeholder="PIN i ri · 6 shifra"
-                                  autoComplete="off"
-                                  required
-                                  autoFocus
-                                />
-                                <button className="primary">Ruaj</button>
-                                <button type="button" onClick={() => setPinFor(null)}>Anulo</button>
-                              </form>
-                            )}
-                            {patternFor === w.id && <WaiterPatternEditor key={w.id} waiter={w} onCancel={() => setPatternFor(null)} onSaved={async () => { await database.refresh(); setPatternFor(null); notify("Pattern-i u ruajt."); }} />}
-                          </div>
-                        );
-                      })}
-                  </div>
-                  {!state.waiters.some((w) => matches(w.name, query)) && (
-                    <Empty icon="people" title={state.waiters.length ? "Nuk u gjet asnjë kamarier" : "Ndërtoni ekipin tuaj"}>
-                      {state.waiters.length ? "Provoni një emër tjetër." : "Shtoni kamarierin e parë, vendosni PIN-in dhe lejoni rrjetin e lokalit."}
-                    </Empty>
-                  )}
-                </section>
-                  </div>
-                <div className="settings-column">
-                  <section className="panel">
-                    <SectionHeading icon="plus"
-                      title="Shto në ekip"
-                      description="Krijoni një profil për të caktuar porositë."
-                    />
-                    <form
-                      className="stack-form"
-                      onSubmit={async (e) => {
-                        const formElement = e.currentTarget;
-                        e.preventDefault();
-                        const name = new FormData(e.currentTarget)
-                          .get("name")
-                          .trim();
-                        if (!name)
-                          return notify(
-                            "Vendosni emrin dhe mbiemrin.",
-                            "error",
-                          );
-                        if (
-                          state.waiters.some(
-                            (w) => w.name.toLowerCase() === name.toLowerCase(),
-                          )
-                        )
-                          return notify(
-                            "Një profil me këtë emër ekziston.",
-                            "error",
-                          );
-                        if (
-                          await update(
-                            "waiter.create",
-                            { name },
-                            `${name} u shtua në ekip.`,
-                          )
-                        )
-                          formElement.reset();
-                      }}
-                    >
-                      <Field
-                        label="Emri dhe mbiemri"
-                        name="name"
-                        placeholder="p.sh. Ardit Hoxha"
-                        maxLength={80}
-                        required
-                      />
-                      <button className="primary">
-                        <Icon name="plus" size={17} />
-                        Shto kamarier
-                      </button>
-                    </form>
-                  </section>
-                  <div className="info-note">
-                    <Icon name="info" />
-                    <div>
-                      <strong>Hyrja e kamarierit</strong>
-                      <p>
-                        Vendosni PIN ose pattern për çdo kamarier. Mënyrën e hyrjes e zgjidhni te "Stafi dhe hyrja".
-                        Pas 5 përpjekjeve të gabuara llogaria bllokohet për 15
-                        minuta; vendosja e një PIN-i ose pattern-i të ri e zhbllokon. Kamarierët
-                        hyjnë vetëm nga rrjeti i lokalit.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                  </>
                 )}
                 {settingsTab === "Transaksione" && (
                   <TransactionCategories state={state} notify={notify} onSaved={() => database.refresh()} />

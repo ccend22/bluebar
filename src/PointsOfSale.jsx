@@ -66,7 +66,7 @@ export function PointsOfSale({ state, update }) {
                   <strong>{k.name}</strong>
                   <small>
                     {open ? "Turn i hapur" : "Turn i mbyllur"} ·{" "}
-                    {state.waiters.filter((w) => w.active && w.posId === k.id).length} kamarierë të caktuar
+                    {state.waiters.filter((w) => w.active && w.area && served.includes(w.area)).length} kamarierë në sallat e saj
                   </small>
                   <div className="printer-targets">
                     {served.length ? served.map((a) => <Badge key={a}>{a}</Badge>) : <small>Pa zona</small>}

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MAX_SPAN, inRoom, rectFits, rectOf, sizeFor, spanOf } from "./floorGeometry.js";
 import { tableName } from "./domain.js";
 import { deleteFloorAsset, drawFloorAsset, saveFloorAsset, setFloorTexture, setTableSprite } from "./api.js";
 import { shrink } from "./OnlineMenu.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
+import { OBJECT_KINDS, ObjectArt, ROOM_PX, STEP_X, STEP_Y, fitRoom, fromPx, newObject, snapPosition, toPx } from "./FloorObjects.jsx";
+import { FLOOR_MATERIALS, floorLook } from "./floorMaterials.js";
 import { Icon, TableShapePicker } from "./components.jsx";
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -164,6 +166,59 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
     setBusy(false);
   };
   useEffect(() => setDrawing((d) => (d?.kind === "table" ? null : d)), [selected]);
+  // The room's objects (walls, doors, plants…): only this room's when rooms are separate. Each
+  // change saves the whole list; a new one starts in the middle, chosen, ready to drag.
+  const [objectId, setObjectId] = useState(null);
+  // Changes show at once (local) and are saved one after another, the latest list winning, so
+  // quick clicks on + never collide; a save refused because the room just changed (another
+  // device) is sent once more on the fresh room.
+  const [localObjects, setLocalObjects] = useState(null);
+  const allObjects = localObjects ?? state.floorObjects ?? [];
+  const queue = useRef({ busy: false, next: null });
+  const objects = separate ? allObjects.filter((o) => o.area === room) : allObjects;
+  const obj = objects.find((o) => o.id === objectId);
+  useEffect(() => { if (selected) setObjectId(null); }, [selected]);
+  const saveObjects = async (list, message) => {
+    setLocalObjects(list);
+    const q = queue.current;
+    q.next = { list, message };
+    if (q.busy) return true;
+    q.busy = true;
+    let ok = true;
+    while (q.next) {
+      const job = q.next;
+      q.next = null;
+      const saved = (await update("floor.objects", { objects: job.list }, job.message)) || (await update("floor.objects", { objects: job.list }, job.message));
+      if (!saved) { ok = false; q.next = null; }
+    }
+    q.busy = false;
+    setLocalObjects(null);
+    return ok;
+  };
+  const changeObject = (id, patch) => saveObjects(allObjects.map((o) => (o.id === id ? { ...o, ...patch } : o)));
+  const addObject = async (kind) => {
+    const fresh = newObject(kind, separate ? room : undefined);
+    const o = { ...fresh, ...fitRoom(fresh) };
+    if (await saveObjects([...allObjects, o], `${OBJECT_KINDS[kind].name}: u shtua në mes. Tërhiqeni ku e doni.`)) (onSelect(null), setObjectId(o.id));
+  };
+  const removeObject = (o) => saveObjects(allObjects.filter((x) => x.id !== o.id), `${OBJECT_KINDS[o.kind].name}: u hoq.`).then((ok) => ok && setObjectId(null));
+  // Delete or Backspace takes the chosen object away (not while typing in a field).
+  useEffect(() => {
+    if (!obj) return;
+    const key = (e) => {
+      if ((e.key === "Delete" || e.key === "Backspace") && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) (e.preventDefault(), removeObject(obj));
+      if (e.key === "Escape") setObjectId(null);
+      // Arrows nudge it one grid step (Shift: a whole table cell).
+      const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (arrow && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) {
+        e.preventDefault();
+        const k = e.shiftKey ? 4 : 1;
+        changeObject(obj.id, fitRoom({ ...obj, x: obj.x + arrow[0] * STEP_X * k, y: obj.y + arrow[1] * STEP_Y * k }));
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
   return (
     <div className="room-edit">
       <div className="room-edit-tools">
@@ -193,14 +248,6 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
             </button>
           ))}
         </div>
-        {look === "3d" && (
-        <PhotoButton label={state.floorTexture ? "Ndrysho dyshemenë" : "Dysheme nga foto"} kind="floor" busy={busy} setBusy={setBusy} onError={setError} onDrawn={(image) => setDrawing({ kind: "floor", image })} />
-        )}
-        {look === "3d" && state.floorTexture && (
-          <button type="button" disabled={busy} onClick={() => { const old = state.floorTexture; run(() => setFloorTexture(null).then(() => deleteFloorAsset(old)), "Dyshemeja u hoq."); }}>
-            Hiq dyshemenë
-          </button>
-        )}
         <span className="room-edit-hint">Tërhiqni një tavolinë për ta lëvizur · prekeni për ta ndryshuar · tërhiqni qoshen për madhësinë</span>
         {/* The same button that opened editing closes it: pressed while the room is open. */}
         <button type="button" className="room-done" aria-pressed="true" onClick={onDone}>
@@ -219,7 +266,7 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
       )}
       {busy && <p className="ai-reading" role="status"><span className="ai-spinner" /> AI po e vizaton… zakonisht 15–40 sekonda.</p>}
       {error && <p className="ai-error" role="alert">{error}</p>}
-      <div className={`room-edit-body ${t || drawing ? "with-panel" : ""}`}>
+      <div className="room-edit-body with-panel">
         <FloorPlan
           tables={tables}
           waiters={state.waiters}
@@ -230,6 +277,11 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
           selected={selected}
           onSelectTable={(x) => onSelect(x?.id ?? null)}
           onLayoutChange={onDraft}
+          material={state.floorMaterial}
+          objects={objects}
+          selectedObject={objectId}
+          onSelectObject={setObjectId}
+          onObjectChange={changeObject}
         />
         {drawing?.kind === "floor" ? (
           <aside className="panel room-panel">
@@ -254,7 +306,77 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
               </button>
             </div>
           </aside>
-        ) : t && (
+        ) : obj ? (
+          <ObjectPanel
+            key={obj.id}
+            obj={obj}
+            onClose={() => setObjectId(null)}
+            onChange={(patch) => changeObject(obj.id, patch)}
+            onDuplicate={async () => { const copy = { ...obj, id: newObject(obj.kind).id }; Object.assign(copy, fitRoom({ ...copy, x: obj.x + STEP_X, y: obj.y + STEP_Y })); if (await saveObjects([...allObjects, copy], `${OBJECT_KINDS[obj.kind].name}: u dyfishua.`)) setObjectId(copy.id); }}
+            onRemove={() => removeObject(obj)}
+          />
+        ) : !t ? (
+          <aside className="panel room-panel room-library">
+            <h2>Salla</h2>
+            {look === "3d" && (
+              <section aria-labelledby="room-floor-title">
+                <h3 id="room-floor-title">Dyshemeja</h3>
+                <div className="room-floors" role="radiogroup" aria-label="Dyshemeja">
+                  {FLOOR_MATERIALS.map(([m, label]) => (
+                    <button
+                      key={m}
+                      type="button"
+                      role="radio"
+                      aria-checked={!state.floorTexture && (state.floorMaterial || "oak") === m}
+                      onClick={() => (state.floorMaterial || "oak") !== m && update("floor.material", { material: m }, `Dyshemeja: ${label.toLowerCase()}.`)}
+                    >
+                      <span className="room-floor-swatch" style={{ backgroundImage: floorLook(m).image }} />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="room-floor-photo">
+        <PhotoButton label={state.floorTexture ? "Ndrysho dyshemenë" : "Dysheme nga foto"} kind="floor" busy={busy} setBusy={setBusy} onError={setError} onDrawn={(image) => setDrawing({ kind: "floor", image })} />
+        {state.floorTexture && (
+          <button type="button" disabled={busy} onClick={() => { const old = state.floorTexture; run(() => setFloorTexture(null).then(() => deleteFloorAsset(old)), "Dyshemeja u hoq."); }}>
+            Hiq dyshemenë
+          </button>
+        )}
+                </div>
+                {state.floorTexture && <p className="helper">Dyshemeja nga foto zëvendëson materialin. Hiqeni për t'u kthyer te materiali i zgjedhur.</p>}
+              </section>
+            )}
+            {look !== "3d" ? (
+              <p className="helper room-flat-note">Muret, bimët, divanet dhe shenjat shfaqen te pamja <b>3D</b>. Pamja e thjeshtë tregon vetëm tavolinat.</p>
+            ) : (
+            <section aria-labelledby="room-objects-title">
+              <h3 id="room-objects-title">Shto në sallë</h3>
+              <div className="room-objects">
+                {Object.entries(OBJECT_KINDS).map(([kind, k]) => (
+                  <button key={kind} type="button" onClick={() => addObject(kind)}>
+                    <span className={`room-object-preview small fo-${kind}`} aria-hidden="true"><ObjectArt kind={kind} text={k.text} /></span>
+                    <span>{k.name}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="helper">Muret dhe dritaret ndajnë sallën; bimët, divanet dhe shenjat e bëjnë si në realitet. Kamarierët i shohin, por prekin vetëm tavolinat.</p>
+              {objects.length > 0 && (
+                <button
+                  type="button"
+                  className="room-align"
+                  onClick={() => {
+                    // Every object of this room onto the grid (or flush to the room's walls).
+                    const mine = new Set(objects.map((o) => o.id));
+                    saveObjects(allObjects.map((o) => { if (!mine.has(o.id)) return o; const r = Math.round((o.r || 0) / 45) * 45 % 360; const snapped = { ...o, r, ...snapPosition({ ...o, r }, []) }; return { ...snapped, ...fitRoom(snapped), guides: undefined }; }), "Objektet u drejtuan në rrjetë.");
+                  }}
+                >
+                  <Icon name="check" size={16} /> Drejto objektet
+                </button>
+              )}
+            </section>
+            )}
+          </aside>
+        ) : (
           <aside className="panel room-panel" key={`${t.id}-${Boolean(draft[t.id])}`}>
             <div className="room-panel-head">
               <h2>{tableName(t)}</h2>
@@ -399,5 +521,130 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
         </div>
       )}
     </div>
+  );
+}
+
+// A size or a position in the room's px: type it, or step it a grid square at a time.
+function PxField({ label, value, step, min, max, onCommit }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = (v) => {
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n)) return setText(String(value));
+    const next = Math.min(max, Math.max(min, n));
+    setText(String(next));
+    if (next !== value) onCommit(next);
+  };
+  return (
+    <div className="px-field">
+      <span>{label}</span>
+      <div className="px-stepper">
+        <button type="button" aria-label={`${label}: më pak`} disabled={value <= min} onClick={() => commit(value - step)}>−</button>
+        <input
+          inputMode="numeric"
+          aria-label={`${label} në px`}
+          value={text}
+          onChange={(e) => setText(e.target.value.replace(/[^0-9-]/g, ""))}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); commit(value + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? step : 1)); }
+          }}
+        />
+        <i>px</i>
+        <button type="button" aria-label={`${label}: më shumë`} disabled={value >= max} onClick={() => commit(value + step)}>+</button>
+      </div>
+    </div>
+  );
+}
+
+// The chosen object's inspector: what it is (and swap it for another kind in the same place),
+// its size and place in the room's px (1600 × 1000), its turn, a sign's text.
+function ObjectPanel({ obj, onClose, onChange, onDuplicate, onRemove }) {
+  const kind = OBJECT_KINDS[obj.kind];
+  const gx = toPx(STEP_X, "x"), gy = toPx(STEP_Y, "y"); // one grid square: 50 × 50 px
+  // Any change goes through fitRoom, so the object always stays inside the room.
+  const apply = (patch) => { const next = { ...obj, ...patch }; onChange({ ...patch, ...fitRoom(next) }); };
+  const setW = (px) => apply(kind.square ? { w: fromPx(px, "x"), h: fromPx(px, "y") } : { w: fromPx(px, "x") });
+  return (
+    <aside className="panel room-panel object-panel">
+      <div className="object-head">
+        <span className={`room-object-preview fo-${obj.kind}`} aria-hidden="true"><ObjectArt kind={obj.kind} text={obj.text} /></span>
+        <div>
+          <h2>{kind.name}</h2>
+          <p>{toPx(obj.w, "x")} × {toPx(obj.h, "y")} px · {obj.r || 0}°</p>
+        </div>
+        <button type="button" className="icon-button" aria-label="Mbyll" onClick={onClose}><Icon name="close" size={18} /></button>
+      </div>
+
+      {obj.kind === "sign" && (
+        <label className="field">
+          <span>Teksti</span>
+          <input
+            defaultValue={obj.text || ""}
+            maxLength={30}
+            placeholder="p.sh. Hyrja, Bar, WC, Dalje emergjence"
+            onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== obj.text && onChange({ text: e.target.value.trim() })}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          />
+        </label>
+      )}
+
+      <section className="object-section">
+        <h3>Madhësia</h3>
+        <div className="px-grid">
+          {kind.square ? (
+            <PxField label="Madhësia" value={toPx(obj.w, "x")} step={gx / 2} min={toPx(kind.min[0], "x")} max={ROOM_PX.y} onCommit={setW} />
+          ) : (
+            <>
+              <PxField label={kind.fixed ? "Gjatësia" : "Gjerësia"} value={toPx(obj.w, "x")} step={gx} min={toPx(kind.min[0], "x")} max={ROOM_PX.x} onCommit={setW} />
+              {!kind.fixed && <PxField label="Thellësia" value={toPx(obj.h, "y")} step={gy / 2} min={toPx(kind.min[1], "y")} max={ROOM_PX.y} onCommit={(px) => apply({ h: fromPx(px, "y") })} />}
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="object-section">
+        <h3>Pozicioni</h3>
+        <div className="px-grid">
+          <PxField label="Majtas–djathtas" value={toPx(obj.x, "x")} step={gx} min={0} max={ROOM_PX.x} onCommit={(px) => apply({ x: fromPx(px, "x") })} />
+          <PxField label="Lart–poshtë" value={toPx(obj.y, "y")} step={gy} min={0} max={ROOM_PX.y} onCommit={(px) => apply({ y: fromPx(px, "y") })} />
+        </div>
+      </section>
+
+      <section className="object-section">
+        <h3>Rrotullimi</h3>
+        <div className="rotation-chips" role="radiogroup" aria-label="Rrotullimi">
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((r) => (
+            <button key={r} type="button" role="radio" aria-checked={(obj.r || 0) === r} onClick={() => apply({ r })}>{r}°</button>
+          ))}
+        </div>
+      </section>
+
+      <section className="object-section">
+        <h3>Lloji</h3>
+        <div className="kind-chips" role="radiogroup" aria-label="Lloji i objektit">
+          {Object.entries(OBJECT_KINDS).map(([k, def]) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={obj.kind === k}
+              title={def.name}
+              onClick={() => obj.kind !== k && apply({ kind: k, w: def.w, h: def.h, ...(def.text ? { text: obj.text || def.text } : {}) })}
+            >
+              <span className={`room-object-preview tiny fo-${k}`} aria-hidden="true"><ObjectArt kind={k} text={def.text} /></span>
+              <span>{def.name}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="object-foot">
+        <button type="button" onClick={onDuplicate}><Icon name="plus" size={16} /> Dyfisho</button>
+        <button type="button" className="danger-soft" onClick={onRemove}><Icon name="trash" size={16} /> Hiqe</button>
+      </div>
+      <p className="helper object-tip">Tërhiqeni në sallë: kapet vetë te muret, objektet dhe rrjeta. Shigjetat e lëvizin 50 px; Alt e lë të lirë.</p>
+    </aside>
   );
 }

@@ -193,12 +193,10 @@ export function configIssues(state, agent = null, now = Date.now()) {
       for (const a of k.areas.filter((a) => !zones.includes(a)))
         warn("Kasat", `Kasa ${name(k)} ka zonën "${a}", por asnjë tavolinë aktive nuk është aty.`);
     }
-  // Staff: a waiter tied to a till must have tables to work.
-  for (const w of state.waiters.filter((w) => w.active && w.posId)) {
-    const k = tills.find((x) => x.id === w.posId);
-    if (!tables.some((t) => posOf(state, t) === w.posId))
-      error("Stafi", `${w.name} punon vetëm te ${k ? name(k) : "një kasë që s'ekziston"}, por aty s'ka tavolina.`);
-  }
+  // Staff: a waiter given one room must have tables there to work.
+  for (const w of state.waiters.filter((w) => w.active && !w.deleted && w.area))
+    if (!tables.some((t) => t.area === w.area))
+      error("Stafi", `${w.name} punon vetëm te "${w.area}", por aty s'ka tavolina aktive.`);
   // Products: where does each one's ticket go?
   for (const p of state.products.filter((p) => !p.department && state.departments.length))
     warn("Produktet", `"${p.name}" nuk ka repart përgatitjeje: fleta e tij del si "Tjetër".`);

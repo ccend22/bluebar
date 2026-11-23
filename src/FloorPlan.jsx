@@ -1,8 +1,10 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
-import { CELL_H, CELL_W, GRID_COLS, GRID_ROWS, MAX_SPAN, inRoom, rectFits, rectOf, sizeFor, spanOf } from "./floorGeometry.js";
+import { CELL_H, CELL_W, GRID_COLS, GRID_ROWS, MAX_SPAN, inRoom, rectFits, rectOf, roomBox, sizeFor, spanOf } from "./floorGeometry.js";
 import { bill, money, reservationTime, tableName } from "./domain.js";
 import { Icon } from "./components.jsx";
 import { floorAssetUrl } from "./api.js";
+import { FloorObject, boxOf } from "./FloorObjects.jsx";
+import { floorLook } from "./floorMaterials.js";
 
 // The room seen from straight above, in the look the manager chose: "3d", a rendered plan
 // (wood floor, wooden tables with their chairs, a stone bar with stools), or "flat", plain
@@ -42,7 +44,7 @@ function chairs(t, wide) {
   ];
 }
 
-function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isSelected, onSelect, onChange, onGhost, others }) {
+function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isSelected, onSelect, onChange, onGhost, onGrip, others }) {
   // While a table (or its handle) is held it follows the pointer on its own, without redrawing
   // the room; it is handed over when let go, or glides back if the spot was taken.
   const [live, setLive] = useState(null);
@@ -77,7 +79,7 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
     if (!editing) return;
     e.preventDefault();
     e.stopPropagation();
-    const canvas = ref.current.closest(".floor-plan").getBoundingClientRect();
+    const canvas = roomBox(ref.current.closest(".floor-plan"));
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     const from = { x: e.clientX, y: e.clientY };
@@ -176,6 +178,8 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
             className="fp-handle fp-resize"
             aria-label={`Ndrysho madhësinë e tavolinës ${t.id}`}
             onPointerDown={drag((ev, canvas) => {
+              // The table snaps by whole cells; a grip stays under the finger meanwhile.
+              onGrip?.({ x: ((ev.clientX - canvas.left) / canvas.width) * 100, y: ((ev.clientY - canvas.top) / canvas.height) * 100 });
               // The handle sits at the table's own bottom-right corner, which is rotated on
               // screen. Un-rotate the pointer's offset from center (in pixels, so both axes
               // share one scale) into the table's own frame, then read it as whole cells,
@@ -206,9 +210,17 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
 // reservations: today's, by table id (domain.js tableReservations). texture: the floor drawn
 // from the venue's photo (a floor asset's id). drafted: ids of tables changed but not yet
 // confirmed. onLayoutChange(id, patch) moves, turns or resizes a table while it is dragged.
-export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, editing, drafted, selected, onSelectTable, onLayoutChange }) {
+// objects: the room's walls, doors, plants… (FloorObjects.jsx), under the tables; material: the
+// floor when no photo floor is laid. While editing, selectedObject / onSelectObject /
+// onObjectChange(id, patch) arrange them the way tables are.
+export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, material, objects = [], editing, drafted, selected, onSelectTable, onLayoutChange, selectedObject, onSelectObject, onObjectChange }) {
   // The block a dragged table is aiming at: green if free, red if taken.
   const [ghost, setGhost] = useState(null);
+  // The lines a moving object lined up with (FloorObjects.jsx snapPosition).
+  const [guides, setGuides] = useState([]);
+  // Where the finger is while a table is being resized (it snaps by cells; this doesn't).
+  const [grip, setGrip] = useState(null);
+  const ghostAndGrip = (g) => (setGhost(g), g || setGrip(null));
   // The room at the largest 16:10 that fits its space, measured rather than left to container
   // queries (which some browsers stop repainting when a notice above pushes the room down).
   // --cell (one cell's width) sizes the lettering on the tables.
@@ -230,10 +242,32 @@ export function FloorPlan({ tables, waiters = [], reservations, look = "3d", tex
         className={`floor-plan ${look === "3d" ? "look-3d" : ""} ${editing ? "editing" : ""} ${tables.length ? "" : "is-empty"}`}
         style={{
           ...(fit && { "--fit-w": `${fit.w}px`, "--fit-h": `${fit.h}px`, "--cell": `${fit.w / GRID_COLS}px` }),
-          ...(look === "3d" && texture && { "--floor": `url("${floorAssetUrl(texture)}")` }),
+          ...(look === "3d" && (texture
+            ? { "--floor": `url("${floorAssetUrl(texture)}")`, "--floor-size": "25% 40%" }
+            : { "--floor": floorLook(material).image, "--floor-size": floorLook(material).size })),
         }}
-        onClick={() => editing && onSelectTable(null)}
+        data-material={look === "3d" && !texture ? material || "oak" : undefined}
+        onClick={() => editing && (onSelectTable(null), onSelectObject?.(null))}
       >
+        {look === "3d" && objects.map((o) => (
+          <FloorObject
+            key={o.id}
+            o={o}
+            editing={editing}
+            isSelected={selectedObject === o.id}
+            onSelect={(id) => (onSelectTable(null), onSelectObject?.(id))}
+            onChange={onObjectChange}
+            onGuides={setGuides}
+            targets={editing ? [
+              ...objects.filter((x) => x.id !== o.id).map(boxOf),
+              ...tables.map((t) => { const r = rectOf(t); return { l: r.x, c: r.x + r.w / 2, r: r.x + r.w, t: r.y, m: r.y + r.h / 2, b: r.y + r.h }; }),
+            ] : []}
+          />
+        ))}
+        {grip && <i className="fp-grip" style={{ left: `${grip.x}%`, top: `${grip.y}%` }} aria-hidden="true" />}
+        {guides.map((g) => (
+          <i key={`${g.axis}${g.at}`} className={`fp-guide ${g.axis}`} style={g.axis === "x" ? { left: `${g.at}%` } : { top: `${g.at}%` }} aria-hidden="true" />
+        ))}
         {ghost && (
           <div
             className={`fp-ghost ${ghost.ok ? "ok" : "blocked"}`}
@@ -256,10 +290,11 @@ export function FloorPlan({ tables, waiters = [], reservations, look = "3d", tex
             editing={editing}
             drafted={drafted?.has(t.id)}
             isSelected={selected === t.id}
-            onSelect={onSelectTable}
+            onSelect={(x) => (onSelectObject?.(null), onSelectTable(x))}
             others={rects.filter((b) => b.id !== t.id)}
             onChange={onLayoutChange}
-            onGhost={setGhost}
+            onGhost={ghostAndGrip}
+            onGrip={setGrip}
           />
         ))}
         {!tables.length && (

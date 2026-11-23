@@ -131,6 +131,8 @@ export const pruneTickets = (tickets, invoices, now = Date.now()) =>
     const paid = k.invoice && invoices.find((i) => i.id === k.invoice)?.date;
     return !paid || now - new Date(paid) < PAID_TICKET_TTL;
   });
+// What can stand in a room besides tables (FloorPlan.jsx draws each).
+const FLOOR_OBJECTS = ["wall", "door", "window", "plant", "sofa", "armchair", "counter", "rug", "sign"];
 export function applyCommand(state, type, payload, actor = null) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
     fail("Kërkesë e pavlefshme.");
@@ -224,15 +226,21 @@ export function applyCommand(state, type, payload, actor = null) {
     if (k.doneAt || k.cancelledAt) fail("Fleta është mbyllur tashmë.");
     return k;
   };
+  // A waiter's room: one of the rooms the tables are in, or null (every room).
+  const waiterArea = (v) => {
+    if (v === undefined || v === null || v === "") return null;
+    const area = name(v, 40);
+    if (!state.tables.some((t) => t.area === area)) fail("Kjo sallë nuk ekziston.");
+    return area;
+  };
   const table = (id = p.tableId) => {
     integer(id);
     const t = state.tables.find((t) => t.id === id);
     if (!t) fail("Tavolina nuk ekziston.");
     if (!t.active) fail("Tavolina është joaktive.");
-    // A waiter assigned to one till works only the tables of its areas.
-    const own = actor?.role === "waiter" && state.waiters.find((w) => w.id === actor.waiterId)?.posId;
-    if (own && posOf(state, t) !== own)
-      fail(`Kjo tavolinë i përket kasës "${state.pointsOfSale.find((k) => k.id === posOf(state, t))?.name}".`);
+    // A waiter given one room works only its tables.
+    const own = actor?.role === "waiter" && state.waiters.find((w) => w.id === actor.waiterId)?.area;
+    if (own && t.area !== own) fail(`Kjo tavolinë është në "${t.area}"; ju punoni te "${own}".`);
     return t;
   };
   // A colleague's open order stays theirs until the waiter takes the table ("Merre
@@ -580,6 +588,32 @@ export function applyCommand(state, type, payload, actor = null) {
       break;
     }
     // Every zone laid out as a room of its own, or all zones in one room.
+    // Menaxho sallën: the room's objects, the whole list at once (each change sends it all).
+    case "floor.objects": {
+      if (!Array.isArray(p.objects) || p.objects.length > 150) fail("Deri në 150 objekte në sallë.");
+      const num = (v, min, max) => (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? Math.round(v * 100) / 100 : fail("Objekti është jashtë sallës."));
+      const ids = new Set();
+      const objects = p.objects.map((o) => {
+        if (!o || typeof o !== "object") fail("Objekt i pavlefshëm.");
+        if (!FLOOR_OBJECTS.includes(o.kind)) fail("Lloj objekti i panjohur.");
+        if (typeof o.id !== "string" || !/^[a-z0-9-]{1,24}$/i.test(o.id) || ids.has(o.id)) fail("Objekt i pavlefshëm.");
+        ids.add(o.id);
+        const text = o.text === undefined || o.text === null ? undefined : String(o.text).trim().slice(0, 30);
+        const area = o.area === undefined || o.area === null ? undefined : name(o.area, 40);
+        return {
+          id: o.id, kind: o.kind,
+          x: num(o.x, -10, 110), y: num(o.y, -10, 110), w: num(o.w, 0.3, 100), h: num(o.h, 0.3, 100), r: num(o.r ?? 0, 0, 359),
+          ...(text !== undefined && { text }), ...(area !== undefined && { area }),
+        };
+      });
+      next = { ...state, floorObjects: objects };
+      break;
+    }
+    case "floor.material": {
+      if (!["oak", "walnut", "concrete", "terrazzo"].includes(p.material)) fail("Zgjidhni dyshemenë.");
+      next = { ...state, floorMaterial: p.material };
+      break;
+    }
     // Cilësimet → Porositë: every waiter's order menu with product photos, or names and prices only.
     case "menu.photos": {
       if (typeof p.photos !== "boolean") fail("Zgjidhni me foto ose pa foto.");
@@ -1313,6 +1347,44 @@ export function applyCommand(state, type, payload, actor = null) {
       next = { ...state, departments: [...state.departments, department] };
       break;
     }
+    // Cilësimet → Repartet dhe kategoritë: a rename carries the products (and, for a department,
+    // the printers that print it) along; old slips keep the name they were sent with.
+    case "department.rename":
+    case "category.rename": {
+      const isDept = type === "department.rename", list = isDept ? state.departments : state.categories;
+      const from = list.find((x) => x === p.from) ?? fail(isDept ? "Reparti nuk ekziston." : "Kategoria nuk ekziston.");
+      const to = name(p.name, 40);
+      if (to === from) { next = state; break; }
+      if (list.some((x) => x !== from && x.toLocaleLowerCase("sq") === to.toLocaleLowerCase("sq")))
+        fail(isDept ? "Ky repart ekziston tashmë." : "Kjo kategori menuje ekziston tashmë.");
+      const field = isDept ? "department" : "category";
+      next = {
+        ...state,
+        [isDept ? "departments" : "categories"]: list.map((x) => (x === from ? to : x)),
+        products: state.products.map((x) => (x[field] === from ? { ...x, [field]: to } : x)),
+        ...(isDept && { printers: state.printers.map((x) => (x.departments?.includes(from) ? { ...x, departments: x.departments.map((d) => (d === from ? to : d)) } : x)) }),
+      };
+      break;
+    }
+    // A department goes: its products wait for a new one ("pa repart", flagged by the check),
+    // printers stop printing it. A menu category goes only when no product is in it.
+    case "department.delete": {
+      const d = state.departments.find((x) => x === p.name) ?? fail("Reparti nuk ekziston.");
+      next = {
+        ...state,
+        departments: state.departments.filter((x) => x !== d),
+        products: state.products.map((x) => (x.department === d ? { ...x, department: null } : x)),
+        printers: state.printers.map((x) => (x.departments?.includes(d) ? { ...x, departments: x.departments.filter((y) => y !== d) } : x)),
+      };
+      break;
+    }
+    case "category.delete": {
+      const c = state.categories.find((x) => x === p.name) ?? fail("Kategoria nuk ekziston.");
+      const inIt = state.products.filter((x) => x.category === c);
+      if (inIt.length) fail(`"${c}" ka ${inIt.length === 1 ? "1 produkt" : `${inIt.length} produkte`} (${inIt.slice(0, 3).map((x) => x.name).join(", ")}${inIt.length > 3 ? "…" : ""}). Kalojini në një kategori tjetër, pastaj fshijeni.`);
+      next = { ...state, categories: state.categories.filter((x) => x !== c) };
+      break;
+    }
     case "stock.receive": {
       integer(p.productId);
       const qty = integer(p.qty, 1, 100000),
@@ -1407,21 +1479,35 @@ export function applyCommand(state, type, payload, actor = null) {
     }
     case "waiter.create": {
       const waiterName = name(p.name);
-      unique(state.waiters, waiterName);
+      unique(state.waiters.filter((w) => !w.deleted), waiterName);
       next = {
         ...state,
         waiters: [
           ...state.waiters,
-          { id: nextId(state.waiters), name: waiterName, active: true },
+          { id: nextId(state.waiters), name: waiterName, active: true, area: waiterArea(p.area) },
         ],
       };
       break;
     }
-    case "waiter.pos": {
+    // Kamarierët: the room a waiter works (a table zone), or null for every room.
+    case "waiter.area": {
       integer(p.waiterId);
-      if (!state.waiters.some((w) => w.id === p.waiterId)) fail("Kamarieri nuk ekziston.");
-      const posId = p.posId === null ? null : pos();
-      next = { ...state, waiters: state.waiters.map((w) => (w.id === p.waiterId ? { ...w, posId } : w)) };
+      if (!state.waiters.some((w) => w.id === p.waiterId && !w.deleted)) fail("Kamarieri nuk ekziston.");
+      const area = waiterArea(p.area);
+      next = { ...state, waiters: state.waiters.map((w) => (w.id === p.waiterId ? { ...w, area } : w)) };
+      break;
+    }
+    // Removed for good, once switched off: kept only so old invoices still name who served.
+    case "waiter.delete": {
+      integer(p.waiterId);
+      const w = state.waiters.find((x) => x.id === p.waiterId && !x.deleted) ?? fail("Kamarieri nuk ekziston.");
+      if (w.active) fail("Çaktivizojeni fillimisht, pastaj fshijeni.");
+      if (state.tables.some((t) => t.waiter === w.id && t.lines.length)) fail("Ka porosi të hapura: kalojini te një kolege fillimisht.");
+      next = {
+        ...state,
+        waiters: state.waiters.map((x) => (x.id === w.id ? { ...x, deleted: true } : x)),
+        tables: state.tables.map((t) => (t.waiter === w.id ? { ...t, waiter: null } : t)),
+      };
       break;
     }
     case "pos.save": {
@@ -1472,7 +1558,7 @@ export function applyCommand(state, type, payload, actor = null) {
     }
     case "waiter.toggle": {
       integer(p.waiterId);
-      const waiter = state.waiters.find((w) => w.id === p.waiterId);
+      const waiter = state.waiters.find((w) => w.id === p.waiterId && !w.deleted);
       if (!waiter) fail("Kamarieri nuk ekziston.");
       if (
         waiter.active &&

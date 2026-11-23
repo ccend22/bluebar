@@ -4,7 +4,7 @@ import { Icon } from "./components.jsx";
 import { blank, extrasText, parseExtras, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
 import { readDelivery, readMenuPhoto } from "./api.js";
 import { deliveryItems, validDeliveryRows } from "./documentImport.js";
-import { AiDocumentImport, AiReading, MENU_STEPS, ScanMarks } from "./AiDocument.jsx";
+import { AiDocumentImport, AiReading, MENU_STEPS, ScanMarks, scanDone } from "./AiDocument.jsx";
 import { shrink } from "./OnlineMenu.jsx";
 
 // Produktet → product form: is this product counted in units, and how many are there now?
@@ -273,6 +273,8 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
       if (!products.length) setError("AI nuk gjeti asnjë produkt me çmim. Provoni një foto më të qartë.");
       else if (!fresh.length) setError("Të gjitha produktet e kësaj menuje ekzistojnë tashmë.");
       else {
+        setBusy("done");
+        await scanDone();
         rows.setRows([]);
         rows.add(fresh.map((p) => ({
           ...blank(category(p.category) || state.categories[0] || "", department === "ai" ? p.department || "" : department), name: p.name, price: String(p.price),
@@ -299,7 +301,7 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
     <div className={`ai-preview ${busy && step === 1 ? "scanning" : ""}`}>
       <span className="ai-shot">
         {source.url ? <img src={source.url} alt="Fotoja e menusë" /> : <pre>{source.text.slice(0, 600)}</pre>}
-        {busy && step === 1 && <ScanMarks />}
+        {busy && step === 1 && <ScanMarks done={busy === "done"} />}
       </span>
       {step === 0 && <button type="button" onClick={() => setSource(null)}>Ndrysho</button>}
     </div>

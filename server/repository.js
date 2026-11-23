@@ -43,7 +43,7 @@ export async function loadState(client) {
     }));
   const waiters = (rows("waiters"))
     .sort((a, b) => a.id - b.id)
-    .map((w) => ({ id: w.id, name: w.name, active: w.active, posId: w.pos_id }));
+    .map((w) => ({ id: w.id, name: w.name, active: w.active, area: w.area ?? null, ...(w.deleted && { deleted: true }) }));
   const lines = rows("order_lines");
   const line = (l) => ({
     key: l.line_key, id: l.product_id, name: l.name, price: l.price, qty: l.qty, sent: l.sent, comp: l.comp,
@@ -200,6 +200,8 @@ export async function loadState(client) {
       floorStyle: control.floor_style || "3d",
       separateRooms: control.separate_rooms === true,
       orderPhotos: control.order_photos !== false,
+      floorObjects: control.floor_objects || [],
+      floorMaterial: control.floor_material || "oak",
       transactionCategories: control.transaction_categories || null,
       invoices,
       movements,
@@ -291,6 +293,11 @@ export async function persist(client, previous, next) {
       [p.id, p.name, p.category, p.price, p.stock, p.department || null, p.minStock ?? 10, p.available !== false, JSON.stringify(p.extras || []),
         p.description || "", p.menuVisible !== false, p.trackStock !== false, p.calories ?? null, p.portion || ""],
     );
+  // Names no longer listed go after the products have moved off them (renamed or emptied).
+  for (const c of previous.categories.filter((c) => !next.categories.includes(c)))
+    await client.query("DELETE FROM bluebar.categories WHERE name=$1", [c]);
+  for (const d of previous.departments.filter((d) => !next.departments.includes(d)))
+    await client.query("DELETE FROM bluebar.departments WHERE name=$1", [d]);
   // Tills first: waiters, shifts and printers reference them; a removed till's
   // waiters and printers were already moved off it (pos.delete).
   for (const k of next.pointsOfSale.filter((k) => changed(previous.pointsOfSale.find((x) => x.id === k.id), k)))
@@ -305,9 +312,12 @@ export async function persist(client, previous, next) {
     ),
   ))
     await client.query(
-      "INSERT INTO bluebar.waiters(id,name,active,pos_id) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=$2,active=$3,pos_id=$4",
-      [w.id, w.name, w.active, w.posId ?? null],
+      "INSERT INTO bluebar.waiters(id,name,active,area,deleted) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,active=$3,area=$4,deleted=$5",
+      [w.id, w.name, w.active, w.area ?? null, w.deleted === true],
     );
+  // A removed waiter can't sign in again: the account (and its sessions) go.
+  for (const w of next.waiters.filter((w) => w.deleted && !previous.waiters.find((x) => x.id === w.id)?.deleted))
+    await client.query("DELETE FROM bluebar.accounts WHERE waiter_id=$1", [w.id]);
   const oldShifts = [...previous.shifts, ...previous.openShifts];
   for (const s of [...next.shifts, ...next.openShifts].filter(
     (s) =>
@@ -447,6 +457,10 @@ export async function persist(client, previous, next) {
     );
   if (typeof next.separateRooms === "boolean" && next.separateRooms !== previous.separateRooms)
     await client.query("UPDATE bluebar.control SET separate_rooms=$1 WHERE id=1", [next.separateRooms]);
+  if (Array.isArray(next.floorObjects) && JSON.stringify(next.floorObjects) !== JSON.stringify(previous.floorObjects || []))
+    await client.query("UPDATE bluebar.control SET floor_objects=$1 WHERE id=1", [JSON.stringify(next.floorObjects)]);
+  if (next.floorMaterial && next.floorMaterial !== previous.floorMaterial)
+    await client.query("UPDATE bluebar.control SET floor_material=$1 WHERE id=1", [next.floorMaterial]);
   if (typeof next.orderPhotos === "boolean" && next.orderPhotos !== previous.orderPhotos)
     await client.query("UPDATE bluebar.control SET order_photos=$1 WHERE id=1", [next.orderPhotos]);
   if (next.floorStyle && next.floorStyle !== previous.floorStyle)
@@ -640,7 +654,7 @@ export async function executeOrderPatch(pool, command, actor = null) {
       await client.query(
         `SELECT c.version, cmd.payload_hash, cmd.result,
           EXISTS(SELECT 1 FROM bluebar.shifts WHERE closed IS NULL AND pos_id = tp.id) AS shift_open,
-          tp.id AS table_pos, tp.name AS table_pos_name, aw.pos_id AS actor_pos,
+          tp.id AS table_pos, tp.name AS table_pos_name, aw.area AS actor_area, t.area AS table_area,
           t.id AS table_id, t.active AS table_active, t.waiter_id AS table_waiter,
           w.active AS waiter_active,
           p.name AS product_name, p.price AS product_price, p.stock AS product_stock, p.available AS product_available, p.track_stock AS product_tracks,
@@ -700,8 +714,8 @@ export async function executeOrderPatch(pool, command, actor = null) {
     }
     if (!context.table_id) throw new AppError("Tavolina nuk ekziston.");
     if (!context.table_active) throw new AppError("Tavolina është joaktive.");
-    if (context.actor_pos && context.actor_pos !== context.table_pos)
-      throw new AppError(`Kjo tavolinë i përket kasës "${context.table_pos_name}".`, 403);
+    if (context.actor_area && context.actor_area !== context.table_area)
+      throw new AppError(`Kjo tavolinë është në "${context.table_area}"; ju punoni te "${context.actor_area}".`, 403);
     // Same rule as mine() in applyCommand: a colleague's open order isn't the waiter's to change.
     if (actor?.role === "waiter" && context.table_line_count && context.table_waiter && context.table_waiter !== actor.waiterId)
       throw new AppError("Kjo tavolinë është e një kolegu. Merreni tavolinën për ta ndryshuar.");
