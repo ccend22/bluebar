@@ -181,8 +181,7 @@ export function WaiterPatternEditor({ waiter, onSaved, onCancel }) {
   // Opened at the foot of a list that scrolls inside its panel: bring the whole pad into view.
   const box = useRef(null);
   useEffect(() => {
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    box.current?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    box.current?.scrollIntoView({ block: "nearest" });
   }, []);
   return (
     <div className="staff-pattern-editor" ref={box}>

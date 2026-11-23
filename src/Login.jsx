@@ -186,7 +186,6 @@ const SIGNUP = ["name", "slug", "pin", "confirm"];
 // PIN → PIN again → ready. Nothing is created until the PIN is confirmed.
 export function Login({ onSignedIn }) {
   const [step, setStep] = useState(() => (new URLSearchParams(window.location.search).has("regjistro") ? "name" : "hello"));
-  const [dir, setDir] = useState("forward");
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
@@ -200,8 +199,7 @@ export function Login({ onSignedIn }) {
   if (new URLSearchParams(window.location.search).has("business"))
     return <PinLogin onSignedIn={onSignedIn} />;
 
-  const go = (next, direction = "forward") => {
-    setDir(direction);
+  const go = (next) => {
     setError("");
     setStep(next);
   };
@@ -220,7 +218,7 @@ export function Login({ onSignedIn }) {
     if (confirmed !== firstPin) {
       setPin("");
       setFirstPin("");
-      return (go("pin", "back"), setError("PIN-et nuk përputhen. Provoni përsëri."));
+      return (go("pin"), setError("PIN-et nuk përputhen. Provoni përsëri."));
     }
     setBusy(true);
     try {
@@ -229,7 +227,7 @@ export function Login({ onSignedIn }) {
     } catch (err) {
       setPin("");
       setFirstPin("");
-      go("slug", "back");
+      go("slug");
       setError(err.message);
     } finally {
       setBusy(false);
@@ -310,7 +308,7 @@ export function Login({ onSignedIn }) {
     <FloorMotif className="onboard-motif" />
     <header className="onboard-bar">
       {back && step !== "ready" ? (
-        <button className="onboard-back" disabled={busy} onClick={() => go(back, "back")}><Icon name="back" size={18} /> Kthehu</button>
+        <button className="onboard-back" disabled={busy} onClick={() => go(back)}><Icon name="back" size={18} /> Kthehu</button>
       ) : <a className="onboard-back" href="/"><Icon name="back" size={18} /> BlueBar</a>}
       {at < 0 ? <span /> : (
         <span className="onboard-progress" aria-label={`Hapi ${at + 1} nga ${SIGNUP.length}`}>
@@ -319,7 +317,7 @@ export function Login({ onSignedIn }) {
       )}
       <ThemeButton theme={theme} setTheme={setTheme} />
     </header>
-    <section className={`onboard-step ${dir}`} key={step}>
+    <section className="onboard-step" key={step}>
       {error && <p className="onboard-error" role="alert">{error}</p>}
       {content}
     </section>

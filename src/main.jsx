@@ -1,12 +1,11 @@
 import "./uuid.js";
 import React, { useState, useEffect, useRef } from "react";
-import { flushSync } from "react-dom";
 import { extrasText, parseExtras } from "./parseList.js";
 import { bill, since, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, ticketWaiting, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
-import { AiImport, ProductImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
+import { AiImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
 import { Finance, TransactionCategories, firstPeriod, periodName } from "./Finance.jsx";
 import { MenuSetup } from "./MenuSetup.jsx";
@@ -329,7 +328,6 @@ function App({ user, onLogout, onUserChange }) {
   const [receipt, setReceipt] = useState(null),
     [payment, setPayment] = useState(null),
     [editor, setEditor] = useState(null),
-    [bulkOpen, setBulkOpen] = useState(false),
     [deliveryOpen, setDeliveryOpen] = useState(false),
     [paymentFilter, setPaymentFilter] = useState("Të gjitha"),
     // Shitjet dhe financat: Faturat, Transaksione and Raportet look at one period together.
@@ -383,47 +381,21 @@ function App({ user, onLogout, onUserChange }) {
     document.body.classList.add("order-open");
     return () => document.body.classList.remove("order-open");
   }, [selected, page, manageTables]);
-  // A soft ripple from where a button was pressed, everywhere in the app. Drawn in a clipping
-  // layer of its own, so a button's badge or position is never touched; skipped for anyone who
-  // asked for less motion.
-  useEffect(() => {
-    const press = (e) => {
-      const button = e.target.closest?.(".app button:not(:disabled):not(.pattern-dot):not(.fp-handle)");
-      if (!button || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      if (getComputedStyle(button).position === "static") button.style.position = "relative";
-      const box = button.getBoundingClientRect();
-      const size = Math.max(box.width, box.height) * 2.2;
-      const layer = document.createElement("span");
-      layer.className = "ripple-layer";
-      const wave = document.createElement("span");
-      wave.className = "ripple";
-      Object.assign(wave.style, { width: `${size}px`, height: `${size}px`, left: `${e.clientX - box.left - size / 2}px`, top: `${e.clientY - box.top - size / 2}px` });
-      layer.append(wave);
-      button.append(layer);
-      setTimeout(() => layer.remove(), 650);
-    };
-    document.addEventListener("pointerdown", press);
-    return () => document.removeEventListener("pointerdown", press);
-  }, []);
   const notify = (text, tone = "success") => setNotice({ text, tone });
-  // A notice fades out by itself: a few seconds, longer with a button on it ("Printo faturën")
-  // or when it is a problem, and not while the pointer or the keyboard is on it.
-  const [noticeLeaving, setNoticeLeaving] = useState(false);
+  // Keep feedback visible longer for errors and when a print action is available.
   const noticeHeld = useRef(false);
   useEffect(() => {
     if (!notice) return;
-    setNoticeLeaving(false);
     const ms = notice.tone === "error" ? 10000 : notice.tickets || receipt ? 7000 : 4000;
-    let fade, gone;
+    let timer;
     const wait = () => {
-      fade = setTimeout(() => {
-        if (noticeHeld.current) return wait();
-        setNoticeLeaving(true);
-        gone = setTimeout(() => setNotice(null), 300);
+      timer = setTimeout(() => {
+        if (noticeHeld.current) wait();
+        else setNotice(null);
       }, ms);
     };
     wait();
-    return () => (clearTimeout(fade), clearTimeout(gone));
+    return () => clearTimeout(timer);
   }, [notice]);
   // An order's messages name its table: with several tables open, "out of stock" alone
   // doesn't say where.
@@ -443,17 +415,14 @@ function App({ user, onLogout, onUserChange }) {
   // then: what to set once the page has changed (showPage clears the open invoice, filters…).
   const nav = (p, then) => {
     if (!leaveRoomDraft()) return;
-    // The page cross-fades into the next one where the browser can (the navigation stays put);
-    // otherwise, and for anyone asking for less motion, it just swaps.
-    if (p !== page && document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches)
-      // A transition cut short (another tap, the tab hidden) is not an error: the page has changed.
-      document.startViewTransition(() => flushSync(() => (showPage(p), then?.()))).ready.catch(() => {});
-    else (showPage(p), then?.());
+    // Straight to the page: no cross-fade, nothing to wait for.
+    showPage(p);
+    then?.();
     setTimeout(() => heading.current?.focus(), 0);
   };
-  // Opening a product brings its whole form into view: one short move, then no scrolling to reach "Ruaj".
+  // Bring the product form into view when it opens.
   useEffect(() => {
-    if (page === "Produktet" && editor) document.querySelector(".product-dialog")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (page === "Produktet" && editor) document.querySelector(".product-dialog")?.scrollIntoView({ block: "nearest" });
   }, [page, Boolean(editor), editor?.id]);
   const showPage = (p) => {
     setPage(p);
@@ -1056,11 +1025,7 @@ function App({ user, onLogout, onUserChange }) {
                 {page === "Produktet" ? (
                   <>
                     <AiImport state={state} update={update} />
-                    <button onClick={() => (setBulkOpen(true), setEditor(null))}>
-                      <Icon name="list" size={18} />
-                      Shto shumë
-                    </button>
-                    <button className="primary" onClick={() => (setEditor({}), setBulkOpen(false))}>
+                    <button className="primary" onClick={() => setEditor({})}>
                       <Icon name="plus" size={18} />
                       Shto produkt
                     </button>
@@ -1129,7 +1094,7 @@ function App({ user, onLogout, onUserChange }) {
                 // With a table's popup open the page is behind it: the notice floats above, or a
                 // refused add ("Pa stok", "Turni është i mbyllur"…) would look like nothing happened.
                 // On Tavolinat it always floats, so the room never moves under it.
-                className={`notice ${notice.tone} ${page === "Tavolinat" || (page === "Porositë" && table) || (page === "Produktet" && editor) ? "floating" : ""} ${noticeLeaving ? "leaving" : ""}`}
+                className={`notice ${notice.tone} ${page === "Tavolinat" || (page === "Porositë" && table) || (page === "Produktet" && editor) ? "floating" : ""}`}
                 role={notice.tone === "error" ? "alert" : "status"}
                 onPointerEnter={() => (noticeHeld.current = true)}
                 onPointerLeave={() => (noticeHeld.current = false)}
@@ -1846,7 +1811,6 @@ function App({ user, onLogout, onUserChange }) {
               </>
             )}
 
-            {page === "Produktet" && bulkOpen && <ProductImport state={state} update={update} onClose={() => setBulkOpen(false)} />}
             {page === "Produktet" && (
               <div className={`management-layout products-layout ${editor ? "" : "no-aside"}`}>
                 <section className="panel">
@@ -2059,7 +2023,7 @@ function App({ user, onLogout, onUserChange }) {
                         <p className="helper">
                           {editor.id
                             ? "Çmimi i ri zbatohet për produktet e shtuara në porosi të reja."
-                            : "Për shumë produkte njëherësh përdorni \"Shto shumë\"."}
+                            : "Për shumë produkte njëherësh: \"Importo me AI\" lexon menunë nga një foto."}
                         </p>
                         <div className="product-form-foot">
                           <button className="primary">

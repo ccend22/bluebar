@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { plural } from "./domain.js";
 import { Icon } from "./components.jsx";
-import { blank, extrasText, parseExtras, parseList, productRowProblem, validDeliveryQuantity } from "./parseList.js";
+import { blank, extrasText, parseExtras, productRowProblem, validDeliveryQuantity } from "./parseList.js";
 import { readDelivery, readMenuPhoto } from "./api.js";
 import { deliveryItems, validDeliveryRows } from "./documentImport.js";
-import { AiDocumentImport, AiReading, MENU_STEPS, ScanMarks, scanDone } from "./AiDocument.jsx";
+import { AiDocumentImport, AiReading } from "./AiDocument.jsx";
 import { shrink } from "./OnlineMenu.jsx";
 
 // Produktet → product form: is this product counted in units, and how many are there now?
@@ -34,7 +34,7 @@ export function StockFields({ product }) {
 const COLUMNS = ["name", "price", "category", "department", "stock"];
 const LABELS = { name: "Emri", price: "Çmimi (Lek)", category: "Kategoria", department: "Reparti", stock: "Stoku" };
 
-// The editable rows "Shto shumë" and "Importo me AI" both end in, with what's wrong with each.
+// The editable rows "Importo me AI" ends in, with what's wrong with each.
 function useImportRows(state, initial) {
   const [rows, setRows] = useState(initial);
   const existing = useMemo(() => new Set(state.products.map((p) => p.name.toLocaleLowerCase())), [state.products]);
@@ -138,78 +138,6 @@ function ImportTable({ state, rows: { rows, setRows, problem }, disabled }) {
   );
 }
 
-// Produktet → "Shto shumë": a quick table, one product per row, saved in one go.
-export function ProductImport({ state, update, onClose }) {
-  const rows = useImportRows(state, [blank(state.categories[0] || ""), blank(state.categories[0] || "")]);
-  const [paste, setPaste] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    if (saving || !rows.ready) return;
-    setSaving(true);
-    const products = rows.products();
-    const ok = await update("products.import", { products }, `U shtua${products.length === 1 ? "" : "n"} ${plural(products.length, "produkt", "produkte")}.`);
-    setSaving(false);
-    if (ok) onClose();
-  };
-  return (
-    <section className="panel product-import">
-      <div className="import-head">
-        <div>
-          <h2>Shto shumë produkte</h2>
-          <p className="helper">
-            Një produkt për rresht. Kategoritë dhe repartet e reja krijohen vetë. Stoku: bosh = pa numërim (kafe, koktej),
-            numër = numërohet duke nisur nga aq copë.
-          </p>
-        </div>
-        <div className="actions">
-          <button type="button" onClick={() => setPaste(paste === null ? "" : null)}>
-            <Icon name="list" size={17} /> Ngjit një listë
-          </button>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Mbyll">
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-      </div>
-      {paste !== null && (
-        <div className="import-paste">
-          <textarea
-            aria-label="Lista e produkteve"
-            rows={6}
-            autoFocus
-            value={paste}
-            onChange={(e) => setPaste(e.target.value)}
-            placeholder={"Kafe:\nEspresso 100\nMacchiato 120\nPije:\nCoca-Cola 150\n\nOse ngjitni rreshta nga Excel (Emri, Çmimi, Kategoria, Reparti, Stoku)."}
-          />
-          <div className="actions">
-            <button type="button" onClick={() => setPaste(null)}>Anulo</button>
-            <button
-              type="button"
-              className="primary"
-              disabled={!paste.trim()}
-              onClick={() => {
-                rows.add(parseList(paste, rows.rows.at(-1)?.category || state.categories[0] || ""));
-                setPaste(null);
-              }}
-            >
-              Shto në tabelë
-            </button>
-          </div>
-        </div>
-      )}
-      <ImportTable state={state} rows={rows} disabled={saving} />
-      <div className="import-foot">
-        <button type="button" onClick={rows.newRow}>
-          <Icon name="plus" size={16} /> Rresht i ri
-        </button>
-        <span className="helper">{rows.status}</span>
-        <button type="button" className="primary" disabled={!rows.ready || saving} onClick={save}>
-          {saving ? "Po ruhen…" : (rows.filled.length ? `Ruaj ${plural(rows.filled.length, "produkt", "produkte")}` : "Ruaj produktet")}
-        </button>
-      </div>
-    </section>
-  );
-}
-
 const STEPS = ["Ngarko", "Konfiguro", "Shiko", "Sukses"];
 
 // Produktet → "Importo me AI": a photo of the menu (or its text) → AI reads the products and
@@ -273,8 +201,6 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
       if (!products.length) setError("AI nuk gjeti asnjë produkt me çmim. Provoni një foto më të qartë.");
       else if (!fresh.length) setError("Të gjitha produktet e kësaj menuje ekzistojnë tashmë.");
       else {
-        setBusy("done");
-        await scanDone();
         rows.setRows([]);
         rows.add(fresh.map((p) => ({
           ...blank(category(p.category) || state.categories[0] || "", department === "ai" ? p.department || "" : department), name: p.name, price: String(p.price),
@@ -298,10 +224,9 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
   const canForward = step === 0 ? Boolean(source) : step === 1 ? !busy : step === 2 ? rows.ready && !busy : false;
 
   const preview = source && (
-    <div className={`ai-preview ${busy && step === 1 ? "scanning" : ""}`}>
+    <div className="ai-preview">
       <span className="ai-shot">
         {source.url ? <img src={source.url} alt="Fotoja e menusë" /> : <pre>{source.text.slice(0, 600)}</pre>}
-        {busy && step === 1 && <ScanMarks done={busy === "done"} />}
       </span>
       {step === 0 && <button type="button" onClick={() => setSource(null)}>Ndrysho</button>}
     </div>
@@ -404,7 +329,7 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
                     placeholder="p.sh. vetëm pijet; çmimet janë në euro"
                   />
                 </label>
-                {busy && <AiReading steps={MENU_STEPS} />}
+                {busy && <AiReading label="AI po lexon menunë…" />}
               </div>
             </div>
           )}

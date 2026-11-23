@@ -51,7 +51,7 @@ export function Reservations({ state, update, role }) {
   const edit = (r) => {
     setDraft({ id: r.id, name: r.name, phone: r.phone, guests: String(r.guests), table: r.table == null ? "" : String(r.table), date: r.date, start: r.start, end: r.end });
     // On a phone the form sits under the list.
-    form.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    form.current?.scrollIntoView({ block: "nearest" });
   };
 
   return (
