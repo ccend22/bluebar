@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useConfirm } from "./ConfirmDialog.jsx";
 import { bill, money } from "./domain.js";
 import { Empty, Icon, Search } from "./components.jsx";
 import { ChoiceField } from "./ChoiceField.jsx";
@@ -37,10 +38,17 @@ export function StaffSettings({ state, update, notify, refresh, rooms, waiter, s
   const [patternFor, setPatternFor] = useState(null);
   const [formKey, setFormKey] = useState(0);
   const dialog = useRef(null);
-  // The waiter about to be removed: a proper confirmation, not the browser's box.
-  const [removing, setRemoving] = useState(null);
-  const confirmBox = useRef(null);
-  useEffect(() => { if (removing) confirmBox.current?.showModal(); }, [removing]);
+  const confirm = useConfirm();
+  const remove = async (w) => {
+    const accepted = await confirm({
+      title: "Fshi kamarierin?",
+      description: "Kamarieri hiqet nga ekipi dhe nuk mund të hyjë më. Emri ruhet në faturat e mëparshme. Për ta ndalur përkohësisht, çaktivizojeni.",
+      detail: { name: w.name },
+      action: "Fshi kamarierin",
+      destructive: true,
+    });
+    if (accepted) await update("waiter.delete", { waiterId: w.id }, `${w.name} u fshi nga ekipi.`);
+  };
   const team = state.waiters.filter((w) => !w.deleted);
   const shown = team.filter((w) => w.name.toLocaleLowerCase("sq").includes(query.trim().toLocaleLowerCase("sq")));
   const active = shown.filter((w) => w.active), inactive = shown.filter((w) => !w.active);
@@ -158,7 +166,7 @@ export function StaffSettings({ state, update, notify, refresh, rooms, waiter, s
               </button>
             </>
           ) : (
-            <button type="button" className="st-delete" onClick={() => setRemoving(w)}>
+            <button type="button" className="st-delete" onClick={() => remove(w)}>
               <Icon name="trash" size={15} /> Fshi kamarierin
             </button>
           )}
@@ -201,33 +209,6 @@ export function StaffSettings({ state, update, notify, refresh, rooms, waiter, s
       )}
       <p className="helper st-foot">Pas 5 përpjekjeve të gabuara llogaria bllokohet për 15 minuta; një PIN ose pattern i ri e zhbllokon.</p>
 
-      <dialog ref={confirmBox} className="st-dialog st-confirm" aria-labelledby="st-del-title" onClose={() => setRemoving(null)}>
-        {removing && (
-          <div className="st-confirm-body">
-            <span className="st-confirm-icon" aria-hidden="true"><Icon name="trash" size={22} /></span>
-            <h2 id="st-del-title">Të fshihet {removing.name}?</h2>
-            <ul>
-              <li>Nuk do të mund të hyjë më, me asnjë PIN apo pattern.</li>
-              <li>Zhduket nga lista e ekipit dhe nga zgjedhjet e porosive.</li>
-              <li>Emri mbetet vetëm te faturat e vjetra, që historia të jetë e plotë.</li>
-            </ul>
-            <p className="helper">Kjo nuk kthehet mbrapsht. Nëse do vetëm ta ndalni për një kohë, mjafton ta lini joaktiv.</p>
-            <footer>
-              <button type="button" onClick={() => confirmBox.current?.close()}>Anulo</button>
-              <button
-                type="button"
-                className="st-danger"
-                onClick={async () => {
-                  const w = removing;
-                  if (await update("waiter.delete", { waiterId: w.id }, `${w.name} u fshi nga ekipi.`)) confirmBox.current?.close();
-                }}
-              >
-                <Icon name="trash" size={16} /> Fshi përgjithmonë
-              </button>
-            </footer>
-          </div>
-        )}
-      </dialog>
       <dialog ref={dialog} className="st-dialog" aria-labelledby="st-add-title">
         <form key={formKey} onSubmit={add}>
           <header>

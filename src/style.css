@@ -7983,14 +7983,4 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .st-card.off .st-status { color: #8a96a3; }
 .st-card > footer .st-delete { margin-left: 0; border: 0; background: transparent; padding: 0 4px; color: #b42318; font-weight: 600; }
 .st-card > footer .st-delete:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
-.st-confirm { width: min(400px, calc(100vw - 32px)); }
-.st-confirm-body { display: grid; gap: 12px; padding: 24px 22px 20px; }
-.st-confirm-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 16px; background: #fdecea; color: #b42318; }
-.st-confirm h2 { margin: 2px 0 0; font-size: 19px; letter-spacing: -0.01em; }
-.st-confirm ul { display: grid; gap: 6px; margin: 0; padding-left: 18px; color: #3c4652; font-size: 14px; line-height: 1.45; }
-.st-confirm .helper { margin: 0; }
-.st-confirm footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; padding: 0; border: 0; min-height: 0; background: none; }
-.st-confirm footer button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 18px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
-.st-confirm .st-danger { border-color: #b42318; background: #c8321f; color: #fff; }
-.st-confirm .st-danger:hover { background: #a92b1a; }
 @media (prefers-reduced-motion: reduce) { .st-switch, .st-switch i { transition: none; } }

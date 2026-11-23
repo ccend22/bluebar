@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useConfirm } from "./ConfirmDialog.jsx";
 import { MAX_SPAN, inRoom, rectFits, rectOf, sizeFor, spanOf } from "./floorGeometry.js";
 import { tableName } from "./domain.js";
 import { deleteFloorAsset, drawFloorAsset, saveFloorAsset, setFloorTexture, setTableSprite } from "./api.js";
@@ -111,6 +112,18 @@ function PhotoButton({ label, kind, busy, onDrawn, onError, setBusy }) {
 // tables: the room's active tables, drawn as drafted. draft: the changes, by table id (whole
 // table.save rows); onDraft(id, patch) adds to them.
 export function RoomEditor({ state, tables: allTables, update, notify, refresh, selected, onSelect, draft, onDraft, onDiscard, onDone, area, onRoom }) {
+  const confirm = useConfirm();
+  const removeTable = async (table) => {
+    const name = tableName(table);
+    const accepted = await confirm({
+      title: "Fshi tavolinën?",
+      description: "Tavolina do të hiqet përgjithmonë nga plani i sallës.",
+      detail: { name },
+      action: "Fshi tavolinën",
+      destructive: true,
+    });
+    if (accepted && await update("table.delete", { id: table.id }, `${name} u fshi.`)) onSelect(null);
+  };
   // Rooms of their own: the room being arranged, and only its tables.
   const separate = state.separateRooms === true;
   const zones = [...new Set(allTables.map((x) => x.area))].sort((a, b) => a.localeCompare(b, "sq"));
@@ -206,6 +219,7 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
   useEffect(() => {
     if (!obj) return;
     const key = (e) => {
+      if (document.activeElement?.closest("dialog[open]")) return;
       if ((e.key === "Delete" || e.key === "Backspace") && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) (e.preventDefault(), removeObject(obj));
       if (e.key === "Escape") setObjectId(null);
       // Arrows nudge it one grid step (Shift: a whole table cell).
@@ -500,7 +514,7 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
                 type="button"
                 className="subtle-button danger"
                 disabled={t.lines.length > 0}
-                onClick={() => confirm(`Të fshihet ${tableName(t)} përgjithmonë?`) && update("table.delete", { id: t.id }, `${tableName(t)} u fshi.`).then((ok) => ok && onSelect(null))}
+                onClick={() => removeTable(t)}
               >
                 Fshije
               </button>

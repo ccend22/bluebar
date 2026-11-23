@@ -4,6 +4,7 @@ import { extrasText, parseExtras } from "./parseList.js";
 import { bill, since, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, ticketWaiting, total, plural, tableName } from "./domain.js";
 import { useDatabase } from "./useDatabase.js";
 import { Login } from "./Login.jsx";
+import { ConfirmProvider, useConfirm } from "./ConfirmDialog.jsx";
 import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "./OnlineMenu.jsx";
 import { AiImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
@@ -303,6 +304,7 @@ function StationTicket({ ticket, waiterName, tables }) {
   );
 }
 function App({ user, onLogout, onUserChange }) {
+  const confirm = useConfirm();
   const database = useDatabase();
   const online = useOnline();
   const installOffer = useInstall();
@@ -413,8 +415,8 @@ function App({ user, onLogout, onUserChange }) {
     }
   };
   // then: what to set once the page has changed (showPage clears the open invoice, filters…).
-  const nav = (p, then) => {
-    if (!leaveRoomDraft()) return;
+  const nav = async (p, then) => {
+    if (!await leaveRoomDraft()) return;
     // Straight to the page: no cross-fade, nothing to wait for.
     showPage(p);
     then?.();
@@ -448,8 +450,15 @@ function App({ user, onLogout, onUserChange }) {
       return Object.keys(saved).every((k) => saved[k] === next[k]) ? rest : { ...draft, [id]: next };
     });
   // false = the manager chose to stay and keep the changes they haven't confirmed.
-  const leaveRoomDraft = () => {
-    if (Object.keys(roomDraft).length && !window.confirm("Ndryshimet e sallës nuk janë konfirmuar. T'i hedh poshtë?")) return false;
+  const leaveRoomDraft = async () => {
+    if (Object.keys(roomDraft).length && !await confirm({
+      title: "Hidh poshtë ndryshimet?",
+      description: "Ndryshimet e pakonfirmuara në planin e sallës do të humbasin.",
+      action: "Hidh poshtë",
+      cancelLabel: "Vazhdo redaktimin",
+      icon: "edit",
+      destructive: true,
+    })) return false;
     setRoomDraft({});
     return true;
   };
@@ -878,7 +887,7 @@ function App({ user, onLogout, onUserChange }) {
         inert={!!database.pending && !database.busy && !database.syncingOrders}
       >
         <aside className="sidebar">
-          <a className="brand" href="#main" onClick={() => nav("Tavolinat")}>
+          <a className="brand" href="#main" onClick={(e) => { e.preventDefault(); nav("Tavolinat"); }}>
             <span className="brandmark"><BrandMark /></span>BlueBar
           </a>
           <div className="workspace-label">
@@ -894,10 +903,7 @@ function App({ user, onLogout, onUserChange }) {
                 <button
                   className={role === "Menaxher" && !MOBILE_TABS.includes(p.name) ? "nav-extra" : undefined}
                   aria-current={page === p.name ? "page" : undefined}
-                  onClick={() => {
-                    setMoreOpen(false);
-                    nav(p.name);
-                  }}
+                  onClick={() => nav(p.name, () => setMoreOpen(false))}
                 >
                   <Icon name={p.icon} />
                   <span>{p.name}</span>
@@ -934,10 +940,7 @@ function App({ user, onLogout, onUserChange }) {
                       role="menuitem"
                       autoFocus={p.name === pages.find((x) => !MOBILE_TABS.includes(x.name)).name}
                       aria-current={page === p.name ? "page" : undefined}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        nav(p.name);
-                      }}
+                      onClick={() => nav(p.name, () => setMoreOpen(false))}
                     >
                       <Icon name={p.icon} />
                       <span>{p.name}</span>
@@ -1144,8 +1147,8 @@ function App({ user, onLogout, onUserChange }) {
                   onRoom={setArea}
                   selected={floorSelected}
                   onSelect={setFloorSelected}
-                  onDone={() => {
-                    if (!leaveRoomDraft()) return;
+                  onDone={async () => {
+                    if (!await leaveRoomDraft()) return;
                     setFloorSelected(null);
                     setManageTables(false);
                     setSelected(null);
@@ -2238,5 +2241,9 @@ export function Root() {
         </button>
       </main>
     );
-  return user ? <App user={user} onLogout={leave} onUserChange={(u) => setUser((prev) => ({ ...prev, ...u }))} /> : <Login onSignedIn={enter} />;
+  return user ? (
+    <ConfirmProvider>
+      <App user={user} onLogout={leave} onUserChange={(u) => setUser((prev) => ({ ...prev, ...u }))} />
+    </ConfirmProvider>
+  ) : <Login onSignedIn={enter} />;
 }

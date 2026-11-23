@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useConfirm } from "./ConfirmDialog.jsx";
 import { plural, reservationClash, reservationTime, tableName } from "./domain.js";
 import { Empty, Field, Icon, SectionHeading } from "./components.jsx";
 
@@ -21,6 +22,7 @@ const blank = (date, slots) => ({ name: "", phone: "", guests: "2", table: "", d
 // Rezervimet: the day's bookings on the left, the booking form (and, for the manager, the
 // venue's time slots) on the right.
 export function Reservations({ state, update, role }) {
+  const confirm = useConfirm();
   const reservations = state.reservations || [];
   const slots = state.reservationSlots || [];
   const tables = state.tables.filter((t) => t.active);
@@ -48,6 +50,20 @@ export function Reservations({ state, update, role }) {
     }
   };
   const form = useRef(null);
+  const cancelReservation = async (reservation) => {
+    const accepted = await confirm({
+      title: "Anulo rezervimin?",
+      description: "Rezervimi do të hiqet nga lista e ditës.",
+      detail: { name: reservation.name, value: reservationTime(reservation) },
+      action: "Anulo rezervimin",
+      cancelLabel: "Mbaj rezervimin",
+      icon: "calendar",
+      destructive: true,
+    });
+    if (accepted && await update("reservation.delete", { id: reservation.id }, "Rezervimi u anulua.")) {
+      if (draft.id === reservation.id) setDraft(blank(date, slots));
+    }
+  };
   const edit = (r) => {
     setDraft({ id: r.id, name: r.name, phone: r.phone, guests: String(r.guests), table: r.table == null ? "" : String(r.table), date: r.date, start: r.start, end: r.end });
     // On a phone the form sits under the list.
@@ -94,7 +110,7 @@ export function Reservations({ state, update, role }) {
                     <button type="button" onClick={() => edit(r)}>Ndrysho</button>
                     <button
                       type="button"
-                      onClick={() => confirm(`Të anulohet rezervimi i ${r.name} (${reservationTime(r)})?`) && update("reservation.delete", { id: r.id }, "Rezervimi u anulua.").then((ok) => ok && draft.id === r.id && setDraft(blank(date, slots)))}
+                      onClick={() => cancelReservation(r)}
                     >
                       Anulo
                     </button>

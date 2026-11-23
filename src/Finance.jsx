@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useConfirm } from "./ConfirmDialog.jsx";
 import { bill, money, txCategories, txIcon } from "./domain.js";
 import { deleteAccount, deleteExpense, deleteExpenseFile, fetchAccounts, fetchExpenseFile, fetchExpenses, fetchFinance, moveMoney, readExpenses, saveAccount, saveExpense, saveExpenseFile, saveTransactionCategories, fetchCategoryUsage } from "./api.js";
 import { shrink } from "./OnlineMenu.jsx";
@@ -239,6 +240,7 @@ const openAttachment = async (id, notify) => {
 };
 
 function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, show, setShow, go }) {
+  const confirm = useConfirm();
   const [draft, setDraft] = useState(() => blank(defaultDay));
   // The form is a dialog: "+ Veprim" opens it empty, "Ndrysho" opens it with the row.
   const dialog = useRef(null);
@@ -273,6 +275,19 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, 
       notify(err.message, "error");
     }
     setBusy(false);
+  };
+  const remove = async (expense) => {
+    const income = expense.type === "in";
+    const accepted = await confirm({
+      title: income ? "Fshi hyrjen?" : "Fshi shpenzimin?",
+      description: expense.file
+        ? "Veprimi dhe dokumenti i bashkëngjitur do të fshihen nga transaksionet."
+        : "Ky veprim do të fshihet nga transaksionet.",
+      detail: { name: expense.category, value: lek(expense.amount) },
+      action: income ? "Fshi hyrjen" : "Fshi shpenzimin",
+      destructive: true,
+    });
+    if (accepted) await act(() => deleteExpense(expense.id), income ? "Hyrja u fshi." : "Shpenzimi u fshi.");
   };
   const act = async (work, message) => {
     try {
@@ -342,7 +357,7 @@ function Expenses({ lists, expenses, sales, name, notify, onChange, defaultDay, 
                     <button type="button" onClick={() => act(() => saveExpense({ id: x.id, ...body({ ...x, date: day(new Date(x.spentAt)) }), status: "aprovuar" }), "Veprimi u aprovua.")}>Aprovo</button>
                   )}
                   <button type="button" onClick={() => openForm({ ...blank(day(new Date(x.spentAt))), id: x.id, kind: x.kind || "shpenzim", amount: String(x.amount), category: x.category, method: x.method, status: x.status, note: x.note, file: x.file })}>Ndrysho</button>
-                  <button type="button" className="icon-button" aria-label={`Fshi veprimin ${x.category}`} onClick={() => confirm(`Të fshihet ${x.type === "in" ? "hyrja" : "shpenzimi"} "${x.category}" (${lek(x.amount)})?`) && act(() => deleteExpense(x.id), x.type === "in" ? "Hyrja u fshi." : "Shpenzimi u fshi.")}>
+                  <button type="button" className="icon-button" aria-label={`Fshi veprimin ${x.category}`} onClick={() => remove(x)}>
                     <Icon name="close" size={16} />
                   </button>
                 </div>
@@ -603,6 +618,7 @@ const GROUPS = [["own", "Llogaritë e veta", "Arka dhe llogaritë bankare të lo
 
 // Llogaritë financiare: where the money sits now, account by account, and money moved by hand.
 function Accounts({ notify }) {
+  const confirm = useConfirm();
   const [list, setList] = useState(null);
   const [open, setOpen] = useState({ own: true, partner: true });
   const [form, setForm] = useState(null); // { mode: "account" | "move" | "transfer", ... }
@@ -623,6 +639,16 @@ function Accounts({ notify }) {
       notify(e.message, "error");
     }
     setBusy(false);
+  };
+  const remove = async () => {
+    const accepted = await confirm({
+      title: "Fshi llogarinë?",
+      description: "Do të fshihen edhe lëvizjet e kësaj llogarie.",
+      detail: { name: list.find((account) => account.id === form.id)?.name || form.name },
+      action: "Fshi llogarinë",
+      destructive: true,
+    });
+    if (accepted) await run(() => deleteAccount(form.id), "Llogaria u fshi.");
   };
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   const submit = (e) => {
@@ -687,7 +713,7 @@ function Accounts({ notify }) {
           )}
           <div className="fin-form-actions">
             {form.mode === "account" && form.id && (
-              <button type="button" className="subtle-button danger" disabled={busy} onClick={() => confirm(`Të fshihet llogaria "${form.name}" dhe lëvizjet e saj?`) && run(() => deleteAccount(form.id), "Llogaria u fshi.")}>Fshi llogarinë</button>
+              <button type="button" className="subtle-button danger" disabled={busy} onClick={remove}>Fshi llogarinë</button>
             )}
             <button type="button" onClick={() => setForm(null)}>Anulo</button>
             <button className="primary" disabled={busy}>{busy ? "Po ruhet…" : "Ruaj"}</button>

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useConfirm } from "./ConfirmDialog.jsx";
 import { DepartmentTag, Icon, SectionHeading } from "./components.jsx";
 
 // Cilësimet → Repartet dhe kategoritë: where an order is prepared (departments: bar, kitchen…)
@@ -6,6 +7,7 @@ import { DepartmentTag, Icon, SectionHeading } from "./components.jsx";
 // department's printers, follow); remove (a department's products wait for a new one; a
 // category only once it is empty).
 export function MenuSetup({ state, update }) {
+  const confirm = useConfirm();
   const count = (field, value) => state.products.filter((p) => p[field] === value).length;
   const printersOf = (d) => state.printers.filter((p) => p.departments?.includes(d)).map((p) => p.name);
   return (
@@ -25,9 +27,15 @@ export function MenuSetup({ state, update }) {
           placeholder="p.sh. Grill"
           onAdd={(name) => update("department.create", { name }, `Reparti "${name}" u shtua.`)}
           onRename={(from, name) => update("department.rename", { from, name }, `"${from}" u bë "${name}". Produktet dhe printerët e ndoqën.`)}
-          onRemove={(d) => {
+          onRemove={async (d) => {
             const n = count("department", d);
-            if (n && !confirm(`"${d}" ka ${n === 1 ? "1 produkt" : `${n} produkte`}. Do të mbeten pa repart derisa t'u zgjidhni një tjetër te Produktet. Ta fshij?`)) return;
+            if (n && !await confirm({
+              title: "Fshi repartin?",
+              description: "Produktet e këtij reparti do të mbeten pa repart. Mund t’u caktoni një tjetër te Produktet.",
+              detail: { name: d, value: n === 1 ? "1 produkt" : `${n} produkte` },
+              action: "Fshi repartin",
+              destructive: true,
+            })) return;
             return update("department.delete", { name: d }, `Reparti "${d}" u fshi.`);
           }}
         />

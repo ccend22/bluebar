@@ -1,0 +1,106 @@
+.bb-confirm {
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid #dce3eb;
+  border-radius: 20px;
+  background: var(--surface);
+  color: #142637;
+  box-shadow: 0 24px 75px rgba(16, 37, 56, 0.24), 0 4px 12px rgba(16, 37, 56, 0.1);
+}
+
+.bb-confirm::backdrop { background: rgba(16, 34, 51, 0.46); }
+
+.bb-confirm-form {
+  --decision: var(--blue-strong);
+  --decision-hover: #004789;
+  --decision-soft: var(--blue-soft);
+}
+.bb-confirm-form.danger {
+  --decision: #a12e2b;
+  --decision-hover: #842321;
+  --decision-soft: #faeeec;
+}
+
+.bb-confirm-content {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 15px;
+  padding: 24px;
+}
+
+.bb-confirm-icon {
+  display: grid;
+  place-items: center;
+  width: 41px;
+  height: 41px;
+  border-radius: 12px;
+  background: var(--decision-soft);
+  color: var(--decision);
+}
+
+.bb-confirm-copy h2 {
+  margin: 1px 0 9px;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 720;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+
+.bb-confirm-description p {
+  margin: 0;
+  color: #536372;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.bb-confirm-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 12px 0 10px;
+  padding: 10px 12px;
+  border-inline-start: 2px solid #d0dae5;
+  border-radius: 0 8px 8px 0;
+  background: #f3f6f9;
+  font-size: 14px;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+.bb-confirm-detail strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.bb-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 24px;
+  border-top: 1px solid #e6ebf0;
+  background: #f8fafc;
+}
+.bb-confirm-actions button { padding-inline: 16px; }
+.bb-confirm-actions .bb-confirm-commit {
+  border-color: var(--decision);
+  background: var(--decision);
+  color: #fff;
+}
+.bb-confirm-actions .bb-confirm-commit:hover {
+  border-color: var(--decision-hover);
+  background: var(--decision-hover);
+}
+.bb-confirm-actions button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .bb-confirm-content { grid-template-columns: 1fr; gap: 12px; padding: 20px; }
+  .bb-confirm-actions { padding-inline: 20px; }
+  .bb-confirm-actions button { flex: 1 1 auto; }
+}
