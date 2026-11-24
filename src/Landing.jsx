@@ -91,10 +91,10 @@ const features = (t) => [
     id: "salla", tab: t("Floor", "Salla"),
     title: t("One look at the floor and you know who's waiting for the bill.", "Një shikim te salla dhe e dini kush pret llogarinë."),
     points: t(
-      ["Occupied tables light up, with the waiter's name and the amount", "Main room, terrace or upstairs, laid out the way your venue is", "The total of open orders stays at the top all evening"],
-      ["Tavolinat e zëna dalin me ngjyrë, me emrin e kamarierit dhe shumën", "Salla, tarraca ose kati i dytë, ashtu si i keni në lokal", "Totali i porosive të hapura qëndron lart gjithë mbrëmjen"],
+      ["Occupied tables light up, with the waiter's name and the amount", "Draw your room once: tables, walls, sofas and the bar, where they really stand", "The total of open orders stays at the top all evening"],
+      ["Tavolinat e zëna dalin me ngjyrë, me emrin e kamarierit dhe shumën", "E vizatoni sallën një herë: tavolinat, muret, divanet dhe bari, aty ku janë", "Totali i porosive të hapura qëndron lart gjithë mbrëmjen"],
     ),
-    img: ["/landing/page-salla.webp", 2552, 1240, t("The floor plan with 12 tables; 7 are occupied, each with its waiter and amount, 4,780 Lek open in total.", "Plani i sallës me 12 tavolina; 7 të zëna, secila me kamarierin dhe shumën, 4,780 Lek të hapura gjithsej.")],
+    img: ["/landing/page-salla.webp", 2352, 1304, t("Drawing the main room: the bar with its stools, a lounge with sofas, a long table for groups, the entrance; the floor and colours on the right.", "Vizatimi i sallës: bari me stolat, një kënd me divane, një tavolinë e gjatë për grupe, hyrja; dyshemeja dhe ngjyrat djathtas.")],
   },
   {
     id: "porosia", tab: t("Ordering", "Porosia"),
@@ -103,7 +103,7 @@ const features = (t) => [
       ["Search the menu, change quantities, add notes like “no sugar”", "Or just say it: “two macchiatos and a water”", "On the second round only the new items are sent"],
       ["Kërkon në menu, ndryshon sasinë, shton shënime si “pa sheqer”", "Ose e thotë me zë: “dy makiato dhe një ujë”", "Në raundin e dytë dërgohen vetëm artikujt e rinj"],
     ),
-    img: ["/landing/page-porosia.webp", 2464, 1664, t("Table 07's order: the menu with photos on the left, the order on the right, ready to send to the stations.", "Porosia e Tavolinës 07: menuja me foto majtas, porosia djathtas, gati për t’u dërguar në repartet.")],
+    img: ["/landing/page-porosia.webp", 2480, 1704, t("Table 12's order: the menu with photos on the left, the order on the right, ready to send to the stations.", "Porosia e Tavolinës 12: menuja me foto majtas, porosia djathtas, gati për t’u dërguar në repartet.")],
   },
   {
     id: "repartet", tab: t("Bar and kitchen", "Bari dhe kuzhina"),
@@ -112,7 +112,7 @@ const features = (t) => [
       ["Every item goes straight to its own station", "The kitchen taps “Ready” and the waiter sees it on their phone", "Prints directly, without the browser's print window"],
       ["Çdo artikull shkon vetë te reparti i vet", "Kuzhina shtyp “Gati” dhe kamarieri e sheh në telefon", "Printon direkt, pa dritaren e printimit të shfletuesit"],
     ),
-    img: ["/landing/page-repartet.webp", 2338, 1038, t("Slips waiting at the bar, the kitchen and the pizza oven.", "Fletët në pritje te bari, kuzhina dhe furra e picave.")],
+    img: ["/landing/page-repartet.webp", 2352, 1976, t("Slips waiting at the bar, the pastry counter and the kitchen, 12 in all.", "Fletët në pritje te bari, ëmbëltorja dhe restoranti, 12 gjithsej.")],
   },
   {
     id: "faturat", tab: t("Payments", "Pagesat"),
@@ -121,16 +121,16 @@ const features = (t) => [
       ["BlueBar works out the change, not the waiter in their head", "Fiscalization through BlueBill", "A manager can correct a closed bill, but has to write down why"],
       ["Kusurin e llogarit BlueBar, jo kamarieri me mend", "Fiskalizim përmes BlueBill", "Menaxheri mund ta korrigjojë një faturë të mbyllur, por duhet të shkruajë arsyen"],
     ),
-    img: ["/landing/page-faturat.webp", 2338, 1482, t("The bill register with the day's paid bills, cash and card.", "Regjistri i faturave me faturat e paguara të ditës, cash dhe kartë.")],
+    img: ["/landing/page-faturat.webp", 2352, 1656, t("The bill register with the day's paid bills, cash and card.", "Regjistri i faturave me faturat e paguara të ditës, cash dhe kartë.")],
   },
   {
     id: "raportet", tab: t("Reports", "Raportet"),
     title: t("Close the shift and know what should be in the till before you count it.", "Mbyllni turnin dhe e dini sa duhet të ketë arka, para se ta numëroni."),
     points: t(
-      ["Sales by hour, by waiter and by product", "Cash and card kept apart", "One CSV for your accountant, in one click"],
-      ["Shitjet sipas orës, kamarierit dhe produktit", "Cash dhe kartë veç e veç", "Një CSV për kontabilistin, me një klik"],
+      ["Income, expenses and net profit, for any month", "Cash and card kept apart, every expense in its category", "Sales by hour, waiter and product, and one CSV for your accountant"],
+      ["Të ardhurat, shpenzimet dhe fitimi neto, për çdo muaj", "Cash dhe kartë veç e veç, çdo shpenzim në kategorinë e vet", "Shitjet sipas orës, kamarierit dhe produktit, dhe një CSV për kontabilistin"],
     ),
-    img: ["/landing/page-raportet.webp", 2338, 1532, t("The day's report: sales, cash, card and best sellers.", "Raporti i ditës: shitjet, cash, kartë dhe produktet më të shitura.")],
+    img: ["/landing/page-raportet.webp", 2352, 1992, t("The month's report: income, expenses and net profit, cash and card, by category.", "Raporti i muajit: të ardhurat, shpenzimet dhe fitimi neto, cash dhe kartë, sipas kategorisë.")],
   },
 ];
 
@@ -220,7 +220,7 @@ function TiltScreen({ t }) {
   return (
     <div className="lp-tilt-stage">
       <div className="lp-tilt" ref={el}>
-        <div className="lp-browser"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1520" alt={t("BlueBar: Bar Aurora's floor, occupied tables with their waiter and amount, the menu on the left.", "BlueBar: salla e Bar Aurora, tavolinat e zëna me kamarierin dhe shumën, menuja majtas.")} fetchPriority="high" /></div>
+        <div className="lp-browser"><div className="lp-browser-bar" aria-hidden="true"><i /><i /><i /></div><img src="/landing/app-tavolinat.webp" width="2880" height="1800" alt={t("BlueBar: Bar Aurora's main room as it is, with the bar, the lounge and the entrance; occupied tables show their waiter and amount.", "BlueBar: salla e Bar Aurora siç është, me barin, këndin me divane dhe hyrjen; tavolinat e zëna tregojnë kamarierin dhe shumën.")} fetchPriority="high" /></div>
         <span className="lp-tilt-glare" aria-hidden="true" />
       </div>
     </div>

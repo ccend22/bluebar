@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { parseOrder } from "./voice.js";
+import { floorLook } from "./floorMaterials.js";
 
 // One order through BlueBar's three screens, usable: the waiter's phone takes it, Repartet (the
 // bar and kitchen screen, drawn like the app's) gets one slip per station and drops it on
@@ -15,7 +16,11 @@ const MENU = [
   { id: 6, names: ["Tiramisu", "Tiramisu"], price: 450, dept: "Kuzhina" },
 ];
 const menu = (t) => MENU.map((m) => ({ ...m, name: t(...m.names) }));
-const TABLES = [2, 3, 5, 8];
+// The waiter's room, as the app draws it on a phone: tiles on the oak floor. 01, 04 and 06 are
+// already taken by colleagues (name and amount); the rest are free to pick.
+const TABLES = [1, 2, 3, 4, 5, 6, 7, 8];
+const TAKEN = { 1: ["Beni", 1350], 4: ["Klea", 650], 6: ["Erion", 1100] };
+const OAK = floorLook("oak");
 const DEPTS = ["Bar", "Kuzhina"];
 const clock = (minsAgo = 0) => {
   const d = new Date(Date.now() - minsAgo * 60000);
@@ -184,16 +189,20 @@ export function Counter({ t }) {
           <div className="tc-phone">
             <div className="tc-phone-screen">
               <div className="tc-phone-top"><span>{t("Ana · Floor", "Ana · Salla")}</span><b>{table ? table_(table) : t("Pick a table", "Zgjidhni tavolinën")}</b></div>
-              <div className={`tc-tables ${target(0)}`}>
-                {TABLES.map((n) => (
-                  <button key={n} type="button" aria-pressed={table === n} disabled={!!count(sent) || !!count(cart)} onClick={() => (setTable(n), setReceipt(null))}>{pad(n)}</button>
+              <div className={`tc-tables ${target(0)}`} style={{ backgroundImage: OAK.image, backgroundSize: "320px 136px" }}>
+                {TABLES.map((n) => TAKEN[n] ? (
+                  <span key={n} className="tc-tile is-taken" aria-label={`${table_(n)}, ${t("taken by", "e zënë nga")} ${TAKEN[n][0]}`}><b>{pad(n)}</b><small>{TAKEN[n][0]}</small><small>{TAKEN[n][1].toLocaleString("en-US")}</small></span>
+                ) : (
+                  <button key={n} type="button" className={`tc-tile ${table === n ? "is-taken" : ""}`} aria-pressed={table === n} disabled={!!count(sent) || !!count(cart)} onClick={() => (setTable(n), setReceipt(null))}>
+                    {table === n ? <><b>{pad(n)}</b><small>Ana</small>{sum(merge(sent, cart)) > 0 && <small>{sum(merge(sent, cart)).toLocaleString("en-US")}</small>}</> : <span>{pad(n)}</span>}
+                  </button>
                 ))}
               </div>
               <div className="tc-menu-head"><span>{t("Menu", "Menuja")}</span><button type="button" className={`tc-mic ${saying ? "on" : ""} ${step === 1 ? "tc-target" : ""}`} onClick={speak} disabled={!!saying}><Mic size={16} />{saying ? t("Listening…", "Po dëgjon…") : t("Order by voice", "Porosit me zë")}</button></div>
               <div className="tc-menu">
                 {MENU.map((m) => (
                   <button key={m.id} type="button" onClick={() => add(m)} aria-label={`${t("Add", "Shto")} ${m.name}, ${lek(m.price)}`}>
-                    <b>{m.name}</b><small>{lek(m.price)}</small>{cart[m.id] > 0 && <i key={cart[m.id]}>{cart[m.id]}</i>}
+                    <b>{m.name}</b><small>{lek(m.price)}</small>{cart[m.id] > 0 ? <i key={cart[m.id]}>{cart[m.id]}</i> : <span className="tc-plus" aria-hidden="true">+</span>}
                   </button>
                 ))}
               </div>
@@ -224,6 +233,10 @@ export function Counter({ t }) {
         <figure className="tc-col tc-col-board">
           <figcaption>{t("Stations: the bar and kitchen screen", "Repartet: ekrani i barit dhe kuzhinës")}</figcaption>
           <div className="tc-board" ref={board}>
+            <div className="tc-stats">
+              <p><span>{t("Slips waiting", "Fletë në pritje")}</span><b key={tickets.length}>{tickets.length}</b></p>
+              <p><span>{t("Items", "Artikuj")}</span><b>{tickets.reduce((n, x) => n + count(x.lines), 0)}</b></p>
+            </div>
             <h4>{t("Waiting slips", "Fletët në pritje")}</h4>
             <p className="tc-board-sub">{t(`${tickets.length} slips to prepare · they leave when you tap “Ready”`, `${tickets.length} fletë për t’u përgatitur · largohen kur shtypni “Gati”`)}</p>
             <div className="tc-filter" role="group" aria-label={t("Filter by station", "Filtro repartin")}>

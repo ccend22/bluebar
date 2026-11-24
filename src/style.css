@@ -7790,6 +7790,7 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 }
 .look-3d .fp-table.shape-round.occupied .fp-tag, .look-3d .fp-table.shape-oval.occupied .fp-tag,
 .look-3d .fp-table.shape-round.reserved .fp-tag, .look-3d .fp-table.shape-oval.reserved .fp-tag { inset: 22%; border-radius: 50%; }
+.look-3d .fp-table.shape-oval.occupied .fp-tag, .look-3d .fp-table.shape-oval.reserved .fp-tag { inset: 14% 20%; }
 .look-3d .fp-table.occupied:not(.has-sprite) .fp-tag strong { font-size: clamp(12px, calc(var(--cell, 110px) * 0.11), 24px); line-height: 1; text-shadow: 0 1px 1px rgba(6, 60, 34, 0.35); }
 .look-3d .fp-table.occupied:not(.has-sprite) .fp-info { gap: 0; max-width: 100%; }
 .look-3d .fp-table.occupied:not(.has-sprite) .fp-info > span { max-width: 100%; font-size: clamp(9px, calc(var(--cell, 110px) * 0.052), 12px); }
@@ -7897,14 +7898,15 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
   .room-edit-body .room-panel { max-height: none; }
 }
 /* A taken table's details scale with the table itself, so they always fit its top; "Lek"
-   only where there is room for it. */
+   only where there is room for it. Width or height, whichever is shorter: a wide oval or long
+   table is not tall enough for text sized to its width. */
 .look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar),
 .look-3d .fp-table.reserved:not(.has-sprite):not(.shape-bar) { container-type: size; }
-.look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar) .fp-tag strong { font-size: clamp(10px, 16cqw, 26px); }
-.look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar) .fp-info > span { font-size: clamp(8px, 8.5cqw, 12px); }
-.look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar) .fp-info b { font-size: clamp(9px, 11.5cqw, 16px); }
-.look-3d .fp-table.reserved:not(.occupied):not(.has-sprite):not(.shape-bar) .fp-tag strong { font-size: clamp(10px, 15cqw, 24px); }
-.look-3d .fp-table.reserved:not(.occupied):not(.has-sprite):not(.shape-bar) .fp-res { font-size: clamp(8px, 8.5cqw, 12px); }
+.look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar) .fp-tag strong { font-size: clamp(10px, min(16cqw, 24cqh), 26px); }
+.look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar) .fp-info > span { font-size: clamp(8px, min(8.5cqw, 12cqh), 12px); }
+.look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar) .fp-info b { font-size: clamp(9px, min(11.5cqw, 16cqh), 16px); }
+.look-3d .fp-table.reserved:not(.occupied):not(.has-sprite):not(.shape-bar) .fp-tag strong { font-size: clamp(10px, min(15cqw, 24cqh), 24px); }
+.look-3d .fp-table.reserved:not(.occupied):not(.has-sprite):not(.shape-bar) .fp-res { font-size: clamp(8px, min(8.5cqw, 12cqh), 12px); }
 .look-3d .fp-table.occupied:not(.has-sprite):not(.shape-bar) .fp-cur { display: none; }
 @container (min-width: 150px) { .look-3d .fp-table.occupied .fp-cur { display: inline; } }
 @container (max-width: 84px) {

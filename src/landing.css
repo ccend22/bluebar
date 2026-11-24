@@ -228,18 +228,28 @@ html:has(.lp)::view-transition-old(root), html:has(.lp)::view-transition-new(roo
 .tc-phone-top { display: grid; gap: 2px; padding: 26px 18px 12px; }
 .tc-phone-top span { font-size: 12px; color: var(--muted); }
 .tc-phone-top b { font: 700 22px/1.1 var(--display); letter-spacing: -0.03em; }
-.tc-tables { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 16px 12px; border-radius: 14px; }
-.tc-tables button { min-height: 46px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); font: 700 16px var(--display); cursor: pointer; transition: background 150ms ease, color 150ms ease, transform 100ms var(--ease); }
-.tc-tables button:active:not(:disabled) { transform: scale(0.95); }
-.tc-tables button[aria-pressed="true"] { background: var(--night); border-color: var(--night); color: #fff; opacity: 1; }
-.tc-tables button:disabled:not([aria-pressed="true"]) { opacity: 0.4; cursor: default; }
+/* The room as the app draws it on a phone: walnut tiles on an oak floor inside a charcoal wall;
+   a taken table turns green with its waiter and amount. */
+.tc-tables { flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin: 0 14px 12px; padding: 10px; border: 5px solid #3d444c; border-radius: 12px; background-color: #d8c6a4; }
+.tc-tile { display: grid; place-content: center; justify-items: center; gap: 1px; aspect-ratio: 5 / 4; padding: 0; border: 0; border-radius: 9px; background: linear-gradient(160deg, #8a5d3c, #5f3d26); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 3px 6px rgba(40, 25, 10, 0.35); color: #fff; font: 700 14px/1.05 var(--font); font-variant-numeric: tabular-nums; }
+button.tc-tile { cursor: pointer; transition: transform 100ms var(--ease), opacity 150ms ease; }
+button.tc-tile:active:not(:disabled) { transform: scale(0.94); }
+button.tc-tile:disabled:not([aria-pressed="true"]) { opacity: 0.45; cursor: default; }
+.tc-tile > span { padding: 2px 7px; border-radius: 9999px; background: #fff; color: #1b2228; font-size: 13px; }
+.tc-tile.is-taken { background: linear-gradient(160deg, #3cb57a, #15804d); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 3px 8px rgba(10, 70, 40, 0.4); }
+.tc-tile b, .tc-tile small { color: #fff; }
+.tc-tile.is-taken b { font-size: 13px; }
+.tc-tile.is-taken small { font-size: 8.5px; font-weight: 600; line-height: 1.1; }
+.tc-tile.is-taken small + small { font-size: 9.5px; font-weight: 700; }
+.tc-tile[aria-pressed="true"] { opacity: 1; outline: 2px solid #fff; outline-offset: -2px; box-shadow: 0 0 0 3px var(--blue), 0 3px 8px rgba(10, 70, 40, 0.4); }
 .tc-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 16px; padding: 4px 0 12px; border-radius: 14px; }
-.tc-menu button { position: relative; display: grid; justify-items: start; gap: 1px; min-height: 54px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, transform 100ms var(--ease); }
+.tc-menu button { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 1px; min-height: 54px; padding: 9px 24px 9px 12px; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 1px 2px rgba(15, 30, 45, 0.05); background: #fff; color: var(--ink); text-align: left; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, transform 100ms var(--ease); }
 .tc-menu button:hover { border-color: #c9d2db; }
 .tc-menu button:active { transform: scale(0.96); }
 .tc-menu b { font-size: 13.5px; font-weight: 600; }
 .tc-menu small { font-size: 12px; color: var(--muted); }
-.tc-menu i { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 9999px; background: var(--blue); color: #fff; font: 700 12px var(--font); animation: tc-pop 300ms var(--ease); }
+.tc-plus { position: absolute; top: 7px; right: 7px; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--line); border-radius: 50%; background: #fff; color: var(--muted); font: 500 15px/1 var(--font); }
+.tc-menu i { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 9999px; background: var(--blue); color: #fff; font: 700 12px var(--font); animation: tc-pop 300ms var(--ease); }
 @keyframes tc-pop { from { transform: scale(1.5); } }
 .tc-lines { flex: 1; min-height: 0; margin: 0; padding: 4px 16px; list-style: none; overflow: auto; }
 .tc-lines li { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px dashed #e2e7ec; font-size: 13px; animation: tc-line 300ms var(--ease) both; }
@@ -264,6 +274,12 @@ html:has(.lp)::view-transition-old(root), html:has(.lp)::view-transition-new(roo
 /* Repartet, drawn like the app: a white panel, filter pills with counts, a card per slip with
    the station, the table in the text font, the lines in monospace, and "Gati". */
 .tc-board { min-height: 640px; padding: 20px; border-radius: 24px; background: #fff; border: 1px solid var(--line); color: var(--ink); }
+.tc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.tc-stats p { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(120deg, #fff 40%, #fdf3e3); }
+.tc-stats p + p { background: linear-gradient(120deg, #fff 40%, #e8f1fc); }
+.tc-stats span { font: 700 10.5px var(--font); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.tc-stats b { font: 700 22px/1.1 var(--display); letter-spacing: -0.02em; color: #d97a06; font-variant-numeric: tabular-nums; animation: tc-count 500ms var(--ease); }
+.tc-stats p + p b { color: var(--blue); }
 .tc-board h4 { margin: 0; font: 700 19px var(--display); letter-spacing: -0.02em; }
 .tc-board-sub { margin-top: 4px; font-size: 13px; color: var(--muted); }
 .tc-filter { display: inline-flex; flex-wrap: wrap; gap: 2px; margin: 16px 0 4px; padding: 4px; border-radius: 9999px; background: #f1f3f5; }
@@ -271,7 +287,7 @@ html:has(.lp)::view-transition-old(root), html:has(.lp)::view-transition-new(roo
 .tc-filter button[aria-pressed="true"] { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
 .tc-filter span { padding: 1px 7px; border-radius: 9999px; background: #eaf3fd; color: #0867c9; font-size: 11.5px; }
 .tc-queue { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-.tc-ticket { display: flex; flex-direction: column; padding: 16px 16px 14px; border: 1px solid #dfe4e8; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px rgba(23, 78, 101, 0.06), 0 14px 32px -26px rgba(23, 78, 101, 0.35); animation: tc-drop 420ms var(--ease) both; transition: opacity 300ms ease, transform 300ms var(--ease); }
+.tc-ticket { display: flex; flex-direction: column; padding: 16px 16px 14px; border: 1px solid #dfe4e8; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(23, 78, 101, 0.06), 0 14px 32px -26px rgba(23, 78, 101, 0.35); animation: tc-drop 420ms var(--ease) both; transition: opacity 300ms ease, transform 300ms var(--ease); }
 @keyframes tc-drop { from { opacity: 0; transform: translateY(-10px); } }
 .tc-ticket.is-mine { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(8, 103, 201, 0.14); }
 .tc-ticket.is-leaving { opacity: 0; transform: scale(0.96) translateY(-6px); }
@@ -280,11 +296,11 @@ html:has(.lp)::view-transition-old(root), html:has(.lp)::view-transition-new(roo
 .tc-ticket header strong { font: 650 22px/1.15 var(--font); letter-spacing: -0.02em; }
 .tc-ticket header span { font-size: 12.5px; color: var(--muted); }
 .tc-ticket-meta { margin-top: 4px; padding-bottom: 10px; border-bottom: 1px solid #e6eaee; font-size: 12px; color: var(--muted); }
-.tc-ticket ul { flex: 1; margin: 2px 0 10px; padding: 0; list-style: none; font: 14px/1.45 var(--mono); }
+.tc-ticket ul { flex: 1; margin: 2px 0 10px; padding: 0; list-style: none; font: 15px/1.45 var(--font); }
 .tc-ticket li { padding: 7px 0; border-bottom: 1px dashed #e3e7eb; }
 .tc-ticket li:last-child { border-bottom: 0; }
 .tc-ticket-actions { display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px dashed #e3e7eb; }
-.tc-ticket-actions button:first-child { flex: 1; min-height: 40px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; font: 600 15px var(--font); cursor: pointer; transition: background 150ms ease, transform 100ms var(--ease); }
+.tc-ticket-actions button:first-child { flex: 1; min-height: 40px; border: 0; border-radius: 10px; background: var(--blue); color: #fff; font: 600 15px var(--font); cursor: pointer; transition: background 150ms ease, transform 100ms var(--ease); }
 .tc-ticket-actions button:first-child:hover { background: var(--blue-deep); }
 .tc-ticket-actions button:first-child:active { transform: scale(0.97); }
 .tc-reprint { padding: 6px 2px; border: 0; background: none; color: var(--muted); font: 500 13px var(--font); white-space: nowrap; cursor: pointer; }
@@ -294,9 +310,10 @@ html:has(.lp)::view-transition-old(root), html:has(.lp)::view-transition-new(roo
 /* The till: the day so far, and the receipt printing out. */
 .tc-till { display: grid; gap: 14px; padding: 16px; border-radius: 24px; background: #fff; border: 1px solid var(--line); }
 .tc-till dl { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 0; }
-.tc-till dl div { padding: 10px 12px; border-radius: 12px; background: var(--cream); }
-.tc-till dt { font: 600 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.tc-till dd { margin: 2px 0 0; font: 700 20px var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; animation: tc-count 500ms var(--ease); }
+.tc-till dl div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(120deg, #fff 40%, #e6f4ec); }
+.tc-till dl div + div { background: linear-gradient(120deg, #fff 40%, #e8f1fc); }
+.tc-till dt { font: 700 10.5px var(--font); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.tc-till dd { margin: 2px 0 0; color: #15804d; font: 700 20px var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; animation: tc-count 500ms var(--ease); }
 @keyframes tc-count { from { color: #2f8a63; transform: translateY(4px); } }
 .tc-receipt-out { min-height: 380px; }
 .tc-till .tc-quiet { display: grid; place-items: center; height: 380px; padding: 24px; border: 1px dashed var(--line); border-radius: 14px; color: var(--faint); font-size: 14px; text-align: center; }
@@ -392,3 +409,4 @@ html:has(.lp)::view-transition-old(root), html:has(.lp)::view-transition-new(roo
   .tc-wave.on i, .lp-voice-said i, .tc-voice i { animation: none; }
   .tc-wave.on i { height: 12px; }
 }
+.tc-till dl div + div dd { color: var(--blue); }
