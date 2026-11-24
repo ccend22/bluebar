@@ -70,7 +70,7 @@ up to 366 days). Every business uses Europe/Tirane, because BlueBar has no per-b
 | `BLUEBAR_MCP_REDIRECT_URIS` | plain value, optional | Extra OAuth callbacks, comma-separated, if ChatGPT shows a different one |
 | `BLUEBAR_OPENAI_APPS_CHALLENGE` | plain value, optional | Domain-verification token from the OpenAI Platform, served at `/.well-known/openai-apps-challenge` |
 
-`GET /healthz` returns `ok`. It doesn't touch the database.
+`GET /health` returns `ok`. It doesn't touch the database. Cloud Run reserves paths ending in "z", so it is not `/healthz`.
 
 **Deploy:** use the same image and service as the rest of BlueBar (see the Cloud Run notes). This
 change has no migration. To set the challenge token:
