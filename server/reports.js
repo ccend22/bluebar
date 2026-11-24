@@ -8,7 +8,9 @@
 const iso = (v) => (v == null ? null : new Date(v).toISOString());
 
 // Calendar dates in BlueBar's local timezone. Use one snapshot for all the aggregates.
-export async function salesSummary(db, { from, to }) {
+export async function salesSummary(db, { from, to, rankBy = "quantity", top = 20 }) {
+  // Fixed SQL fragments only; rankBy never reaches the query text.
+  const rank = (p) => rankBy === "revenue" ? `${p}"lineTotalLek" DESC, ${p}quantity DESC` : `${p}quantity DESC, ${p}"lineTotalLek" DESC`;
   const { rows: [sales] } = await db.query(`
     WITH bounds AS (
       SELECT $1::date::timestamp AT TIME ZONE 'Europe/Tirane' AS starts,
@@ -22,15 +24,15 @@ export async function salesSummary(db, { from, to }) {
       FROM bluebar.invoice_lines l JOIN paid ON paid.id = l.invoice_id
       WHERE l.qty > l.comp
       GROUP BY l.name
-      ORDER BY quantity DESC, "lineTotalLek" DESC, l.name LIMIT 20
+      ORDER BY ${rank("")}, l.name LIMIT $3
     )
     SELECT count(*)::integer AS "invoiceCount", COALESCE(sum(total), 0)::bigint AS "salesLek",
       (SELECT COALESCE(sum(r.amount), 0)::bigint FROM bluebar.refunds r CROSS JOIN bounds b
         WHERE r.created_at >= b.starts AND r.created_at < b.ends) AS "refundsLek",
-      (SELECT COALESCE(jsonb_agg(p ORDER BY p.quantity DESC, p."lineTotalLek" DESC, p.name), '[]'::jsonb)
+      (SELECT COALESCE(jsonb_agg(p ORDER BY ${rank("p.")}, p.name), '[]'::jsonb)
         FROM products p) AS "topProducts"
     FROM paid
-  `, [from, to]);
+  `, [from, to, Math.min(Math.max(Number(top) || 20, 1), 50)]);
   const salesLek = Number(sales.salesLek), refundsLek = Number(sales.refundsLek);
   return {
     invoiceCount: sales.invoiceCount,

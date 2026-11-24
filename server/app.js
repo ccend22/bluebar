@@ -11,6 +11,7 @@ import { seal, open } from "./secretBox.js";
 import { checkBlueBillConnection, fiscalizeInvoice, FISCAL_FAILURE_MESSAGES } from "./bluebill.js";
 import { shiftReport } from "./shiftReport.js";
 import { report } from "./reports.js";
+import { gptVenue, registerGpt } from "./gpt.js";
 import { accounts, finance } from "./finance.js";
 import { deeplTranslator, LANGS } from "./translate.js";
 import { geminiVoice, geminiMenuPhoto, geminiFurniture, geminiDelivery, geminiExpenses } from "./voice.js";
@@ -138,6 +139,8 @@ export function buildApp({
     "POST /api/print/key": "print.key",
     "POST /api/print/test": "print.test",
     "POST /api/print/reprint": "print.reprint",
+    "POST /api/integrations/gpt": "gpt.key",
+    "DELETE /api/integrations/gpt": "gpt.keyRevoke",
   };
   app.addHook("onSend", async (request, reply, payload) => {
     const type = AUDITED[`${request.method} ${request.routeOptions?.url}`];
@@ -181,6 +184,16 @@ export function buildApp({
     if (request.method === "GET" && (path.startsWith("/api/product-photo/") || path.startsWith("/api/floor-asset/"))) {
       requireDb();
       request.venue = await resolveVenue(pool, new URL(request.url, "http://x").searchParams.get("b") || "bluebar");
+      request.db = tenantPool(pool, request.venue.schema_name);
+      return;
+    }
+    // ChatGPT Actions (OpenAI's servers, not a browser): read-only GETs, the business comes
+    // from the bearer API key. The spec itself is public so the GPT editor can import it.
+    if (path.startsWith("/api/gpt/")) {
+      if (request.method !== "GET") return reply.code(405).send({ error: "Read-only API." });
+      if (path === "/api/gpt/openapi.json") return;
+      requireDb();
+      request.venue = await gptVenue(pool, request.headers.authorization);
       request.db = tenantPool(pool, request.venue.schema_name);
       return;
     }
@@ -387,6 +400,7 @@ export function buildApp({
     return start(request, reply, manager.id);
   });
   app.get("/api/venue", async request => publicVenue(request.venue));
+  registerGpt(app, { pool, session });
   app.get("/api/integrations/mcp", { preValidation: session("manager") }, async (request) => {
     if (!mcpOrigin) return { endpoint: null };
     const connections = new URL("/oauth/bluebar/connections", mcpOrigin);

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { fetchMcpIntegration } from "./api.js";
+import { createGptKey, fetchGptKey, fetchMcpIntegration, revokeGptKey } from "./api.js";
+import { useConfirm } from "./ConfirmDialog.jsx";
 import { Icon, SectionHeading } from "./components.jsx";
 
 export function Integrations({ notify }) {
@@ -52,6 +53,78 @@ export function Integrations({ notify }) {
           <p className="helper">MCP nuk është aktiv në këtë instalim të BlueBar.</p>
         )}
       </section>
+      <GptKey notify={notify} />
     </div>
+  );
+}
+
+// A read-only API key for a Custom GPT in ChatGPT (Actions). The key is shown once.
+function GptKey({ notify }) {
+  const confirm = useConfirm();
+  const [state, setState] = useState(null);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const spec = `${window.location.origin}/api/gpt/openapi.json`;
+  useEffect(() => { fetchGptKey().then(setState, (err) => notify(err.message, "error")); }, []);
+
+  const copy = async (text, done) => {
+    try { await navigator.clipboard.writeText(text); notify(done); }
+    catch { notify("Kopjimi dështoi. Përzgjidheni tekstin dhe kopjojeni me tastierë.", "error"); }
+  };
+  const create = async () => {
+    if (state?.active && !(await confirm({
+      title: "Krijo çelës të ri?",
+      description: "Çelësi i vjetër ndalon së punuari menjëherë. GPT-ja duhet përditësuar me çelësin e ri.",
+      action: "Krijo çelës të ri",
+    }))) return;
+    setBusy(true);
+    try {
+      const created = await createGptKey();
+      setKey(created.key);
+      setState({ active: true, hint: created.hint, createdAt: new Date().toISOString(), lastUsedAt: null });
+    } catch (err) { notify(err.message, "error"); }
+    setBusy(false);
+  };
+  const revoke = async () => {
+    if (!(await confirm({
+      title: "Çaktivizo çelësin?",
+      description: "ChatGPT nuk do të mund të lexojë më të dhënat e biznesit me këtë çelës.",
+      action: "Çaktivizo",
+    }))) return;
+    setBusy(true);
+    try { await revokeGptKey(); setKey(""); setState({ active: false }); notify("Çelësi u çaktivizua."); }
+    catch (err) { notify(err.message, "error"); }
+    setBusy(false);
+  };
+
+  return (
+    <section className="panel mcp-settings">
+      <SectionHeading icon="sparkle" title="ChatGPT (GPT me Actions)" description="Çelës vetëm për lexim: shitje, stok dhe stafi. ChatGPT nuk mund të ndryshojë asgjë." />
+      <label className="field" htmlFor="gpt-spec"><span>Adresa e skemës (Import from URL)</span></label>
+      <div className="mcp-settings-link">
+        <input id="gpt-spec" value={spec} readOnly />
+        <button type="button" onClick={() => copy(spec, "Adresa u kopjua.")}><Icon name="clipboard" size={16} /> Kopjo</button>
+      </div>
+      {key ? (
+        <>
+          <label className="field" htmlFor="gpt-key"><span>Çelësi API (shfaqet vetëm tani)</span></label>
+          <div className="mcp-settings-link">
+            <input id="gpt-key" value={key} readOnly onFocus={(e) => e.target.select()} />
+            <button type="button" onClick={() => copy(key, "Çelësi u kopjua.")}><Icon name="clipboard" size={16} /> Kopjo çelësin</button>
+          </div>
+          <p className="helper">Në GPT: Authentication → API Key → Bearer. Mbajeni GPT-në private: kushdo që e përdor sheh shitjet e biznesit.</p>
+        </>
+      ) : (
+        <p className="helper" role="status">
+          {!state ? "Po ngarkohet…" : state.active
+            ? `Aktiv (${state.hint})${state.lastUsedAt ? `, përdorur së fundi ${new Date(state.lastUsedAt).toLocaleString("sq-AL")}` : ", ende i papërdorur"}.`
+            : "Nuk ka çelës aktiv."}
+        </p>
+      )}
+      <div className="mcp-settings-feedback">
+        <button type="button" disabled={busy || !state} onClick={create}>{state?.active ? "Krijo çelës të ri" : "Krijo çelës"}</button>
+        {state?.active && <button type="button" disabled={busy} onClick={revoke}>Çaktivizo</button>}
+      </div>
+    </section>
   );
 }

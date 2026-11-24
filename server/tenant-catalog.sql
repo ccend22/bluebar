@@ -71,3 +71,13 @@ CREATE TABLE IF NOT EXISTS bluebar_catalog.mcp_connections (
 CREATE INDEX IF NOT EXISTS mcp_connections_venue_idx ON bluebar_catalog.mcp_connections(venue_slug);
 CREATE INDEX IF NOT EXISTS mcp_connections_expiry_idx ON bluebar_catalog.mcp_connections(expires_at);
 ALTER TABLE bluebar_catalog.mcp_connections ADD COLUMN IF NOT EXISTS scopes text[] NOT NULL DEFAULT ARRAY['bluebar.read'];
+
+-- One read-only API key per business for a ChatGPT Custom GPT (server/gpt.js).
+-- Only the key's SHA-256 is stored; deleting the row revokes it.
+CREATE TABLE IF NOT EXISTS bluebar_catalog.gpt_keys (
+  venue_slug text PRIMARY KEY REFERENCES bluebar_catalog.venues(slug) ON DELETE CASCADE,
+  key_hash text UNIQUE NOT NULL,
+  hint text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz
+);
