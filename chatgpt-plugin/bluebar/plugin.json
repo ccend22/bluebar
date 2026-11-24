@@ -1,0 +1,43 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "bluebar",
+  "version": "1.0.0",
+  "description": "Connect your BlueBar POS account to ChatGPT and ask questions about your sales, inventory, employees, and business performance using natural language.",
+  "author": {
+    "name": "BlueSquare AI",
+    "url": "https://bar.bluesquareai.com"
+  },
+  "homepage": "https://bar.bluesquareai.com",
+  "keywords": [
+    "restaurant",
+    "bar",
+    "pos",
+    "inventory",
+    "reservations",
+    "sales"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "BlueBar",
+        "shortDescription": "Ask about your bar's sales",
+        "longDescription": "Connect your BlueBar POS account to ChatGPT and ask questions about your sales, inventory, employees, and business performance using natural language. Each business connects its own BlueBar account: a manager signs in and approves read-only access, and can disconnect at any time. ChatGPT cannot change anything in BlueBar.",
+        "developerName": "BlueSquare AI",
+        "category": "Productivity",
+        "websiteURL": "https://bar.bluesquareai.com",
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/icon.svg",
+        "brandColor": "#0867c9",
+        "defaultPrompt": [
+          "Sa shitje kam sot?",
+          "Compare this week with last week",
+          "Which products are low on stock?"
+        ],
+        "supportURL": "https://bar.bluesquareai.com/support.html",
+        "privacyPolicyURL": "https://bar.bluesquareai.com/privacy.html",
+        "termsOfServiceURL": "https://bar.bluesquareai.com/terms.html"
+      },
+      "onboardingSkill": "./skills/bluebar-venue/SKILL.md"
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createOAuthMetadata, mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
@@ -12,6 +13,7 @@ const MCP_PATHS = new Set([
   "/oauth/bluebar/consent", "/oauth/bluebar/connections",
 ]);
 export const isMcpPath = (path) => MCP_PATHS.has(path);
+const MCP_CALLS_PER_MINUTE = 120;
 const DEFAULT_REDIRECTS = [
   "https://chatgpt.com/connector_platform_oauth_redirect",
   "https://claude.ai/api/mcp/auth_callback",
@@ -97,7 +99,17 @@ export function createMcpHttp({
     verifier: oauth.provider, requiredScopes: [MCP_SCOPE],
     resourceMetadataUrl: metadata.href, expectedResource: resource,
   }));
+  // ponytail: per-instance fixed window, keyed by a hash of the access token. Cloud Run's
+  // instances each count separately; move it to the database if abuse ever spans instances.
+  const calls = new Map();
   app.post("/mcp", (req, res, next) => {
+    const key = createHash("sha256").update(req.auth.token).digest("base64url"), now = Date.now();
+    if (calls.size > 10000) for (const [k, v] of calls) if (v.reset < now) calls.delete(k);
+    const slot = calls.get(key)?.reset > now ? calls.get(key) : { n: 0, reset: now + 60000 };
+    calls.set(key, slot);
+    if (++slot.n > MCP_CALLS_PER_MINUTE) return res.set("Retry-After", String(Math.ceil((slot.reset - now) / 1000))).sendStatus(429);
+    next();
+  }, (req, res, next) => {
     if (!req.is("application/json")) return res.sendStatus(415);
     next();
   }, express.json({ limit: "32kb" }), async (req, res) => {

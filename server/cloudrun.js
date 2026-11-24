@@ -86,6 +86,13 @@ async function page(req, res) {
   } catch {
     return res.writeHead(400).end(); // a broken %-escape: refused, never a crash
   }
+  // Liveness only: no database, so a Neon hiccup doesn't make Cloud Run restart instances.
+  if (path === "/healthz") return res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }).end("ok");
+  // OpenAI's domain check for the public ChatGPT app: the token from its dashboard, as plain text.
+  if (path === "/.well-known/openai-apps-challenge") {
+    const token = process.env.BLUEBAR_OPENAI_APPS_CHALLENGE;
+    return token ? res.writeHead(200, { "Content-Type": "text/plain" }).end(token) : res.writeHead(404).end();
+  }
   if (isMcpPath(path)) {
     if (!mcp) return res.writeHead(404).end();
     return mcp(req, res);

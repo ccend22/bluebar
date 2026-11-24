@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BlueBar · Privacy policy</title>
+<style>
+:root{color-scheme:light dark;--fg:#142637;--bg:#f4f6f8;--card:#fff;--line:#dfe4e8;--link:#0057ad}
+@media(prefers-color-scheme:dark){:root{--fg:#e6edf3;--bg:#0f1720;--card:#16202b;--line:#2a3846;--link:#6cb2ff}}
+body{margin:0;font:16px/1.6 system-ui,sans-serif;color:var(--fg);background:var(--bg)}
+main{box-sizing:border-box;max-width:44rem;margin:5vh auto;padding:1.5rem 1.75rem;background:var(--card);border:1px solid var(--line);border-radius:1rem}
+@media(max-width:46rem){main{margin:0;border-radius:0;border-inline:0}}
+h1{font-size:1.7rem;line-height:1.2}h2{font-size:1.15rem;margin-top:1.8rem}a{color:var(--link)}
+</style>
+<main>
+<p><a href="/">BlueBar</a></p>
+<h1>Privacy policy</h1>
+<p><em>Last updated: 24 November 2026.</em> This policy covers BlueBar, the point-of-sale app at bar.bluesquareai.com, and the BlueBar connection for ChatGPT and Claude.</p>
+
+<h2>What BlueBar stores for your business</h2>
+<p>The data you and your staff enter while running the business: products, prices and stock, tables and rooms, orders, invoices and payments, refunds, shifts, reservations (time, party size and the name and phone you enter), staff names and sign-in details, and business settings. Each business's data is kept in its own separate database schema.</p>
+
+<h2>The ChatGPT and Claude connection</h2>
+<ul>
+<li>A connection starts only when a signed-in BlueBar manager approves it for their own business. It can read that one business and nothing else.</li>
+<li>It is read-only. It cannot create, change or delete orders, money, stock, bookings or settings.</li>
+<li>What it can read: tables and whether they have an open order, stock levels, reservation times and party sizes, and, only if the manager approves sales access, sales totals, payment split, refunds, best-selling products and sales per waiter (by name).</li>
+<li>What it never returns: guest names or phone numbers from reservations, staff PINs or passwords, or any other business's data.</li>
+<li>When you ask a question, the answer the connection returns is sent to the assistant you are using (OpenAI's ChatGPT or Anthropic's Claude) and handled under that provider's own privacy policy.</li>
+<li>For each connection BlueBar keeps the business, the approving manager, the app that connected, the granted permissions and the times it was created and expires. Access credentials are stored only as one-way hashes. BlueBar does not log the questions you ask or the answers returned.</li>
+<li>Access tokens last one hour, and a connection ends after 30 days unless renewed. A manager can disconnect at any time under Cilësimet → Integrimet → Menaxho lidhjet; access stops immediately.</li>
+</ul>
+
+<h2>Where data is processed</h2>
+<p>BlueBar runs on Google Cloud Run in Belgium (EU) with its database on Neon, hosted by AWS in London (UK). Data is not sold and is not used for advertising.</p>
+
+<h2>Keeping and deleting data</h2>
+<p>Business data is kept while the business uses BlueBar. To have a business's data deleted, contact us at the address below from the business's manager account details.</p>
+
+<h2>Contact</h2>
+<p>Questions or requests about this policy: <a href="mailto:endicikalleshi@gmail.com">endicikalleshi@gmail.com</a>. See also <a href="/terms.html">Terms</a> and <a href="/support.html">Support</a>.</p>
+</main>
+</html>

@@ -115,7 +115,7 @@ export function createMcpOAuth({ pool, resource, signingKey, redirects, secureCo
       : "";
     page(response, `Lidh ${clientName(grant.redirect)} me BlueBar`, `
       <p>Lejo qasje vetëm për lexim te tavolinat, stoku dhe oraret e rezervimeve të një biznesi.</p>
-      ${grant.scopes?.includes(MCP_SALES_SCOPE) ? "<p>Kjo leje përfshin edhe raportin e shitjeve me xhiron, rimbursimet dhe produktet më të shitura.</p>" : ""}
+      ${grant.scopes?.includes(MCP_SALES_SCOPE) ? "<p>Kjo leje përfshin edhe raportin e shitjeve: xhiron, cash/kartë, rimbursimet, produktet më të shitura dhe shitjet sipas kamarierit (vetëm emri).</p>" : ""}
       <p>Emrat dhe telefonat e rezervimeve përjashtohen. Mund ta shkëputni lidhjen kur të doni.</p>
       ${signinHint}
       <form method="post" action="/oauth/bluebar/consent">

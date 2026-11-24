@@ -156,12 +156,19 @@ test("remote MCP authorization is single-use, tenant-bound, scoped and revocable
     requestInit: { headers: { Authorization: `Bearer ${original.access_token}`, "X-BlueBar-Venue": "other-bar" } },
   }));
   const tools = (await client.listTools()).tools;
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["get_sales_summary", "list_inventory", "list_reservations", "list_tables"]);
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+    "get_business_summary", "get_sales_breakdown", "get_sales_summary", "get_staff_sales",
+    "list_inventory", "list_reservations", "list_tables",
+  ]);
   assert.ok(tools.every((tool) => tool.annotations.readOnlyHint && tool.annotations.destructiveHint === false));
-  const lockedSales = await client.callTool({ name: "get_sales_summary", arguments: { from: today } });
-  assert.equal(lockedSales.isError, true);
-  assert.equal(lockedSales.structuredContent, undefined);
-  assert.match(lockedSales._meta["mcp/www_authenticate"][0], /scope="bluebar.read bluebar.sales.read".*insufficient_scope/);
+  // Every sales-derived tool, staff included, stays locked without the sales approval.
+  for (const name of ["get_sales_summary", "get_sales_breakdown", "get_staff_sales", "get_business_summary"]) {
+    const locked = await client.callTool({ name, arguments: {} });
+    assert.equal(locked.isError, true, name);
+    assert.equal(locked.structuredContent, undefined, name);
+    assert.doesNotMatch(JSON.stringify(locked), /Private Cashier/, name);
+    assert.match(locked._meta["mcp/www_authenticate"][0], /scope="bluebar.read bluebar.sales.read".*insufficient_scope/);
+  }
   const tables = (await client.callTool({ name: "list_tables", arguments: { limit: 1 } })).structuredContent;
   assert.equal(tables.venue, "bluebar");
   assert.equal(tables.items[0].label, "BlueBar corner");
@@ -172,6 +179,9 @@ test("remote MCP authorization is single-use, tenant-bound, scoped and revocable
   assert.deepEqual(inventory.items, [
     { id: 1, name: "BlueBar water", category: "Pije", onHand: 5, lowThreshold: 8, low: true, reserved: 2, available: 3 },
   ]);
+  const coffee = (await client.callTool({ name: "list_inventory", arguments: { search: "COFF" } })).structuredContent;
+  assert.deepEqual(coffee.items.map((i) => i.name), ["BlueBar coffee"]);
+  assert.deepEqual((await client.callTool({ name: "list_inventory", arguments: { outOnly: true } })).structuredContent.items, []);
   const reservations = await client.callTool({ name: "list_reservations", arguments: { date: today } });
   assert.deepEqual(reservations.structuredContent.items, [{ date: today, start: "19:00", end: "20:00", guests: 3, tableId: 1 }]);
   assert.doesNotMatch(JSON.stringify(reservations), /Private Guest|0691234567/);
@@ -218,14 +228,29 @@ test("remote MCP authorization is single-use, tenant-bound, scoped and revocable
   }));
   const sales = await salesClient.callTool({ name: "get_sales_summary", arguments: { from: today } });
   assert.deepEqual(sales.structuredContent, {
-    venue: "bluebar", from: today, to: today, currency: "ALL",
+    venue: "bluebar", currency: "ALL", timezone: "Europe/Tirane", period: "custom", from: today, to: today,
+    previous: { from: "2026-11-22", to: "2026-11-22" }, rankedBy: "quantity",
     invoiceCount: 2, salesLek: 280, refundsLek: 30, netSalesLek: 250, averageInvoiceLek: 140,
     topProducts: [
       { name: "BlueBar water", quantity: 2, lineTotalLek: 200 },
       { name: "BlueBar coffee", quantity: 1, lineTotalLek: 100 },
     ],
+    byPayment: { cashLek: 280, cardLek: 0, tipsLek: 50, cashInvoices: 2, cardInvoices: 0, mixedInvoices: 0 },
   });
   assert.doesNotMatch(JSON.stringify(sales), /Private|9999/);
+  const compared = (await salesClient.callTool({ name: "get_sales_summary", arguments: { from: today, compare: true } })).structuredContent;
+  assert.deepEqual([compared.previous.salesLek, compared.previous.invoiceCount], [400, 1]);
+  const hours = (await salesClient.callTool({ name: "get_sales_breakdown", arguments: { from: today, by: "hour" } })).structuredContent;
+  assert.deepEqual(hours.rows, [{ bucket: 0, invoiceCount: 1, salesLek: 180 }, { bucket: 23, invoiceCount: 1, salesLek: 100 }]);
+  const staff = (await salesClient.callTool({ name: "get_staff_sales", arguments: { from: today } })).structuredContent;
+  assert.deepEqual(staff.staff, [{ waiter: "Private Cashier", invoiceCount: 2, salesLek: 280, averageInvoiceLek: 140 }]);
+  assert.doesNotMatch(JSON.stringify(staff), /Other|9999/, "another business's waiters and sales never appear");
+  assert.ok((await salesClient.callTool({ name: "get_staff_sales", arguments: { period: "forever" } })).isError);
+  const summary = (await salesClient.callTool({ name: "get_business_summary", arguments: {} })).structuredContent;
+  assert.equal(summary.venue, "bluebar");
+  assert.equal(summary.period, "today");
+  assert.deepEqual([summary.openTables, summary.lowStockCount, summary.lowStock], [1, 1, [{ name: "BlueBar water", onHand: 5 }]]);
+  assert.doesNotMatch(JSON.stringify(summary), /Other|9999/);
   const empty = await salesClient.callTool({ name: "get_sales_summary", arguments: { to: "2026-11-21" } });
   assert.equal(empty.structuredContent.salesLek, 0);
   assert.equal(empty.structuredContent.averageInvoiceLek, null);
@@ -234,5 +259,13 @@ test("remote MCP authorization is single-use, tenant-bound, scoped and revocable
   assert.ok((await salesClient.callTool({ name: "get_sales_summary", arguments: { from: today, to: "2027-11-24" } })).isError);
   const salesRefresh = await refresh(salesGrant.refresh_token);
   assert.equal(salesRefresh.status, 200);
-  assert.equal((await salesRefresh.json()).scope, salesScopes);
+  const latest = await salesRefresh.json();
+  assert.equal(latest.scope, salesScopes);
+
+  // Each connection gets 120 calls a minute; the 121st is refused with Retry-After.
+  const hit = () => get("/mcp", { method: "POST", headers: { Authorization: `Bearer ${latest.access_token}`, "Content-Type": "text/plain" }, body: "x" });
+  for (let i = 0; i < 120; i++) assert.equal((await hit()).status, 415);
+  const limited = await hit();
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get("retry-after")) > 0);
 });
