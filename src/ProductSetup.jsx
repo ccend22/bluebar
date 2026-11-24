@@ -163,22 +163,6 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
     setError("");
     setSource({ file, url: URL.createObjectURL(file) });
   };
-  const chooseText = (text) => {
-    if (!text.trim()) return setError("Clipboard është bosh. Kopjoni një foto ose tekstin e menusë.");
-    setError("");
-    setSource({ text: text.slice(0, 20000) });
-  };
-  const fromClipboard = async () => {
-    try {
-      for (const item of await navigator.clipboard.read()) {
-        const type = item.types.find((t) => t.startsWith("image/"));
-        if (type) return choose(new File([await item.getType(type)], "menu", { type }));
-      }
-      chooseText(await navigator.clipboard.readText());
-    } catch {
-      setError("Shfletuesi nuk e lejoi leximin e clipboard. Shtypni Ctrl+V (⌘V) këtu.");
-    }
-  };
   const open = () => {
     if (step === 3) (setStep(0), setSource(null), setNote(""), rows.setRows([]));
     setError("");
@@ -189,7 +173,7 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
     setError("");
     try {
       // Larger than a product photo: the menu's small print has to stay readable.
-      const input = source.file ? { image: await shrink(source.file, { size: 2000 }) } : { text: source.text };
+      const input = { image: await shrink(source.file, { size: 2000 }) };
       const { products } = await readMenuPhoto({ ...input, ...(note.trim() && { note: note.trim() }), ...(estimate && { estimate }), ...(department === "ai" && state.departments.length && { departments: true }) });
       // What's already on the till stays as it is; "KAFE" on the menu is the "Kafe" already here,
       // and a new all-caps heading reads better as "Pije".
@@ -226,7 +210,7 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
   const preview = source && (
     <div className="ai-preview">
       <span className="ai-shot">
-        {source.url ? <img src={source.url} alt="Fotoja e menusë" /> : <pre>{source.text.slice(0, 600)}</pre>}
+        <img src={source.url} alt="Fotoja e menusë" />
       </span>
       {step === 0 && <button type="button" onClick={() => setSource(null)}>Ndrysho</button>}
     </div>
@@ -243,11 +227,6 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
         className="ai-dialog"
         aria-labelledby="ai-title"
         onCancel={(e) => busy && e.preventDefault()}
-        onPaste={(e) => {
-          if (step !== 0 || e.target.closest("input, textarea")) return;
-          const file = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
-          file ? choose(file) : chooseText(e.clipboardData.getData("text"));
-        }}
       >
         <header className="ai-head">
           <h2 id="ai-title"><Icon name="sparkle" size={22} /> Importo me AI</h2>
@@ -273,11 +252,6 @@ export function AiImport({ state, update, label = "Importo me AI" }) {
               </div>
               {preview || (
                 <div className="ai-sources">
-                  <button type="button" className="ai-source" onClick={fromClipboard}>
-                    <Icon name="clipboard" size={30} />
-                    <strong>Ngjit foto ose tekst</strong>
-                    <span>Klikoni për të marrë foton ose tekstin nga clipboard</span>
-                  </button>
                   <label
                     className={`ai-source ai-source-drop ${dragging ? "dragging" : ""}`}
                     onDragOver={(e) => (e.preventDefault(), setDragging(true))}

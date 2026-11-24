@@ -250,11 +250,12 @@ export function snapPosition(o, targets) {
 }
 
 // One object in the room. editing: it can be taken hold of; selected: handles to turn and size.
-export function FloorObject({ o: saved, color, changedColor, editing, isSelected, onSelect, onChange, targets = [], onGuides }) {
+export function FloorObject({ o: saved, color, changedColor, editing, isSelected, onSelect, onChange, onCopy, targets = [], onGuides }) {
   const [live, setLive] = useState(null);
   const liveRef = useRef(null);
   const ref = useRef(null);
   const hold = useRef(null);
+  const lastClick = useRef(0);
   // The saved room changed (this object came back from the server): show it as saved.
   useEffect(() => { if (!liveRef.current) setLive(null); }, [saved.x, saved.y, saved.w, saved.h, saved.r, saved.kind]);
   useEffect(() => () => clearTimeout(hold.current), []);
@@ -309,7 +310,15 @@ export function FloorObject({ o: saved, color, changedColor, editing, isSelected
       tabIndex={editing ? 0 : undefined}
       aria-label={editing ? `${kind.name}${o.text ? `: ${o.text}` : ""}` : undefined}
       aria-hidden={editing ? undefined : o.kind === "sign" ? undefined : "true"}
-      onClick={(e) => editing && (e.stopPropagation(), onSelect(o.id))}
+      onClick={(e) => {
+        if (!editing) return;
+        e.stopPropagation();
+        onSelect(o.id);
+        // Two clicks (or taps) in a row: a copy of it, next to it.
+        const now = Date.now();
+        if (e.detail === 2 || (e.detail < 2 && now - lastClick.current < 600)) (lastClick.current = 0, onCopy?.(o.id));
+        else lastClick.current = now;
+      }}
       onKeyDown={(e) => editing && (e.key === "Enter" || e.key === " ") && onSelect(o.id)}
       onPointerDown={drag((ev, canvas, from) => {
         const free = { ...saved, x: clamp(saved.x + ((ev.clientX - from.x) / canvas.width) * 100, 0, 100), y: clamp(saved.y + ((ev.clientY - from.y) / canvas.height) * 100, 0, 100) };

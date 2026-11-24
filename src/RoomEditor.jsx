@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useConfirm } from "./ConfirmDialog.jsx";
-import { MAX_SPAN, inRoom, openSpot, rectFits, rectOf, sizeFor, spanOf } from "./floorGeometry.js";
+import { MAX_SPAN, inRoom, openSpot, rectFits, rectOf, roomBox, sizeFor, spanOf } from "./floorGeometry.js";
 import { tableName } from "./domain.js";
 import { deleteFloorAsset, drawFloorAsset, saveFloorAsset, setFloorTexture, setTableSprite } from "./api.js";
 import { shrink } from "./OnlineMenu.jsx";
 import { FloorPlan } from "./FloorPlan.jsx";
-import { OBJECT_KINDS, ObjectArt, ROOM_PX, STEP_X, STEP_Y, fitRoom, fromPx, newObject, snapPosition, toPx } from "./FloorObjects.jsx";
+import { OBJECT_KINDS, ObjectArt, ROOM_PX, STEP_X, STEP_Y, boxOf, fitRoom, fromPx, newObject, snapPosition, toPx } from "./FloorObjects.jsx";
 import { FLOOR_MATERIALS, floorLook } from "./floorMaterials.js";
 import { Icon, TableShapePicker } from "./components.jsx";
 
@@ -241,10 +241,55 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
     return true;
   };
   const changeObject = (id, patch) => saveObjects(allObjects.map((o) => (o.id === id ? { ...o, ...patch } : o)));
-  const addObject = async (kind) => {
-    const fresh = newObject(kind, separate ? room : undefined);
-    const o = { ...fresh, ...fitRoom(fresh) };
-    if (await saveObjects([...allObjects, o], `${OBJECT_KINDS[kind].name}: u shtua në mes. Tërhiqeni ku e doni.`)) (onSelect(null), setObjectId(o.id));
+  // From the library: dragged onto the plan (lands where it is let go, on the grid) or
+  // double-clicked / double-tapped (lands in the middle). Enter on a focused tile adds it too.
+  // Where a double-clicked object lands: the free grid spot nearest the middle of the room, so
+  // it is never hidden under a table or another object (rugs lie under, so they don't count).
+  const freeSpot = (o) => {
+    const taken = [...tables.map((t) => { const r = rectOf(t); return { l: r.x, r: r.x + r.w, t: r.y, b: r.y + r.h }; }), ...objects.filter((x) => x.kind !== "rug").map(boxOf)];
+    const spots = [];
+    for (let y = STEP_Y / 2; y < 100; y += STEP_Y / 2) for (let x = STEP_X / 2; x < 100; x += STEP_X / 2) spots.push({ x, y });
+    spots.sort((a, b) => Math.hypot((a.x - 50) * 1.6, a.y - 50) - Math.hypot((b.x - 50) * 1.6, b.y - 50));
+    return spots.find((s) => {
+      const b = boxOf({ ...o, ...s });
+      return b.l >= 0 && b.r <= 100 && b.t >= 0 && b.b <= 100 && !taken.some((k) => b.l < k.r && b.r > k.l && b.t < k.b && b.b > k.t);
+    }) || { x: 50, y: 50 };
+  };
+  const addObject = async (kind, at) => {
+    const blank = newObject(kind, separate ? room : undefined);
+    const fresh = { ...blank, ...(at || freeSpot(blank)) };
+    const o = { ...fresh, ...(at && snapPosition(fresh, [])), guides: undefined };
+    Object.assign(o, fitRoom(o));
+    delete o.guides;
+    if (await saveObjects([...allObjects, o])) (onSelect(null), setObjectId(o.id));
+  };
+  // A double click on an object in the room: a copy of it, one grid step down and right.
+  const copyObject = (id) => {
+    const obj = allObjects.find((o) => o.id === id);
+    if (!obj) return;
+    const copy = { ...obj, id: newObject(obj.kind).id };
+    Object.assign(copy, fitRoom({ ...copy, x: obj.x + STEP_X, y: obj.y + STEP_Y }));
+    saveObjects([...allObjects, copy]);
+    setObjectId(copy.id);
+  };
+  const lastTap = useRef(null);
+  const tapTile = (e, kind) => {
+    // Enter on the tile; the second click of a double click (as fast as the computer is set
+    // for); or two taps within 0.6 s on a phone.
+    if (e.detail === 0) return addObject(kind);
+    const now = Date.now(), last = lastTap.current;
+    lastTap.current = { kind, time: now };
+    if (e.detail === 2 || (e.detail < 2 && last?.kind === kind && now - last.time < 600)) (lastTap.current = null, addObject(kind));
+  };
+  const OBJECT_DRAG = "application/x-bluebar-object";
+  const dropObject = (e) => {
+    const kind = e.dataTransfer.getData(OBJECT_DRAG);
+    const plan = e.currentTarget.querySelector(".floor-plan");
+    if (!OBJECT_KINDS[kind] || !plan) return;
+    e.preventDefault();
+    const box = roomBox(plan);
+    const x = ((e.clientX - box.left) / box.width) * 100, y = ((e.clientY - box.top) / box.height) * 100;
+    if (x >= 0 && x <= 100 && y >= 0 && y <= 100) addObject(kind, { x, y }); // let go outside the room: nothing
   };
   const removeObject = async (o) => {
     if (await saveObjects(allObjects.filter((x) => x.id !== o.id))) setObjectId(null);
@@ -319,7 +364,9 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
       )}
       {busy && <p className="ai-reading" role="status"><span className="ai-spinner" /> AI po e vizaton… zakonisht 15–40 sekonda.</p>}
       {error && <p className="ai-error" role="alert">{error}</p>}
-      <div className="room-edit-body with-panel" inert={saving}>
+      <div className="room-edit-body with-panel" inert={saving}
+        onDragOver={(e) => e.dataTransfer.types.includes(OBJECT_DRAG) && (e.preventDefault(), (e.dataTransfer.dropEffect = "copy"))}
+        onDrop={dropObject}>
         <FloorPlan
           tables={tables}
           waiters={state.waiters}
@@ -337,6 +384,7 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
           selectedObject={objectId}
           onSelectObject={setObjectId}
           onObjectChange={changeObject}
+          onObjectCopy={copyObject}
         />
         {drawing?.kind === "floor" ? (
           <aside className="panel room-panel">
@@ -367,7 +415,6 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
             obj={obj}
             onClose={() => setObjectId(null)}
             onChange={(patch) => changeObject(obj.id, patch)}
-            onDuplicate={async () => { const copy = { ...obj, id: newObject(obj.kind).id }; Object.assign(copy, fitRoom({ ...copy, x: obj.x + STEP_X, y: obj.y + STEP_Y })); if (await saveObjects([...allObjects, copy], `${OBJECT_KINDS[obj.kind].name}: u dyfishua.`)) setObjectId(copy.id); }}
             onRemove={() => removeObject(obj)}
           />
         ) : !t ? (
@@ -416,9 +463,12 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
             ) : (
             <section aria-labelledby="room-objects-title">
               <h3 id="room-objects-title">Shto në sallë</h3>
+              <p className="helper">Tërhiqeni objektin në sallë, ose klikojeni dy herë që të dalë në mes. Dy klikime mbi një objekt në sallë e kopjojnë.</p>
               <div className="room-objects">
                 {Object.entries(OBJECT_KINDS).map(([kind, k]) => (
-                  <button key={kind} type="button" onClick={() => addObject(kind)}>
+                  <button key={kind} type="button" draggable title="Tërhiqeni në sallë ose klikojeni dy herë"
+                    onClick={(e) => tapTile(e, kind)}
+                    onDragStart={(e) => { e.dataTransfer.setData(OBJECT_DRAG, kind); e.dataTransfer.effectAllowed = "copy"; }}>
                     <span className={`room-object-preview small fo-${kind}`} aria-hidden="true"><ObjectArt kind={kind} text={k.text} /></span>
                     <span>{k.name}</span>
                   </button>
@@ -623,7 +673,7 @@ function PxField({ label, value, step, min, max, onCommit }) {
 
 // The chosen object's inspector: what it is (and swap it for another kind in the same place),
 // its size and place in the room's px (1600 × 1000), its turn, a sign's text.
-function ObjectPanel({ obj, onClose, onChange, onDuplicate, onRemove }) {
+function ObjectPanel({ obj, onClose, onChange, onRemove }) {
   // Colour only for things that have a surface to colour (not a sign's plate or a window).
   const colorable = !["sign", "window", "door"].includes(obj.kind);
   const kind = OBJECT_KINDS[obj.kind];
@@ -712,10 +762,9 @@ function ObjectPanel({ obj, onClose, onChange, onDuplicate, onRemove }) {
       </section>
 
       <div className="object-foot">
-        <button type="button" onClick={onDuplicate}><Icon name="plus" size={16} /> Dyfisho</button>
         <button type="button" className="danger-soft" onClick={onRemove}><Icon name="trash" size={16} /> Hiqe</button>
       </div>
-      <p className="helper object-tip">Tërhiqeni në sallë: kapet vetë te muret, objektet dhe rrjeta. Shigjetat e lëvizin 50 px; Alt e lë të lirë.</p>
+      <p className="helper object-tip">Tërhiqeni në sallë: kapet vetë te muret, objektet dhe rrjeta. Dy klikime mbi të e kopjojnë. Shigjetat e lëvizin 50 px; Alt e lë të lirë.</p>
     </aside>
   );
 }

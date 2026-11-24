@@ -24,14 +24,14 @@ export function AiReading({ label = "AI po lexon dokumentin…" }) {
 }
 
 // "Importo me AI" for a document (Inventari: a supplier's invoice; Shpenzimet: receipts or a bank
-// statement): a photo or pasted text → read(input) by AI into rows → the manager checks them
+// statement): a photo → read(input) by AI into rows → the manager checks them
 // (review) → save(rows). Nothing is saved before "Ruaj".
-//   read({ image } | { text }, note) → rows; review({ rows, setRows }) → the table;
+//   read({ image }, note) → rows; review({ rows, setRows }) → the table;
 //   save(rows) → how many were saved; ready(rows) → whether they can be saved.
 export function AiDocumentImport({ title, intro, notePlaceholder, read, review, ready, save, saved, label = "Importo me AI" }) {
   const dialog = useRef(null);
   const [step, setStep] = useState(0);
-  const [source, setSource] = useState(null); // { file, url } or { text }
+  const [source, setSource] = useState(null); // { file, url }
   const [note, setNote] = useState("");
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -47,22 +47,6 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
     reader.onerror = () => setError("Fotoja nuk u hap. Provoni një foto tjetër.");
     reader.readAsDataURL(file);
   };
-  const chooseText = (text) => {
-    if (!text.trim()) return setError("Clipboard është bosh. Kopjoni një foto ose tekstin e dokumentit.");
-    setError("");
-    setSource({ text: text.slice(0, 20000) });
-  };
-  const fromClipboard = async () => {
-    try {
-      for (const item of await navigator.clipboard.read()) {
-        const type = item.types.find((t) => t.startsWith("image/"));
-        if (type) return choose(new File([await item.getType(type)], "document", { type }));
-      }
-      chooseText(await navigator.clipboard.readText());
-    } catch {
-      setError("Shfletuesi nuk e lejoi leximin e clipboard. Shtypni Ctrl+V (⌘V) këtu.");
-    }
-  };
   const open = () => {
     if (step === 2) (setStep(0), setSource(null), setNote(""), setRows([]));
     setError("");
@@ -73,7 +57,7 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
     setError("");
     try {
       // Larger than a product photo: a document's small print has to stay readable.
-      const input = source.file ? { image: await shrink(source.file, { size: 2000 }) } : { text: source.text };
+      const input = { image: await shrink(source.file, { size: 2000 }) };
       const found = await read(input, note.trim());
       if (!found.length) setError("AI nuk gjeti asgjë për të shtuar. Provoni një foto më të qartë.");
       else {
@@ -108,11 +92,6 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
         className="ai-dialog"
         aria-label={title}
         onCancel={(e) => busy && e.preventDefault()}
-        onPaste={(e) => {
-          if (busy || step !== 0 || e.target.closest("input, textarea")) return;
-          const file = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
-          file ? choose(file) : chooseText(e.clipboardData.getData("text"));
-        }}
       >
         <header className="ai-head">
           <h2><Icon name="sparkle" size={22} /> {title}</h2>
@@ -139,17 +118,12 @@ export function AiDocumentImport({ title, intro, notePlaceholder, read, review, 
               {source ? (
                 <div className="ai-preview">
                   <span className="ai-shot">
-                    {source.url ? <img src={source.url} alt="Dokumenti" /> : <pre>{source.text.slice(0, 600)}</pre>}
+                    <img src={source.url} alt="Dokumenti" />
                   </span>
                   <button type="button" disabled={busy} onClick={() => setSource(null)}>Ndrysho</button>
                 </div>
               ) : (
                 <div className="ai-sources">
-                  <button type="button" className="ai-source" onClick={fromClipboard}>
-                    <Icon name="clipboard" size={30} />
-                    <strong>Ngjit foto ose tekst</strong>
-                    <span>Klikoni për të marrë foton ose tekstin nga clipboard</span>
-                  </button>
                   <label
                     className={`ai-source ai-source-drop ${dragging ? "dragging" : ""}`}
                     onDragOver={(e) => (e.preventDefault(), setDragging(true))}

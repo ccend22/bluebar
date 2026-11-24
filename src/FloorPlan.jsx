@@ -215,8 +215,8 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
 // confirmed. onLayoutChange(id, patch) moves, turns or resizes a table while it is dragged.
 // objects: the room's walls, doors, plants… (FloorObjects.jsx), under the tables; material: the
 // floor when no photo floor is laid. While editing, selectedObject / onSelectObject /
-// onObjectChange(id, patch) arrange them the way tables are.
-export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, material, floorColor, objects = [], changedObjects, editing, drafted, selected, onSelectTable, onLayoutChange, selectedObject, onSelectObject, onObjectChange }) {
+// onObjectChange(id, patch) arrange them the way tables are; onObjectCopy(id) on a double click.
+export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, material, floorColor, objects = [], changedObjects, editing, drafted, selected, onSelectTable, onLayoutChange, selectedObject, onSelectObject, onObjectChange, onObjectCopy }) {
   // The block a dragged table is aiming at: green if free, red if taken.
   const [ghost, setGhost] = useState(null);
   // The lines a moving object lined up with (FloorObjects.jsx snapPosition).
@@ -264,6 +264,7 @@ export function FloorPlan({ tables, waiters = [], reservations, look = "3d", tex
             isSelected={selectedObject === o.id}
             onSelect={(id) => (onSelectTable(null), onSelectObject?.(id))}
             onChange={onObjectChange}
+            onCopy={onObjectCopy}
             onGuides={setGuides}
             targets={editing ? [
               ...objects.filter((x) => x.id !== o.id).map(boxOf),
