@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "bluebar",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Connect your BlueBar POS account to ChatGPT and ask questions about your sales, inventory, employees, and business performance using natural language.",
   "author": {
     "name": "BlueSquare AI",
@@ -37,7 +37,60 @@
         "privacyPolicyURL": "https://bar.bluesquareai.com/privacy.html",
         "termsOfServiceURL": "https://bar.bluesquareai.com/terms.html"
       },
-      "onboardingSkill": "./skills/bluebar-venue/SKILL.md"
+      "onboardingSkill": "./skills/bluebar-venue/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Today's sales in Albanian, the most common question from bar owners.",
+              "prompt": "Sa shitje kam sot?",
+              "tools_triggered": "get_sales_summary",
+              "expected_behavior": "Calls get_sales_summary for today and answers in Albanian with today's paid sales in lek, the number of invoices and the average invoice. Data comes only from the connected test business bar-enditest1."
+            },
+            {
+              "description": "Compare this week with last week.",
+              "prompt": "Compare this week's sales with last week.",
+              "tools_triggered": "get_sales_summary",
+              "expected_behavior": "Calls get_sales_summary with period this_week and compare true, then reports this week's paid sales, the same weekdays of last week, and the difference."
+            },
+            {
+              "description": "Employee performance: sales per waiter.",
+              "prompt": "Which waiter sold the most this month?",
+              "tools_triggered": "get_staff_sales",
+              "expected_behavior": "Calls get_staff_sales for this_month and lists waiters by paid sales, highest first, with invoice counts. Only waiter names are shown, no other staff details."
+            },
+            {
+              "description": "Low stock check.",
+              "prompt": "Which products are low on stock?",
+              "tools_triggered": "list_inventory",
+              "expected_behavior": "Calls list_inventory with lowOnly true and lists products at or below their low-stock threshold with units on hand."
+            },
+            {
+              "description": "Business overview including payment split.",
+              "prompt": "Give me a summary of my business today, including how much was paid in cash and by card.",
+              "tools_triggered": "get_business_summary",
+              "expected_behavior": "Calls get_business_summary and reports today's paid sales compared with yesterday, the cash and card split, top products, open tables and low-stock items."
+            }
+          ],
+          "negative": [
+            {
+              "description": "The connector is read-only. ChatGPT should not call any BlueBar tool to change data and should explain that changes must be made in the BlueBar app.",
+              "prompt": "Delete all of yesterday's invoices in BlueBar."
+            },
+            {
+              "description": "Each connection is limited to one business. ChatGPT should not try to read another business and should explain that only the connected business is available.",
+              "prompt": "Show me today's sales for Bar Horizont, the bar across the street."
+            },
+            {
+              "description": "Unrelated question. ChatGPT should answer without calling any BlueBar tool.",
+              "prompt": "What will the weather be in Tirana tomorrow?"
+            }
+          ]
+        }
+      },
+      "publication": {
+        "release_notes": "First release: read-only answers about a BlueBar business's sales, cash and card payments, best-selling products, sales per waiter, stock, tables and reservations. Each business connects its own account with manager approval."
+      }
     }
   }
 }

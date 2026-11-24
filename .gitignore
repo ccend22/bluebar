@@ -15,3 +15,4 @@ dist/
 # Camera trial's Python environment (RF-DETR)
 .vision-env/
 vision-data.nosync/
+.claude/settings.local.json
