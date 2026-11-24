@@ -137,7 +137,7 @@ export const pruneTickets = (tickets, invoices, now = Date.now()) =>
     return !paid || now - new Date(paid) < PAID_TICKET_TTL;
   });
 // What can stand in a room besides tables (FloorPlan.jsx draws each).
-const FLOOR_OBJECTS = ["wall", "door", "window", "plant", "sofa", "armchair", "counter", "rug", "sign"];
+const FLOOR_OBJECTS = ["wall", "door", "window", "plant", "sofa", "armchair", "counter", "rug", "sign", "column", "umbrella", "stairs", "stage", "bench", "planter", "fridge", "tv", "piano", "register", "fireplace", "dj"];
 export function applyCommand(state, type, payload, actor = null) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
     fail("Kërkesë e pavlefshme.");
@@ -598,7 +598,6 @@ export function applyCommand(state, type, payload, actor = null) {
       if (!Array.isArray(p.objects) || p.objects.length > 150) fail("Deri në 150 objekte në sallë.");
       const num = (v, min, max) => (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? Math.round(v * 100) / 100 : fail("Objekti është jashtë sallës."));
       const ids = new Set();
-      const savedColors = new Map((state.floorObjects || []).map((object) => [object.id, object.color]));
       const objects = p.objects.map((o) => {
         if (!o || typeof o !== "object") fail("Objekt i pavlefshëm.");
         if (!FLOOR_OBJECTS.includes(o.kind)) fail("Lloj objekti i panjohur.");
@@ -606,9 +605,8 @@ export function applyCommand(state, type, payload, actor = null) {
         ids.add(o.id);
         const text = o.text === undefined || o.text === null ? undefined : String(o.text).trim().slice(0, 30);
         const area = o.area === undefined || o.area === null ? undefined : name(o.area, 40);
-        // Moves and resizing may carry an older copy of the object. Colors of existing objects
-        // belong to the separate room draft. A new object can inherit a duplicate's color.
-        const color = savedColors.has(o.id) ? savedColors.get(o.id) : o.color == null ? null : furnitureColor(o.color);
+        // The room is saved as one draft ("Ruaj"), so each object carries its own colour.
+        const color = o.color == null ? null : furnitureColor(o.color);
         return {
           id: o.id, kind: o.kind,
           x: num(o.x, -10, 110), y: num(o.y, -10, 110), w: num(o.w, 0.3, 100), h: num(o.h, 0.3, 100), r: num(o.r ?? 0, 0, 359),
@@ -621,6 +619,11 @@ export function applyCommand(state, type, payload, actor = null) {
     case "floor.material": {
       if (!["oak", "walnut", "concrete", "terrazzo"].includes(p.material)) fail("Zgjidhni dyshemenë.");
       next = { ...state, floorMaterial: p.material };
+      break;
+    }
+    case "floor.color": {
+      if (p.color === undefined) fail("Zgjidhni një ngjyrë të vlefshme.");
+      next = { ...state, floorColor: furnitureColor(p.color) };
       break;
     }
     // Cilësimet → Porositë: every waiter's order menu with product photos, or names and prices only.
@@ -1179,6 +1182,31 @@ export function applyCommand(state, type, payload, actor = null) {
           ? state.tables.map((x) => (x.id === existing.id ? row : x))
           : [...state.tables, row],
       };
+      break;
+    }
+    // Menaxho sallën → "Ruaj": everything changed in the room, applied together or not at all:
+    // the look and the split into rooms, the floor, tables new and changed, tables taken out
+    // or put back, tables deleted, and the room's objects with their colours. Each part goes
+    // through its own command, so every rule (no open orders, a free spot…) still holds.
+    case "room.save": {
+      const list = (v, max) => {
+        if (v === undefined) return [];
+        if (!Array.isArray(v) || v.length > max) fail("Ndryshimet e sallës janë të pavlefshme.");
+        return v;
+      };
+      const tables = list(p.tables, 100), toggle = list(p.toggle, 100), remove = list(p.remove, 100);
+      let s = state;
+      const run = (type, payload) => { s = applyCommand(s, type, payload, actor).state; };
+      if (p.style !== undefined) run("floor.style", { style: p.style });
+      if (p.separate !== undefined) run("floor.rooms", { separate: p.separate });
+      if (p.material !== undefined) run("floor.material", { material: p.material });
+      if (p.color !== undefined) run("floor.color", { color: p.color });
+      for (const id of toggle) run("table.toggle", { id });
+      for (const item of tables) run("table.save", item);
+      for (const id of remove) run("table.delete", { id });
+      if (p.objects !== undefined) run("floor.objects", { objects: p.objects });
+      if (s === state) fail("Nuk ka ndryshime për t'u ruajtur.");
+      next = s;
       break;
     }
     case "tables.save": {

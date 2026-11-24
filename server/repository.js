@@ -204,6 +204,7 @@ export async function loadState(client) {
       orderPhotos: control.order_photos !== false,
       floorObjects: control.floor_objects || [],
       floorMaterial: control.floor_material || "oak",
+      floorColor: control.floor_color || null,
       transactionCategories: control.transaction_categories || null,
       invoices,
       movements,
@@ -463,6 +464,8 @@ export async function persist(client, previous, next) {
     await client.query("UPDATE bluebar.control SET floor_objects=$1 WHERE id=1", [JSON.stringify(next.floorObjects)]);
   if (next.floorMaterial && next.floorMaterial !== previous.floorMaterial)
     await client.query("UPDATE bluebar.control SET floor_material=$1 WHERE id=1", [next.floorMaterial]);
+  if (next.floorColor !== undefined && next.floorColor !== (previous.floorColor ?? null))
+    await client.query("UPDATE bluebar.control SET floor_color=$1 WHERE id=1", [next.floorColor]);
   if (typeof next.orderPhotos === "boolean" && next.orderPhotos !== previous.orderPhotos)
     await client.query("UPDATE bluebar.control SET order_photos=$1 WHERE id=1", [next.orderPhotos]);
   if (next.floorStyle && next.floorStyle !== previous.floorStyle)

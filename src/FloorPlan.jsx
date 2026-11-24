@@ -145,7 +145,7 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
         ))}
       <div className="fp-body" style={{ transform: `rotate(${-t.rotation}deg)` }}>
         <span className="fp-tag">
-          <strong className={t.label ? "fp-label" : ""}>{t.label || String(t.id).padStart(2, "0")}</strong>
+          <strong className={t.label ? "fp-label" : ""}>{t.label || String(t.number ?? t.id).padStart(2, "0")}</strong>
           {occupied && (
             <span className="fp-info">
               {/* Whose table it is, when there's a waiter on it; otherwise how much is on it. */}
@@ -216,7 +216,7 @@ function FloorTable({ t: saved, look, waiter, reservation, editing, drafted, isS
 // objects: the room's walls, doors, plants… (FloorObjects.jsx), under the tables; material: the
 // floor when no photo floor is laid. While editing, selectedObject / onSelectObject /
 // onObjectChange(id, patch) arrange them the way tables are.
-export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, material, objects = [], objectColors, editing, drafted, selected, onSelectTable, onLayoutChange, selectedObject, onSelectObject, onObjectChange }) {
+export function FloorPlan({ tables, waiters = [], reservations, look = "3d", texture, material, floorColor, objects = [], changedObjects, editing, drafted, selected, onSelectTable, onLayoutChange, selectedObject, onSelectObject, onObjectChange }) {
   // The block a dragged table is aiming at: green if free, red if taken.
   const [ghost, setGhost] = useState(null);
   // The lines a moving object lined up with (FloorObjects.jsx snapPosition).
@@ -247,7 +247,9 @@ export function FloorPlan({ tables, waiters = [], reservations, look = "3d", tex
           ...(fit && { "--fit-w": `${fit.w}px`, "--fit-h": `${fit.h}px`, "--cell": `${fit.w / GRID_COLS}px` }),
           ...(look === "3d" && (texture
             ? { "--floor": `url("${floorAssetUrl(texture)}")`, "--floor-size": "25% 40%" }
-            : { "--floor": floorLook(material).image, "--floor-size": floorLook(material).size })),
+            : { "--floor": floorLook(material).image, "--floor-size": floorLook(material).size,
+                // A chosen colour over the material: its planks or stone still show through.
+                ...(floorColor && { backgroundColor: floorColor, backgroundBlendMode: "multiply" }) })),
         }}
         data-material={look === "3d" && !texture ? material || "oak" : undefined}
         onClick={() => editing && (onSelectTable(null), onSelectObject?.(null))}
@@ -256,8 +258,8 @@ export function FloorPlan({ tables, waiters = [], reservations, look = "3d", tex
           <FloorObject
             key={o.id}
             o={o}
-            color={objectColors && Object.hasOwn(objectColors, o.id) ? objectColors[o.id] : o.color}
-            changedColor={objectColors && Object.hasOwn(objectColors, o.id)}
+            color={o.color}
+            changedColor={Boolean(changedObjects?.has(o.id))}
             editing={editing}
             isSelected={selectedObject === o.id}
             onSelect={(id) => (onSelectTable(null), onSelectObject?.(id))}

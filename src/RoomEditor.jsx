@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useConfirm } from "./ConfirmDialog.jsx";
-import { MAX_SPAN, inRoom, rectFits, rectOf, sizeFor, spanOf } from "./floorGeometry.js";
+import { MAX_SPAN, inRoom, openSpot, rectFits, rectOf, sizeFor, spanOf } from "./floorGeometry.js";
 import { tableName } from "./domain.js";
 import { deleteFloorAsset, drawFloorAsset, saveFloorAsset, setFloorTexture, setTableSprite } from "./api.js";
 import { shrink } from "./OnlineMenu.jsx";
@@ -136,7 +136,7 @@ function PhotoButton({ label, kind, busy, onDrawn, onError, setBusy }) {
 // until the changes are confirmed, all at once, or thrown away.
 // tables: the room's active tables, drawn as drafted. draft: the changes, by table id (whole
 // table.save rows); onDraft(id, patch) adds to them.
-export function RoomEditor({ state, tables: allTables, update, notify, refresh, selected, onSelect, draft, onDraft, objectColors, onObjectColor, onSaved, onDone, area, onRoom }) {
+export function RoomEditor({ state, tables: allTables, update, notify, refresh, selected, onSelect, draft, onDraft, room: changes, dirty, onSave, onDone, area, onRoom }) {
   const confirm = useConfirm();
   const removeTable = async (table) => {
     const name = tableName(table);
@@ -147,34 +147,34 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
       action: "Fshi tavolinën",
       destructive: true,
     });
-    if (accepted && await update("table.delete", { id: table.id }, `${name} u fshi.`)) onSelect(null);
+    if (!accepted) return;
+    if (table.id < 0) changes.setAdded(({ [table.id]: _, ...rest }) => rest);
+    else changes.setRemoved((removed) => ({ ...removed, [table.id]: true }));
+    onSelect(null);
   };
   // Rooms of their own: the room being arranged, and only its tables.
-  const separate = state.separateRooms === true;
+  const separate = (changes.floor.separate ?? state.separateRooms) === true;
   const zones = [...new Set(allTables.map((x) => x.area))].sort((a, b) => a.localeCompare(b, "sq"));
   const room = zones.includes(area) ? area : zones[0];
   const tables = separate ? allTables.filter((x) => x.area === room) : allTables;
   const [saving, setSaving] = useState(false);
-  const [colorsOpen, setColorsOpen] = useState(false);
-  const drafted = Object.keys(draft).map(Number);
-  const changedColors = Object.entries(objectColors).map(([id, color]) => ({ id, color }));
-  const confirmDraft = async () => {
-    setSaving(true);
-    const ok = await update("tables.save", {
-      tables: drafted.map((id) => ({ id, ...draft[id] })),
-      objectColors: changedColors,
-    }, "Ndryshimet e sallës u ruajtën.");
-    setSaving(false);
-    if (ok) onSaved();
-  };
+  // Yellow on the plan: tables changed or new since the last "Ruaj".
+  const drafted = [...Object.keys(draft).map(Number), ...Object.keys(changes.added).map(Number)];
+  const save = async () => { setSaving(true); await onSave(); setSaving(false); };
+  // A floor-level choice (look, split into rooms, floor): drafted; back to the saved value, no change.
+  const setFloor = (key, value, saved) => changes.setFloor(({ [key]: _, ...rest }) => (value === saved ? rest : { ...rest, [key]: value }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [drawing, setDrawing] = useState(null); // { kind, image }
   const t = tables.find((x) => x.id === selected);
-  const look = state.floorStyle || "3d";
-  const inactive = state.tables.filter((x) => !x.active);
+  const look = changes.floor.style ?? state.floorStyle ?? "3d";
+  const material = changes.floor.material ?? state.floorMaterial ?? "oak";
+  const floorColor = changes.floor.color !== undefined ? changes.floor.color : state.floorColor ?? null;
+  // "Jo në sallë": tables out of the room, as drafted (taken out now, or out already).
+  const inactive = state.tables.filter((x) => !changes.removed[x.id] && x.active === Boolean(changes.toggled[x.id]));
+  const toggleTable = (id) => changes.setToggled(({ [id]: was, ...rest }) => (was ? rest : { ...rest, [id]: true }));
   const areas = [...new Set(state.tables.map((x) => x.area))];
-  const save = (patch) => onDraft(t.id, patch);
+  const saveTable = (patch) => onDraft(t.id, patch);
   // Turned or resized where it stands: only if it stays in the room, clear of the others.
   const place = (patch, at = t) => {
     const next = { ...t, ...patch };
@@ -190,9 +190,16 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
     const before = rectOf(t), after = rectOf({ ...t, ...size });
     place(size, { posX: before.x + after.w / 2, posY: before.y + after.h / 2 });
   };
-  const add = async () => {
-    const data = await update("table.save", { area: room || areas[0] || "Salla", shape: "Katror", seats: 4 }, "Tavolina u shtua. Tërhiqeni ku e doni.");
-    if (data) onSelect(Math.max(...data.state.tables.map((x) => x.id)));
+  // A new table is a draft too: placed on the first free block, as the server would.
+  const add = () => {
+    const size = sizeFor("Katror", 1, 1);
+    const spot = openSpot({ shape: "Katror", ...size, rotation: 0 }, tables.map((x) => rectOf(x)));
+    if (!spot) return notify("Nuk ka më vend në sallë: lëvizni ose zvogëloni disa tavolina.", "error");
+    const id = -Date.now();
+    // Shown as the number the server will give it on "Ruaj" (the next after the highest).
+    const number = Math.max(0, ...state.tables.map((x) => x.id), ...Object.values(changes.added).map((x) => x.number)) + 1;
+    changes.setAdded((added) => ({ ...added, [id]: { id, number, label: "", area: room || areas[0] || "Salla", shape: "Katror", seats: 4, ...size, rotation: 0, ...spot, lines: [], active: true, waiter: null, sprite: null, tableColor: null, chairColor: null } }));
+    onSelect(id);
   };
   // Saved drawings no table or floor uses any more go too.
   const forget = (id) => id && !state.tables.some((x) => x.sprite === id && x.id !== t?.id) && state.floorTexture !== id && deleteFloorAsset(id).catch(() => {});
@@ -212,33 +219,26 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
   // The room's objects (walls, doors, plants…): only this room's when rooms are separate. Each
   // change saves the whole list; a new one starts in the middle, chosen, ready to drag.
   const [objectId, setObjectId] = useState(null);
-  // Changes show at once (local) and are saved one after another, the latest list winning, so
-  // quick clicks on + never collide; a save refused because the room just changed (another
-  // device) is sent once more on the fresh room.
-  const [localObjects, setLocalObjects] = useState(null);
-  const allObjects = localObjects ?? state.floorObjects ?? [];
-  const queue = useRef({ busy: false, next: null });
+  // Objects are part of the room's draft: changed here, saved with "Ruaj".
+  const allObjects = changes.objects ?? state.floorObjects ?? [];
+  const savedObjects = new Map((state.floorObjects || []).map((o) => [o.id, JSON.stringify(o)]));
+  const changedObjects = new Set(allObjects.filter((o) => savedObjects.get(o.id) !== JSON.stringify(o)).map((o) => o.id));
   const objects = separate ? allObjects.filter((o) => o.area === room) : allObjects;
   const obj = objects.find((o) => o.id === objectId);
-  const colorTables = t ? [t] : tables;
-  const commonColor = (key) => new Set(colorTables.map((table) => table[key] ?? null));
+  // One colour for several tables: the one they share, or none when they differ.
+  const commonColor = (list, key) => new Set(list.map((table) => table[key] ?? null));
+  const tableColors = (list) => [["tableColor", "Tavolina", "#774e38"], ["chairColor", "Karriget", "#343b45"]].map(([key, label, fallback]) => {
+    const colors = commonColor(list, key);
+    return <ColorControl key={key} label={label} fallback={fallback}
+      color={colors.size === 1 ? colors.values().next().value : null} mixed={colors.size > 1}
+      onChange={(color) => list.forEach((table) => onDraft(table.id, { [key]: color }))} />;
+  });
   useEffect(() => { if (selected) setObjectId(null); }, [selected]);
-  const saveObjects = async (list, message) => {
-    setLocalObjects(list);
-    const q = queue.current;
-    q.next = { list, message };
-    if (q.busy) return true;
-    q.busy = true;
-    let ok = true;
-    while (q.next) {
-      const job = q.next;
-      q.next = null;
-      const saved = (await update("floor.objects", { objects: job.list }, job.message)) || (await update("floor.objects", { objects: job.list }, job.message));
-      if (!saved) { ok = false; q.next = null; }
-    }
-    q.busy = false;
-    setLocalObjects(null);
-    return ok;
+  // Back to exactly the saved list: nothing pending for the objects any more.
+  const saveObjects = async (list) => {
+    const same = list.length === savedObjects.size && list.every((o) => savedObjects.get(o.id) === JSON.stringify(o));
+    changes.setObjects(same ? null : list);
+    return true;
   };
   const changeObject = (id, patch) => saveObjects(allObjects.map((o) => (o.id === id ? { ...o, ...patch } : o)));
   const addObject = async (kind) => {
@@ -247,10 +247,7 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
     if (await saveObjects([...allObjects, o], `${OBJECT_KINDS[kind].name}: u shtua në mes. Tërhiqeni ku e doni.`)) (onSelect(null), setObjectId(o.id));
   };
   const removeObject = async (o) => {
-    if (await saveObjects(allObjects.filter((x) => x.id !== o.id), `${OBJECT_KINDS[o.kind].name}: u hoq.`)) {
-      onObjectColor(o.id, o.color ?? null);
-      setObjectId(null);
-    }
+    if (await saveObjects(allObjects.filter((x) => x.id !== o.id))) setObjectId(null);
   };
   // Delete or Backspace takes the chosen object away (not while typing in a field).
   useEffect(() => {
@@ -287,25 +284,22 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
           <input
             type="checkbox"
             checked={separate}
-            onChange={(e) => update("floor.rooms", { separate: e.target.checked }, e.target.checked ? "Çdo zonë tani është sallë më vete." : "Të gjitha zonat janë në një sallë.")}
+            onChange={(e) => setFloor("separate", e.target.checked, state.separateRooms === true)}
           />
           Çdo zonë sallë më vete
         </label>
         {/* How everyone sees the room on Tavolinat. */}
         <div className="tabs room-look" role="group" aria-label="Pamja e sallës">
           {[["3d", "3D"], ["flat", "E thjeshtë"]].map(([value, label]) => (
-            <button key={value} type="button" aria-pressed={look === value} onClick={() => look !== value && update("floor.style", { style: value }, value === "3d" ? "Salla shfaqet në 3D." : "Salla shfaqet e thjeshtë.")}>
+            <button key={value} type="button" aria-pressed={look === value} onClick={() => setFloor("style", value, state.floorStyle || "3d")}>
               {label}
             </button>
           ))}
         </div>
         <span className="room-edit-hint">Tërhiqni një tavolinë për ta lëvizur · prekeni për ta ndryshuar · tërhiqni qoshen për madhësinë</span>
         <div className="room-edit-actions">
-          <button type="button" aria-pressed={colorsOpen} onClick={() => setColorsOpen((open) => !open)} disabled={saving}>
-            <span className="room-color-mark" aria-hidden="true" /> Ngjyrat
-          </button>
-          <button type="button" className="primary" onClick={confirmDraft}
-            disabled={saving || localObjects !== null || (!drafted.length && !changedColors.length)}>
+          {dirty && <span className="room-unsaved" role="status">Ndryshime pa ruajtur</span>}
+          <button type="button" className="primary" onClick={save} disabled={saving || !dirty}>
             <Icon name="check" size={17} /> {saving ? "Po ruhet…" : "Ruaj"}
           </button>
           <button type="button" className="icon-button" aria-label="Mbyll editorin e sallës" title="Mbyll editorin" onClick={onDone} disabled={saving}>
@@ -317,7 +311,7 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
         <div className="room-edit-inactive">
           <span>Jo në sallë:</span>
           {inactive.map((x) => (
-            <button key={x.id} type="button" onClick={() => update("table.toggle", { id: x.id }, `${tableName(x)} u kthye në sallë.`)}>
+            <button key={x.id} type="button" onClick={() => toggleTable(x.id)}>
               <Icon name="plus" size={15} /> {tableName(x)}
             </button>
           ))}
@@ -336,39 +330,15 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
           selected={selected}
           onSelectTable={(x) => onSelect(x?.id ?? null)}
           onLayoutChange={onDraft}
-          material={state.floorMaterial}
+          material={material}
+          floorColor={floorColor}
           objects={objects}
-          objectColors={objectColors}
+          changedObjects={changedObjects}
           selectedObject={objectId}
           onSelectObject={setObjectId}
           onObjectChange={changeObject}
         />
-        {colorsOpen ? (
-          <aside className="panel room-panel room-colors" aria-labelledby="room-colors-title">
-            <div className="room-panel-head">
-              <h2 id="room-colors-title">Ngjyrat</h2>
-              <button type="button" className="icon-button" aria-label="Mbyll ngjyrat" onClick={() => setColorsOpen(false)}>
-                <Icon name="close" size={18} />
-              </button>
-            </div>
-            <p className="room-color-target">{obj ? OBJECT_KINDS[obj.kind].name : t ? tableName(t) : "Të gjitha tavolinat e sallës"}</p>
-            {obj ? (
-              <ColorControl label="Objekti" color={Object.hasOwn(objectColors, obj.id) ? objectColors[obj.id] : obj.color}
-                fallback="#68725a" onChange={(color) => onObjectColor(obj.id, color)} />
-            ) : colorTables.length > 0 && (
-              <>
-                {[["tableColor", "Tavolina", "#774e38"], ["chairColor", "Karriget", "#343b45"]].map(([key, label, fallback]) => {
-                  const colors = commonColor(key);
-                  return <ColorControl key={key} label={label} fallback={fallback}
-                    color={colors.size === 1 ? colors.values().next().value : null} mixed={colors.size > 1}
-                    onChange={(color) => colorTables.forEach((table) => onDraft(table.id, { [key]: color }))} />;
-                })}
-                {colorTables.some((table) => table.sprite) && <p className="helper">Për tavolinat me foto, ngjyrat përdorin modelin 3D. Parazgjedhja rikthen foton.</p>}
-                <p className="helper">{look === "3d" ? "Zgjidhni një tavolinë ose objekt në plan për t’ia ndryshuar ngjyrën veçmas." : "Karriget dhe objektet shfaqen në pamjen 3D."}</p>
-              </>
-            )}
-          </aside>
-        ) : drawing?.kind === "floor" ? (
+        {drawing?.kind === "floor" ? (
           <aside className="panel room-panel">
             <h2>Dyshemeja e re</h2>
             <img className="room-drawing floor" src={drawing.image} alt="Dyshemeja e vizatuar nga foto" />
@@ -412,14 +382,17 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
                       key={m}
                       type="button"
                       role="radio"
-                      aria-checked={!state.floorTexture && (state.floorMaterial || "oak") === m}
-                      onClick={() => (state.floorMaterial || "oak") !== m && update("floor.material", { material: m }, `Dyshemeja: ${label.toLowerCase()}.`)}
+                      aria-checked={!state.floorTexture && material === m}
+                      onClick={() => setFloor("material", m, state.floorMaterial || "oak")}
                     >
-                      <span className="room-floor-swatch" style={{ backgroundImage: floorLook(m).image }} />
+                      <span className="room-floor-swatch" style={{ backgroundImage: floorLook(m).image, ...(floorColor && { backgroundColor: floorColor, backgroundBlendMode: "multiply" }) }} />
                       <span>{label}</span>
                     </button>
                   ))}
                 </div>
+                {!state.floorTexture && (
+                  <ColorControl label="Ngjyra e dyshemesë" color={floorColor} fallback="#d8c6a4" onChange={(color) => setFloor("color", color, state.floorColor ?? null)} />
+                )}
                 <div className="room-floor-photo">
         <PhotoButton label={state.floorTexture ? "Ndrysho dyshemenë" : "Dysheme nga foto"} kind="floor" busy={busy} setBusy={setBusy} onError={setError} onDrawn={(image) => setDrawing({ kind: "floor", image })} />
         {state.floorTexture && (
@@ -429,6 +402,13 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
         )}
                 </div>
                 {state.floorTexture && <p className="helper">Dyshemeja nga foto zëvendëson materialin. Hiqeni për t'u kthyer te materiali i zgjedhur.</p>}
+              </section>
+            )}
+            {tables.length > 0 && (
+              <section aria-labelledby="room-table-colors-title" className="room-colors-section">
+                <h3 id="room-table-colors-title">Ngjyrat e tavolinave</h3>
+                <p className="helper">Për të gjitha tavolinat e sallës. Klikoni një tavolinë ose objekt në plan për ngjyrën e vet.</p>
+                {tableColors(tables)}
               </section>
             )}
             {look !== "3d" ? (
@@ -474,11 +454,15 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
               <input
                 defaultValue={t.label || ""}
                 maxLength={20}
-                placeholder={`bosh = ${String(t.id).padStart(2, "0")}`}
-                onBlur={(e) => e.target.value.trim() !== (t.label || "") && save({ label: e.target.value.trim() })}
+                placeholder={`bosh = ${String(t.number ?? t.id).padStart(2, "0")}`}
+                onBlur={(e) => e.target.value.trim() !== (t.label || "") && saveTable({ label: e.target.value.trim() })}
                 onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
               />
             </label>
+            <section className="room-colors-section" aria-label="Ngjyrat e tavolinës">
+              <h3>Ngjyrat</h3>
+              {tableColors([t])}
+            </section>
             <label className="field">
               <span>Zona</span>
               <input
@@ -488,7 +472,7 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
                 onBlur={(e) => {
                   const value = e.target.value.trim();
                   if (!value) e.target.value = t.area;
-                  else if (value !== t.area) save({ area: value });
+                  else if (value !== t.area) saveTable({ area: value });
                 }}
                 onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
               />
@@ -496,15 +480,15 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
             </label>
             <TableShapePicker
               value={t.shape}
-              onChange={(shape) => save({ shape, ...((shape === "Bar") !== (t.shape === "Bar") ? sizeFor(shape, span.cols, span.rows) : {}) })}
+              onChange={(shape) => saveTable({ shape, ...((shape === "Bar") !== (t.shape === "Bar") ? sizeFor(shape, span.cols, span.rows) : {}) })}
             />
             <div className="room-steppers">
               <div className="field">
                 <span>Vende</span>
                 <div className="quantity seats-stepper">
-                  <button type="button" aria-label="Një vend më pak" disabled={t.seats <= 1} onClick={() => save({ seats: t.seats - 1 })}>−</button>
+                  <button type="button" aria-label="Një vend më pak" disabled={t.seats <= 1} onClick={() => saveTable({ seats: t.seats - 1 })}>−</button>
                   <span>{t.seats}</span>
-                  <button type="button" aria-label="Një vend më shumë" disabled={t.seats >= 12} onClick={() => save({ seats: t.seats + 1 })}>+</button>
+                  <button type="button" aria-label="Një vend më shumë" disabled={t.seats >= 12} onClick={() => saveTable({ seats: t.seats + 1 })}>+</button>
                 </div>
               </div>
               <div className="field">
@@ -536,7 +520,8 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
             >
               <Icon name="rotate" size={17} /> Rrotullo
             </button>
-            {look === "3d" && <div className="room-photo">
+            {look === "3d" && t.id < 0 && <p className="helper">Pamja nga foto shtohet pasi ta ruani sallën.</p>}
+            {look === "3d" && t.id > 0 && <div className="room-photo">
               {drawing?.kind === "table" ? (
                 <>
                   <img className="room-drawing" src={drawing.image} alt="Tavolina e vizatuar nga foto" />
@@ -577,7 +562,12 @@ export function RoomEditor({ state, tables: allTables, update, notify, refresh, 
                 className="subtle-button"
                 disabled={t.lines.length > 0}
                 title={t.lines.length ? "Ka porosi të hapura" : undefined}
-                onClick={() => update("table.toggle", { id: t.id }, `${tableName(t)} u hoq nga salla. E ktheni nga "Jo në sallë".`).then((ok) => ok && onSelect(null))}
+                onClick={() => {
+                  // A new table taken out simply goes; a saved one waits under "Jo në sallë".
+                  if (t.id < 0) changes.setAdded(({ [t.id]: _, ...rest }) => rest);
+                  else toggleTable(t.id);
+                  onSelect(null);
+                }}
               >
                 Hiqe nga salla
               </button>
@@ -634,6 +624,8 @@ function PxField({ label, value, step, min, max, onCommit }) {
 // The chosen object's inspector: what it is (and swap it for another kind in the same place),
 // its size and place in the room's px (1600 × 1000), its turn, a sign's text.
 function ObjectPanel({ obj, onClose, onChange, onDuplicate, onRemove }) {
+  // Colour only for things that have a surface to colour (not a sign's plate or a window).
+  const colorable = !["sign", "window", "door"].includes(obj.kind);
   const kind = OBJECT_KINDS[obj.kind];
   const gx = toPx(STEP_X, "x"), gy = toPx(STEP_Y, "y"); // one grid square: 50 × 50 px
   // Any change goes through fitRoom, so the object always stays inside the room.
@@ -661,6 +653,12 @@ function ObjectPanel({ obj, onClose, onChange, onDuplicate, onRemove }) {
             onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
           />
         </label>
+      )}
+
+      {colorable && (
+        <section className="object-section">
+          <ColorControl label="Ngjyra" color={obj.color ?? null} fallback="#68725a" onChange={(color) => onChange({ color })} />
+        </section>
       )}
 
       <section className="object-section">

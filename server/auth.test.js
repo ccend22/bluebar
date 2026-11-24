@@ -2070,11 +2070,13 @@ test("Financat: sales less refunds, approved and pending expenses, till cash-out
     const painted = await getRoom();
     assert.deepEqual([painted.tables[0].tableColor, painted.tables[0].chairColor], ["#315f70", "#d6c38e"]);
     assert.deepEqual(painted.floorObjects[0], { ...room.floorObjects[0], color: "#775533" });
-    assert.equal((await cmd("floor.objects", { objects: [{ ...room.floorObjects[0], x: 15 }, painted.floorObjects[1]] })).statusCode, 200);
+    // The room is saved as one draft, so each object carries its own colour.
+    assert.equal((await cmd("floor.objects", { objects: [{ ...painted.floorObjects[0], x: 15 }, painted.floorObjects[1]] })).statusCode, 200);
     assert.equal((await getRoom()).floorObjects[0].color, "#775533");
+    assert.equal((await cmd("floor.objects", { objects: [{ ...room.floorObjects[0], color: "url(bad)" }] })).statusCode, 400);
     assert.equal((await cmd("tables.save", { tables: [], objectColors: [{ id: "w1", color: null }] })).statusCode, 200);
     assert.equal((await getRoom()).floorObjects[0].color, undefined);
-    for (const bad of [[{ ...wall, kind: "piano" }], [{ ...wall, x: 500 }], [wall, wall], [{ ...wall, id: "<b>" }]])
+    for (const bad of [[{ ...wall, kind: "helicopter" }], [{ ...wall, x: 500 }], [wall, wall], [{ ...wall, id: "<b>" }]])
       assert.equal((await cmd("floor.objects", { objects: bad })).statusCode, 400);
     assert.equal((await cmd("floor.material", { material: "carpet" })).statusCode, 400);
     assert.equal((await t.call("POST", "/api/commands", { cookie: ana, body: { id: randomUUID(), version: (await t.call("GET", "/api/state", { cookie: boss })).json().version, type: "floor.objects", payload: { objects: [] } } })).statusCode, 403, "the manager's room");
@@ -2316,6 +2318,46 @@ test("Kamarierët: a waiter works one room or all; removed once switched off, ke
     assert.equal((await t.pool.query("SELECT count(*)::int AS n FROM bluebar.accounts WHERE waiter_id = $1", [dea.id])).rows[0].n, 0);
     assert.equal((await cmd("waiter.toggle", { waiterId: dea.id })).statusCode, 400, "a removed waiter stays removed");
     assert.equal((await cmd("waiter.create", { name: "Dea Lika" })).statusCode, 200, "the name is free again");
+  } finally {
+    await t.close();
+  }
+});
+
+test("Menaxho sallën → Ruaj: every change of the room in one command, all or nothing", async () => {
+  const t = await setup();
+  try {
+    const boss = t.cookieOf(await t.managerLogin());
+    const ana = t.cookieOf(await t.waiterLogin(1, "482913"));
+    const cmd = async (type, payload, cookie = boss) => {
+      const { version } = (await t.call("GET", "/api/state", { cookie: boss })).json();
+      return t.call("POST", "/api/commands", { cookie, body: { id: randomUUID(), version, type, payload } });
+    };
+    const state = async () => (await t.call("GET", "/api/state", { cookie: boss })).json().state;
+    const before = await state();
+    const plant = { id: "p1", kind: "plant", x: 50, y: 50, w: 5, h: 8, r: 0, color: "#4E7A3A" };
+    const res = await cmd("room.save", {
+      style: "flat", separate: true, material: "walnut", color: "#68725A",
+      toggle: [3],
+      tables: [{ id: 1, area: "Salla", tableColor: "#334455", chairColor: "#112233" }, { area: "Salla", shape: "Rreth", seats: 2, posX: 93.75, posY: 90 }],
+      objects: [plant],
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const s = await state();
+    assert.deepEqual([s.floorStyle, s.separateRooms, s.floorMaterial, s.floorColor], ["flat", true, "walnut", "#68725a"]);
+    const one = s.tables.find((x) => x.id === 1);
+    assert.deepEqual([one.tableColor, one.chairColor], ["#334455", "#112233"]);
+    assert.equal(s.tables.find((x) => x.id === 3).active, false, "taken out of the room");
+    assert.equal(s.tables.length, before.tables.length + 1, "the new table is added");
+    assert.deepEqual(s.floorObjects, [{ ...plant, color: "#4e7a3a" }], "objects keep their colour");
+    // One bad part: nothing at all is saved.
+    const bad = await cmd("room.save", { material: "oak", tables: [{ id: 1, area: "Salla", tableColor: "red" }] });
+    assert.equal(bad.statusCode, 400);
+    assert.equal((await state()).floorMaterial, "walnut", "unchanged");
+    assert.equal((await cmd("room.save", { color: "url(x)" })).statusCode, 400, "a floor colour is a colour");
+    assert.equal((await cmd("room.save", { color: null })).statusCode, 200);
+    assert.equal((await state()).floorColor, null, "back to the material's own colour");
+    assert.equal((await cmd("room.save", {})).statusCode, 400, "nothing to save");
+    assert.equal((await cmd("room.save", { material: "oak" }, ana)).statusCode, 403, "the manager's room");
   } finally {
     await t.close();
   }

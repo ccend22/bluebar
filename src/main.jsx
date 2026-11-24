@@ -349,7 +349,12 @@ function App({ user, onLogout, onUserChange }) {
     [deleteConfirmId, setDeleteConfirmId] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
     [roomDraft, setRoomDraft] = useState({}),
-    [roomObjectColors, setRoomObjectColors] = useState({}),
+    // Menaxho sallën: every change is a draft until "Ruaj" saves it all (room.save).
+    [roomAdded, setRoomAdded] = useState({}), // new tables, by a temporary negative id
+    [roomToggled, setRoomToggled] = useState({}), // tables taken out of the room or put back
+    [roomRemoved, setRoomRemoved] = useState({}), // tables deleted
+    [roomObjects, setRoomObjects] = useState(null), // the whole object list once changed
+    [roomFloor, setRoomFloor] = useState({}), // { material, color, style, separate }
     [orderMode, setOrderMode] = useState("summary"),
     [fiscalizeChoice, setFiscalizeChoice] = useState(false),
     [ticketPrint, setTicketPrint] = useState(null),
@@ -440,8 +445,9 @@ function App({ user, onLogout, onUserChange }) {
     setFloorSelected(null);
     setOrderMode("summary");
   };
-  const draftTable = (id, patch) =>
-    setRoomDraft((draft) => {
+  const draftTable = (id, patch) => id < 0
+    ? setRoomAdded((added) => (added[id] ? { ...added, [id]: { ...added[id], ...patch } } : added))
+    : setRoomDraft((draft) => {
       const t = state.tables.find((x) => x.id === id);
       if (!t) return draft;
       const saved = { label: t.label || "", area: t.area, shape: t.shape || "Drejtkëndësh", seats: t.seats, posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation };
@@ -453,20 +459,30 @@ function App({ user, onLogout, onUserChange }) {
       const { [id]: _, ...rest } = draft;
       return Object.keys(next).every((k) => saved[k] === next[k]) ? rest : { ...draft, [id]: next };
     });
-  const draftObjectColor = (id, color) => {
-    const object = state.floorObjects?.find((item) => item.id === id);
-    setRoomObjectColors((draft) => {
-      const { [id]: _, ...rest } = draft;
-      return !object || (object.color ?? null) === color ? rest : { ...rest, [id]: color };
-    });
-  };
+  const roomDirty = Boolean(Object.keys(roomDraft).length || Object.keys(roomAdded).length || Object.keys(roomToggled).length ||
+    Object.keys(roomRemoved).length || roomObjects !== null || Object.keys(roomFloor).length);
   const clearRoomDraft = () => {
     setRoomDraft({});
-    setRoomObjectColors({});
+    setRoomAdded({});
+    setRoomToggled({});
+    setRoomRemoved({});
+    setRoomObjects(null);
+    setRoomFloor({});
   };
+  // "Ruaj": the whole room in one command, applied together or not at all.
+  const saveRoom = () => update("room.save", {
+    ...roomFloor,
+    toggle: Object.keys(roomToggled).map(Number),
+    tables: [
+      ...Object.entries(roomDraft).filter(([id]) => !roomRemoved[id]).map(([id, patch]) => ({ id: Number(id), ...patch })),
+      ...Object.values(roomAdded).map(({ id, number, lines, active, waiter, sprite, occupiedSince, ...row }) => row),
+    ],
+    remove: Object.keys(roomRemoved).map(Number),
+    ...(roomObjects !== null && { objects: roomObjects }),
+  }, "Ndryshimet e sallës u ruajtën.");
   // false = the manager chose to stay and keep the changes they haven't confirmed.
   const leaveRoomDraft = async () => {
-    if ((Object.keys(roomDraft).length || Object.keys(roomObjectColors).length) && !await confirm({
+    if (roomDirty && !await confirm({
       title: "Hidh poshtë ndryshimet?",
       description: "Ndryshimet e pakonfirmuara në planin e sallës do të humbasin.",
       action: "Hidh poshtë",
@@ -505,7 +521,11 @@ function App({ user, onLogout, onUserChange }) {
       ),
     ];
   // The floor plan shows the unsaved draft (shape, size, position) as if it were saved.
-  const floorTables = activeTables.map((t) => ({ ...t, ...roomDraft[t.id] }));
+  // The room as drafted: tables taken out or put back, deleted ones gone, new ones added.
+  const floorTables = [
+    ...state.tables.filter((t) => t.active !== Boolean(roomToggled[t.id]) && !roomRemoved[t.id]).map((t) => ({ ...t, ...roomDraft[t.id] })),
+    ...Object.values(roomAdded),
+  ];
   // Tables (by id) that claim a cell another table also claims.
   // Rooms of their own (the manager's choice): every zone is its own room, shown one at a time,
   // and tables only clash with tables in the same room.
@@ -1170,11 +1190,11 @@ function App({ user, onLogout, onUserChange }) {
                   onDone={async () => {
                     if (await leaveRoomDraft()) closeRoomEditor();
                   }}
-                  onSaved={() => { clearRoomDraft(); closeRoomEditor(); }}
+                  onSave={async () => { if (await saveRoom()) { clearRoomDraft(); closeRoomEditor(); } }}
+                  dirty={roomDirty}
                   draft={roomDraft}
                   onDraft={draftTable}
-                  objectColors={roomObjectColors}
-                  onObjectColor={draftObjectColor}
+                  room={{ added: roomAdded, setAdded: setRoomAdded, toggled: roomToggled, setToggled: setRoomToggled, removed: roomRemoved, setRemoved: setRoomRemoved, objects: roomObjects, setObjects: setRoomObjects, floor: roomFloor, setFloor: setRoomFloor }}
                 />
               ) : (
                 <>
@@ -1277,6 +1297,7 @@ function App({ user, onLogout, onUserChange }) {
                           look={state.floorStyle}
                           texture={state.floorTexture}
                           material={state.floorMaterial}
+                          floorColor={state.floorColor}
                           objects={(state.floorObjects || []).filter((o) => !separateRooms || o.area === room)}
                           editing={false}
                           selected={selected}

@@ -13,7 +13,7 @@ export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 // table, or its id plus the list of tables.
 export function tableName(t, tables) {
   const row = typeof t === "object" ? t : tables?.find((x) => x.id === Number(t));
-  return row?.label || `Tavolina ${String(row?.id ?? t).padStart(2, "0")}`;
+  return row?.label || `Tavolina ${String(row?.number ?? row?.id ?? t).padStart(2, "0")}`;
 }
 // Rezervimet: a reservation's time as minutes from its day's midnight. One with only a start
 // time holds its table for two hours; a slot past midnight ("22:00–01:00") ends the next day.

@@ -8046,3 +8046,15 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .st-card > footer .st-delete { margin-left: 0; border: 0; background: transparent; padding: 0 4px; color: #b42318; font-weight: 600; }
 .st-card > footer .st-delete:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .st-switch, .st-switch i { transition: none; } }
+
+/* Menaxho sallën: colours inside the table, object and Salla panels; "Ruaj" saves everything. */
+.room-colors-section { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.room-colors-section h3 { margin: 0; color: var(--ink-strong); font-size: 14px; font-weight: 650; }
+.room-colors-section .helper { margin: -6px 0 0; }
+.room-unsaved { display: inline-flex; align-items: center; gap: 6px; color: #8a5a00; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.room-unsaved::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #e3a008; }
+
+/* Menaxho sallën → Dyshemeja: the floor colour under the floor swatches. */
+[aria-labelledby="room-floor-title"] > .room-color-control { margin-top: 14px; }
+/* The drawn objects keep their shape in the previews (Shto në sallë, Lloji). */
+.room-object-preview .fo-art.fo-art-fit { width: 80%; height: 74%; }

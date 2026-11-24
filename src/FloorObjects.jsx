@@ -20,6 +20,18 @@ export const OBJECT_KINDS = {
   counter: { name: "Banak", w: 26, h: 9, min: [6, 4] },
   rug: { name: "Qilim", w: 18, h: 24, min: [5, 5] },
   sign: { name: "Shenjë", w: 12, h: 5, min: [5, 3], text: "Hyrja" },
+  column: { name: "Kolonë", w: 4, h: 4 * SQ, square: true, min: [2, 2 * SQ] },
+  umbrella: { name: "Çadër", w: 10, h: 10 * SQ, square: true, min: [4, 4 * SQ] },
+  stairs: { name: "Shkallë", w: 10, h: 20, min: [5, 8] },
+  stage: { name: "Skenë", w: 30, h: 18, min: [10, 8] },
+  bench: { name: "Stol", w: 14, h: 5, min: [5, 3] },
+  planter: { name: "Fioriera", w: 16, h: 5, min: [5, 3] },
+  fridge: { name: "Frigorifer", w: 8, h: 9, min: [4, 5] },
+  tv: { name: "Ekran", w: 12, h: 1.6, min: [4, 1.6], fixed: true },
+  piano: { name: "Piano", w: 12, h: 16, min: [7, 9] },
+  register: { name: "Arka", w: 5, h: 5 * SQ, square: true, min: [3, 3 * SQ] },
+  fireplace: { name: "Oxhak", w: 14, h: 6, min: [6, 3] },
+  dj: { name: "DJ", w: 14, h: 7, min: [7, 4] },
 };
 export const newObject = (kind, area) => {
   const k = OBJECT_KINDS[kind];
@@ -62,7 +74,78 @@ function Door() {
   );
 }
 
-export function ObjectArt({ kind, text }) {
+// The rest, drawn from above in their own proportions (the viewBox is the default size in the
+// room's px, scaled down). On the plan they stretch to the size given; previews keep the shape.
+// --object-color is the colour the manager picked; each has its own default.
+const c = (fallback) => `var(--object-color, ${fallback})`;
+const DRAWN = {
+  column: ["0 0 100 100", <>
+    <rect x="6" y="6" width="88" height="88" rx="6" fill={c("#d9d4cb")} stroke="#8f877b" strokeWidth="2" />
+    <rect x="18" y="18" width="64" height="64" rx="3" fill="rgba(255,255,255,0.28)" stroke="rgba(0,0,0,0.14)" strokeWidth="1.5" />
+  </>],
+  umbrella: ["0 0 100 100", <>
+    <polygon points="50,4 82.5,17.5 96,50 82.5,82.5 50,96 17.5,82.5 4,50 17.5,17.5" fill={c("#2f6f8f")} />
+    {[0, 2, 4, 6].map((i) => { const p = (k) => [50 + 46 * Math.cos((k * Math.PI) / 4 - Math.PI / 2), 50 + 46 * Math.sin((k * Math.PI) / 4 - Math.PI / 2)].map((v) => v.toFixed(1)).join(","); return <polygon key={i} points={`50,50 ${p(i)} ${p(i + 1)}`} fill="rgba(255,255,255,0.22)" />; })}
+    <circle cx="50" cy="50" r="4" fill="#e8e2d6" stroke="rgba(0,0,0,0.3)" />
+  </>],
+  stairs: ["0 0 80 100", <>
+    <rect x="1" y="1" width="78" height="98" rx="2" fill={c("#8a8f96")} stroke="#5d6269" strokeWidth="2" />
+    {Array.from({ length: 9 }, (_, i) => <path key={i} d={`M2 ${10 + i * 10}H78`} stroke="rgba(0,0,0,0.28)" strokeWidth="1.6" />)}
+    <path d="M40 88V16M32 26l8-10 8 10" fill="none" stroke="#fff" strokeOpacity="0.85" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+  </>],
+  stage: ["0 0 160 60", <>
+    <rect x="1" y="1" width="158" height="58" rx="3" fill={c("#4a3428")} />
+    {[12, 24, 36].map((y) => <path key={y} d={`M2 ${y}H158`} stroke="rgba(0,0,0,0.25)" strokeWidth="0.8" />)}
+    <rect x="1" y="50" width="158" height="9" rx="2" fill="rgba(0,0,0,0.35)" />
+    <rect x="6" y="5" width="12" height="10" rx="1.5" fill="#1b1d20" /><rect x="142" y="5" width="12" height="10" rx="1.5" fill="#1b1d20" />
+    <circle cx="80" cy="26" r="3" fill="#c9cfd6" />
+  </>],
+  bench: ["0 0 180 40", <>
+    {[3, 13, 23, 33].map((y) => <rect key={y} x="2" y={y} width="176" height="7" rx="2" fill={c("#9a6a43")} stroke="rgba(60,35,15,0.5)" strokeWidth="0.8" />)}
+    <rect x="12" y="1" width="6" height="38" rx="1.5" fill="#33383e" /><rect x="162" y="1" width="6" height="38" rx="1.5" fill="#33383e" />
+  </>],
+  planter: ["0 0 200 40", <>
+    <rect x="1" y="1" width="198" height="38" rx="4" fill={c("#5b6168")} />
+    <rect x="6" y="6" width="188" height="28" rx="2" fill="#4a3a2c" />
+    {Array.from({ length: 9 }, (_, i) => <circle key={i} cx={16 + i * 21} cy={i % 2 ? 22 : 18} r="11" fill={i % 2 ? "#4e9b5c" : "#2f7a45"} />)}
+  </>],
+  fridge: ["0 0 100 70", <>
+    <rect x="2" y="2" width="96" height="66" rx="4" fill={c("#e9edf1")} stroke="#9aa3ad" strokeWidth="2" />
+    <rect x="8" y="50" width="84" height="13" rx="2" fill="#bfe0f0" stroke="#7fa7bd" strokeWidth="1.2" />
+    <rect x="44" y="54" width="12" height="3" rx="1.5" fill="#6b747e" />
+    <path d="M10 14H90M10 26H90M10 38H90" stroke="rgba(0,0,0,0.08)" strokeWidth="2" />
+  </>],
+  tv: ["0 0 120 10", <>
+    <rect x="0" y="0" width="120" height="10" rx="1.5" fill={c("#1c1f24")} />
+    <rect x="4" y="6.5" width="112" height="2" rx="1" fill="#5aa9e6" opacity="0.8" />
+  </>],
+  piano: ["0 0 120 100", <>
+    <path d="M6 80V22Q6 4 30 4Q58 4 72 28Q84 50 114 58V80Z" fill={c("#17191c")} stroke="#000" strokeWidth="1.5" />
+    <path d="M14 22Q16 12 30 12Q52 12 64 32" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="2" />
+    <rect x="6" y="80" width="108" height="16" rx="1.5" fill="#f6f4ef" stroke="#2a2a2a" strokeWidth="1.2" />
+    {Array.from({ length: 15 }, (_, i) => <rect key={i} x={10 + i * 7} y="80" width="3.5" height="9" fill="#1b1b1b" />)}
+  </>],
+  register: ["0 0 100 100", <>
+    <rect x="8" y="8" width="84" height="84" rx="8" fill={c("#3a4048")} />
+    <rect x="18" y="14" width="64" height="20" rx="3" fill="#9fd6b0" />
+    {Array.from({ length: 12 }, (_, i) => <rect key={i} x={20 + (i % 4) * 16} y={42 + Math.floor(i / 4) * 12} width="10" height="7" rx="1.5" fill="#d7dbe0" />)}
+    <rect x="14" y="80" width="72" height="6" rx="2" fill="rgba(0,0,0,0.35)" />
+  </>],
+  fireplace: ["0 0 150 40", <>
+    <rect x="1" y="1" width="148" height="38" rx="3" fill={c("#8b8378")} stroke="#5f584f" strokeWidth="1.5" />
+    <rect x="35" y="14" width="80" height="25" rx="2" fill="#231b16" />
+    <ellipse cx="75" cy="33" rx="26" ry="7" fill="#e0662c" /><ellipse cx="75" cy="33" rx="14" ry="4" fill="#f6c14b" />
+  </>],
+  dj: ["0 0 160 50", <>
+    <rect x="1" y="1" width="158" height="48" rx="4" fill={c("#22252a")} />
+    {[32, 128].map((x) => <g key={x}><circle cx={x} cy="25" r="19" fill="#3a3e45" /><circle cx={x} cy="25" r="16" fill="#111" /><circle cx={x} cy="25" r="4" fill="#d14b4b" /></g>)}
+    <rect x="62" y="8" width="36" height="34" rx="3" fill="#3a3e45" />
+    {[70, 80, 90].map((x) => <g key={x}><path d={`M${x} 14V36`} stroke="#15171a" strokeWidth="2" /><rect x={x - 3} y={x === 80 ? 18 : 26} width="6" height="4" rx="1" fill="#c9cfd6" /></g>)}
+  </>],
+};
+
+export function ObjectArt({ kind, text, stretch = false }) {
+  if (DRAWN[kind]) return <svg viewBox={DRAWN[kind][0]} className="fo-art fo-art-fit" preserveAspectRatio={stretch ? "none" : undefined}>{DRAWN[kind][1]}</svg>;
   if (kind === "plant") return <Plant />;
   if (kind === "door") return <Door />;
   if (kind === "sign") return <span className="fo-sign-text">{text || "Shenjë"}</span>;
@@ -236,7 +319,7 @@ export function FloorObject({ o: saved, color, changedColor, editing, isSelected
         set(fitRoom({ ...free, x, y }));
       })}
     >
-      <ObjectArt kind={o.kind} text={o.text} />
+      <ObjectArt kind={o.kind} text={o.text} stretch />
       {/* Its size while being resized, in the room's px (1600 × 1000), upright whatever its turn. */}
       {live?.sizing && <span className="fo-dims" style={{ transform: `translate(-50%, 0) rotate(${-(o.r || 0)}deg)` }}>{toPx(o.w, "x")} × {toPx(o.h, "y")}</span>}
       {editing && isSelected && (
