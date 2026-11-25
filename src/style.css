@@ -3035,7 +3035,8 @@ footer > span:last-child {
   .floor-app .floor { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .floor-app .floor-toolbar { flex-shrink: 0; gap: 6px; margin-bottom: 8px; }
   .floor-app .floor-plan-viewport { flex: 1; min-height: 0; overflow: hidden; }
-  .floor-app .floor-plan:not(.editing) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: start; gap: 7px; width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; overflow-y: auto; padding: 8px; }
+  /* As tall as its tiles (scrolling past the screen when there are many), not a screenful of empty floor. */
+  .floor-app .floor-plan:not(.editing) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: start; gap: 7px; width: 100%; height: auto; max-height: 100%; min-height: 0; aspect-ratio: auto; overflow-y: auto; padding: 8px; }
   .floor-app .floor-plan:not(.editing) .fp-table { position: relative; top: auto !important; left: auto !important; width: 100% !important; height: 76px !important; min-width: 0; min-height: 76px; transform: none !important; }
   .floor-app .floor-plan:not(.editing) .fp-body { transform: none !important; }
   .floor-app .floor-layout.has-order .floor { display: none; }
@@ -6799,7 +6800,14 @@ html:has(.onboard-salla[data-theme="dark"]) { background: #0d1c26; }
   .floor-app .look-3d:not(.editing) .fp-top { inset: 0; border-radius: 12px; }
   /* Phones lay tables out as a grid of cards: no floor grid behind them, a plain dark bar. */
   .floor-app .floor-plan.look-3d:not(.editing):not([style*="--floor"]) { background-image: none; }
-  .floor-app .look-3d:not(.editing) .fp-table.shape-bar .fp-top { background: #1f2d3b; }
+  /* A bar seat is one more tile here: wood when free, green taken, amber reserved, like the rest. */
+  .floor-app .look-3d:not(.editing) .fp-table.shape-bar .fp-top { background: linear-gradient(160deg, #8a5d3c, #5f3d26); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 3px 6px rgba(40, 25, 10, 0.35); }
+  .floor-app .look-3d:not(.editing) .fp-table.shape-bar.occupied .fp-top { background: linear-gradient(160deg, #22a76a, #13804c); }
+  .floor-app .look-3d:not(.editing) .fp-table.shape-bar.reserved:not(.occupied) .fp-top { background: linear-gradient(160deg, #f7bd52, #e39b22); }
+  .floor-app .look-3d:not(.editing) .fp-table.shape-bar.occupied .fp-tag { background: none; box-shadow: none; color: #fff; }
+  /* Every table is the same rounded tile here, whatever its shape on the floor plan. */
+  .floor-app .look-3d:not(.editing) .fp-table:is(.shape-round, .shape-oval, .shape-bar) .fp-top { border-radius: 12px; }
+  .floor-app .floor-plan-viewport, .floor-app main, .floor-app .workspace-controls, .floor-app .floor-layout, .floor-app .floor { width: 100%; }
   .floor-app .look-3d:not(.editing) .fp-table.reserved:not(.occupied) .fp-tag { max-width: 94%; }
   .floor-app .look-3d:not(.editing) .fp-table.has-sprite { border-radius: 12px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.17' numOctaves='4' seed='11'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .24 0 0 0 0 .1 1.5 0 0 0 -.5'/%3E%3C/filter%3E%3Cfilter id='h'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.003 0.06' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .93 0 0 0 0 .8 1.2 0 0 0 -.62'/%3E%3C/filter%3E%3Crect width='360' height='180' fill='%23c8925c'/%3E%3Crect width='360' height='180' filter='url(%23h)'/%3E%3Crect width='360' height='180' filter='url(%23g)'/%3E%3C/svg%3E") center / 280px 140px; }
   .floor-app .look-3d:not(.editing) .fp-table .fp-body { padding: 4px; }
@@ -8062,3 +8070,23 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .room-object-preview .fo-art.fo-art-fit { width: 80%; height: 74%; }
 /* Shto në sallë: tiles are dragged or double-tapped; a double tap must not zoom the page. */
 .room-objects button { touch-action: manipulation; cursor: grab; }
+
+/* Paguaj: Gjithçka / Ndaj në pjesë / Sipas artikujve, and Cash + Kartë. */
+.payment-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; margin: 14px 0 12px; padding: 3px; border-radius: 10px; background: #eef1f5; }
+.payment-modes button { min-height: 36px; padding: 0 6px; border: 0; border-radius: 8px; background: none; color: var(--ink-2, #3c4a59); font-size: 13px; font-weight: 600; }
+.payment-modes button[aria-pressed="true"] { background: #fff; color: var(--ink, #0f1d2b); box-shadow: 0 1px 3px rgba(15, 40, 70, 0.12); }
+.payment-methods.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.payment-split { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 12px; margin-bottom: 8px; }
+.payment-parts { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+.payment-parts .quantity, .payment-items .quantity { display: inline-flex; align-items: center; gap: 10px; }
+.payment-parts .quantity button, .payment-items .quantity button { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 18px; }
+.payment-items { display: grid; gap: 6px; max-height: 240px; margin: 0 0 10px; padding: 0; overflow: auto; list-style: none; }
+.payment-items li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px 6px 12px; border: 1px solid var(--line, #e3e9f0); border-radius: 10px; }
+.payment-items li.is-picked { border-color: #9ccbee; background: #f2f8fe; }
+.payment-item-name { display: grid; justify-items: start; min-width: 0; padding: 0; border: 0; background: none; text-align: left; }
+.payment-item-name small { color: var(--muted, #6b7887); font-weight: 400; }
+.payment-mix { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.payment-mix p { margin: 0 0 12px; white-space: nowrap; }
+.payment-tip-add { margin: 2px 0 8px; }
+.link-button { min-height: 0; padding: 4px 0; border: 0; background: none; color: var(--blue, #0867c9); font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.tabs[hidden] { display: none !important; }

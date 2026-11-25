@@ -135,11 +135,21 @@ export function useDatabase() {
     }
   }, [accept]);
 
+  // No network (or the server briefly down): wait, then try the same command again. Every
+  // command carries its own id and the server never applies one twice, so a resend is safe.
+  const OFFLINE = "Pa internet. Porosia ruhet në këtë pajisje dhe dërgohet vetë sapo të kthehet lidhja.";
+  const waitForNetwork = (ms) =>
+    new Promise((resolve) => {
+      const done = () => (clearTimeout(timer), window.removeEventListener("online", done), resolve());
+      const timer = setTimeout(done, ms);
+      window.addEventListener("online", done);
+    });
   const processOrders = useCallback(() => {
     if (orderProcessing.current) return orderProcessing.current;
     const run = async () => {
       setSyncingOrders(true);
       let latest = null;
+      let wait = 1500;
       try {
         while (orderQueue.current.length) {
           const command = orderQueue.current[0];
@@ -154,6 +164,12 @@ export function useDatabase() {
               for (const queued of orderQueue.current) delete queued.version;
               storeOrderQueue();
               publish();
+              continue;
+            }
+            if (!requestError.status || requestError.status >= 500) {
+              setError(OFFLINE);
+              await waitForNetwork(wait);
+              wait = Math.min(wait * 2, 10000);
               continue;
             }
             if (requestError.status >= 400 && requestError.status < 500) {
@@ -172,6 +188,7 @@ export function useDatabase() {
             );
             throw requestError;
           }
+          wait = 1500;
           orderQueue.current.shift();
           storeOrderQueue();
           accept(latest);
@@ -263,10 +280,7 @@ export function useDatabase() {
         setPending(null);
         sessionStorage.removeItem(key);
         if (requestError.status === 409) await refresh();
-      } else
-        setError(
-          "Rezultati i veprimit nuk u verifikua. Përdorni “Verifiko veprimin”; mos e regjistroni përsëri.",
-        );
+      } else setError(OFFLINE.replace("Porosia ruhet në këtë pajisje dhe dërgohet", "Veprimi i fundit përfundon"));
       throw requestError;
     } finally {
       lock.current = false;

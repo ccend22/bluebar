@@ -103,7 +103,7 @@ function OpenShift({ state, update }) {
   const [opening, setOpening] = useState(last ? String(last.opening) : "");
   return (
     <section className="panel shift-hero">
-      <SectionHeading icon="cash" title="Hap turnin" description="Numëroni fondin e arkës dhe nisni shërbimin. Pa turn të hapur nuk merren porosi." />
+      <SectionHeading icon="cash" title="Hap ditën" description="Turni hapet vetë me porosinë e parë, me të njëjtin fond (kusur) si herën e kaluar. Nëse fondi në arkë është ndryshe, hapeni këtu me shumën e saktë para porosisë së parë." />
       <form
         className="shift-open-form"
         onSubmit={(e) => {

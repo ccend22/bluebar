@@ -9,6 +9,7 @@ import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "
 import { AiImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
 import { Finance, TransactionCategories, firstPeriod, periodName } from "./Finance.jsx";
+import { ShiftReport, Shifts } from "./Shifts.jsx";
 import { MenuSetup } from "./MenuSetup.jsx";
 import { StaffOverview, StaffSettings } from "./Staff.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
@@ -83,6 +84,13 @@ const pages = [
     name: "Transaksione",
     icon: "cash",
     description: "Shpenzimet, hyrjet e parave dhe shitjet, në një listë.",
+  },
+  {
+    // The till's day: the shift opens by itself with the first order; here the manager
+    // takes cash in or out, counts the drawer and closes the day with its report.
+    name: "Arka",
+    icon: "clock",
+    description: "Hyrjet dhe daljet e arkës, numërimi dhe mbyllja e ditës.",
   },
   {
     name: "Raportet",
@@ -348,6 +356,7 @@ function App({ user, onLogout, onUserChange }) {
     [cancelling, setCancelling] = useState(false),
     [deleteConfirmId, setDeleteConfirmId] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
+    [report, setReport] = useState(null),
     [roomDraft, setRoomDraft] = useState({}),
     // Menaxho sallën: every change is a draft until "Ruaj" saves it all (room.save).
     [roomAdded, setRoomAdded] = useState({}), // new tables, by a temporary negative id
@@ -365,6 +374,15 @@ function App({ user, onLogout, onUserChange }) {
     dialogTrigger = useRef(null),
     heading = useRef(null),
     orderHeading = useRef(null);
+  // An action left without an answer finishes by itself once the network is back.
+  const stuck = Boolean(database.pending && !database.busy && !database.syncingOrders);
+  useEffect(() => {
+    if (!stuck) return;
+    const again = () => navigator.onLine !== false && finishPending(true);
+    const timer = setInterval(again, 5000);
+    window.addEventListener("online", again);
+    return () => (clearInterval(timer), window.removeEventListener("online", again));
+  }, [stuck]);
   useEffect(() => {
     // Waiter sessions stay locked to their own id; only managers pick who an order belongs to.
     if (user.waiterId == null && !state.waiters.some((w) => w.id === waiter && w.active))
@@ -443,6 +461,7 @@ function App({ user, onLogout, onUserChange }) {
     setTicketPrint(null);
     setManageTables(false);
     setFloorSelected(null);
+    setReport(null);
     setOrderMode("summary");
   };
   const draftTable = (id, patch) => id < 0
@@ -495,6 +514,7 @@ function App({ user, onLogout, onUserChange }) {
   };
   const closeRoomEditor = () => {
     setFloorSelected(null);
+    setReport(null);
     setManageTables(false);
     setSelected(null);
   };
@@ -746,7 +766,9 @@ function App({ user, onLogout, onUserChange }) {
     const command = { tableId: selected, ...payload, fiscalize: autoFiscalize };
     cancelPayment();
     const data = await update("order.pay", command);
-    if (data?.result.partial) {
+    // No answer (offline): it finishes by itself once the connection is back (finishPending).
+    if (!data?.result) return;
+    if (data.result.partial) {
       notify(`${tableLabel(command)}pagesa e pjesshme u regjistrua · mbeten ${money(data.result.remaining)}.`);
       return;
     }
@@ -829,6 +851,31 @@ function App({ user, onLogout, onUserChange }) {
     )
       setEditor(null);
   }
+  // The day's report goes to the till's network printer when there is one; else the browser prints it.
+  const printShiftReport = async (r) => {
+    if (!printerFor(state.printers, r.shift.posId)) return printFitted();
+    try {
+      await reprintDocument("shift", r.shift.id);
+      notify(`Raporti u dërgua te ${printerFor(state.printers, r.shift.posId).name}.`);
+    } catch (e) {
+      notify(e.message, "error");
+    }
+  };
+  // A command that got no answer (the network dropped): finish it — by hand ("Provo tani") or
+  // by itself when the connection comes back and every few seconds. The server never applies
+  // the same command twice, so trying again is always safe.
+  async function finishPending(quiet) {
+    try {
+      const data = await database.execute(null, null, true);
+      if (data?.result?.invoiceId) {
+        setReceipt(data.state.invoices.find((i) => i.id === data.result.invoiceId));
+        setSelected(null);
+      }
+      notify("Lidhja u kthye: veprimi u krye.");
+    } catch (e) {
+      if (!quiet || (e.status >= 400 && e.status < 500)) notify(e.message, "error");
+    }
+  }
   if (database.loading || !database.ready)
     return (
       <main className="database-setup">
@@ -892,28 +939,10 @@ function App({ user, onLogout, onUserChange }) {
       {database.pending && !database.busy && !database.syncingOrders && (
         <div className="database-overlay">
           <section className="panel" role="status">
-            <h2>Veprimi kërkon verifikim</h2>
-            <p>Përgjigjja e mëparshme mungon. Verifikojeni përpara se të vazhdoni; veprimi nuk do të dyfishohet.</p>
-              <button
-                className="primary"
-                onClick={async () => {
-                  try {
-                    const data = await database.execute(null, null, true);
-                    if (data.result?.invoiceId) {
-                      setReceipt(
-                        data.state.invoices.find(
-                          (i) => i.id === data.result.invoiceId,
-                        ),
-                      );
-                      setSelected(null);
-                    }
-                    notify("Veprimi u verifikua dhe të dhënat u rifreskuan.");
-                  } catch (e) {
-                    notify(e.message, "error");
-                  }
-                }}
-              >
-                Verifiko veprimin
+            <h2>Pa lidhje me serverin</h2>
+            <p>Veprimi i fundit nuk mori përgjigje. Përfundon vetë sapo të kthehet interneti dhe nuk regjistrohet dy herë.</p>
+              <button className="primary" onClick={() => finishPending(false)}>
+                Provo tani
               </button>
           </section>
         </div>
@@ -1223,7 +1252,8 @@ function App({ user, onLogout, onUserChange }) {
                     aria-label="Tavolinat e lokalit"
                   >
                       <div className="toolbar floor-toolbar">
-                        <div className="tabs" aria-label="Filtro zonën">
+                        {/* One room only (a waiter given one, or a venue with one): nothing to filter. */}
+                        <div className="tabs" aria-label="Filtro zonën" hidden={areas.length <= 2}>
                           {(separateRooms ? areas.slice(1) : areas).map((a) => (
                             <button
                               key={a}
@@ -1458,6 +1488,10 @@ function App({ user, onLogout, onUserChange }) {
                                 )}
                                 {i.fiscalStatus === "dështoi" && (
                                   <small className="warning-text">Dështoi</small>
+                                )}
+                                {/* Money given back on a fiscalized bill needs a corrective invoice at the tax office. */}
+                                {i.fiscalStatus === "fiskalizuar" && i.refunds?.length > 0 && (
+                                  <small className="warning-text" title="Rimbursimi duhet deklaruar me faturë korrigjuese">Rimbursim · kërkon korrigjim</small>
                                 )}
                               </td>
                               <td data-label="Tavolina">
@@ -2087,6 +2121,9 @@ function App({ user, onLogout, onUserChange }) {
               <StaffOverview state={state} rooms={roomNames} onEdit={() => { setSettingsTab("Kamarierët"); try { sessionStorage.setItem("settings-tab", "Kamarierët"); } catch {} nav("Cilësimet"); }} />
             )}
 
+            {page === "Arka" && (
+              <Shifts state={state} user={user} update={update} notify={notify} nav={nav} report={report} setReport={setReport} onPrintReport={printShiftReport} />
+            )}
             {page === "Raportet" && <Finance state={state} notify={notify} sales={<Reports state={state} />} period={finPeriod} setPeriod={setFinPeriod} show={txShow} setShow={setTxShow} go={finGo} />}
             {page === "Transaksione" && <Finance state={state} notify={notify} mode="transactions" period={finPeriod} setPeriod={setFinPeriod} show={txShow} setShow={setTxShow} go={finGo} />}
             {page === "Cilësimet" && (
@@ -2233,6 +2270,11 @@ function App({ user, onLogout, onUserChange }) {
       {(printDoc || receipt) && !ticketPrint && (
         <article className="receipt print-only invoice-print">
           <Receipt invoice={printDoc || receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === (printDoc || receipt).waiter)?.name} tables={state.tables} />
+        </article>
+      )}
+      {report && !ticketPrint && !(printDoc || receipt) && (
+        <article className="receipt print-only">
+          <ShiftReport report={report} venueName={user.venue?.name} />
         </article>
       )}
     </>

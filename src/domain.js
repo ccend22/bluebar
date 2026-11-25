@@ -105,9 +105,10 @@ export function initialState() {
 // first till — so a business with a single till never has to configure areas.
 export const posOf = (state, table) =>
   (state.pointsOfSale.find((k) => k.areas.includes(table.area)) ?? state.pointsOfSale[0])?.id ?? null;
-// A slip still waiting at its department: not ready, not cancelled, and its order not yet
-// paid. Once the table has paid there's no order left, so it leaves Repartet.
-export const ticketWaiting = (k) => !k.doneAt && !k.cancelledAt && !k.invoice;
+// A slip still waiting at its department: not ready and not cancelled. Paying doesn't take it
+// away (a guest who pays at once still gets their coffee): it stays, marked "Paguar", until
+// the station taps "Gati" (or the server drops it 12 hours after payment).
+export const ticketWaiting = (k) => !k.doneAt && !k.cancelledAt;
 // Combine the venue's saved category lists, including those created before categories were shared.
 export const TX_CATEGORIES = {
   shpenzim: ["Furnitorë", "Staff", "Qira", "Utilities", "Taksa", "Mirëmbajtje", "Transport", "Marketing", "Të tjera"],
@@ -145,9 +146,12 @@ export function withOpenShift(state, table, by = null) {
   const posId = posOf(state, table);
   if (posId == null || shiftFor(state, posId)) return state;
   const ids = [...state.shifts, ...state.openShifts].map((s) => s.id);
+  // The till keeps the float it started with last time (the change left in the drawer), so
+  // the next count isn't short by it; a different float is set by hand in Arka → Hap ditën.
+  const last = state.shifts.filter((s) => s.posId === posId).sort((a, b) => b.id - a.id)[0];
   return {
     ...state,
-    openShifts: [...state.openShifts, { id: (ids.length ? Math.max(...ids) : 0) + 1, posId, opened: new Date().toISOString(), opening: 0, openedBy: by, cashMovements: [] }],
+    openShifts: [...state.openShifts, { id: (ids.length ? Math.max(...ids) : 0) + 1, posId, opened: new Date().toISOString(), opening: last?.opening ?? 0, openedBy: by, cashMovements: [] }],
   };
 }
 // The till a station ticket / an invoice belongs to: the one stored when it was sent

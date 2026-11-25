@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveExtras,
+  ticketWaiting,
+  withOpenShift,
   initialState,
   addItem,
   bill,
@@ -87,4 +89,18 @@ test("options in a group are one choice; add-ons are free", () => {
   ] };
   assert.deepEqual(resolveExtras(pizza, ["E madhe", "Djathë ekstra", "Kërpudha"]).map((x) => x.name), ["E madhe", "Djathë ekstra", "Kërpudha"]);
   assert.throws(() => resolveExtras(pizza, ["E vogël", "E madhe"]), /vetëm një: Madhësia/);
+});
+
+test("Repartet: a slip waits until the station marks it ready, paid or not", () => {
+  assert.equal(ticketWaiting({ doneAt: null, cancelledAt: null, invoice: null }), true);
+  assert.equal(ticketWaiting({ doneAt: null, cancelledAt: null, invoice: 12 }), true, "paid at once, still to be made");
+  assert.equal(ticketWaiting({ doneAt: "2026-11-25T10:00:00Z", cancelledAt: null, invoice: 12 }), false);
+  assert.equal(ticketWaiting({ doneAt: null, cancelledAt: "2026-11-25T10:00:00Z", invoice: null }), false);
+});
+
+test("Arka: a till's next shift opens with the float it started with last time", () => {
+  const base = { pointsOfSale: [{ id: 1, areas: ["Salla"] }], openShifts: [], shifts: [{ id: 4, posId: 1, opening: 15000 }, { id: 2, posId: 1, opening: 9000 }] };
+  const table = { id: 1, area: "Salla" };
+  assert.equal(withOpenShift(base, table).openShifts[0].opening, 15000);
+  assert.equal(withOpenShift({ ...base, shifts: [] }, table).openShifts[0].opening, 0, "a brand-new till starts from 0");
 });
