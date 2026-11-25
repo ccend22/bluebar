@@ -1732,6 +1732,7 @@ export function buildApp({
                 "shift.open",
                 "shift.close",
                 "shift.cash",
+                "waiter.handover",
                 "reservation.save",
                 "reservation.delete",
                 "reservation.slots",

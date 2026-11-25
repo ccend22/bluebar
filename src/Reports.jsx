@@ -45,7 +45,7 @@ const AUDIT = {
   "category.create": "Shtoi kategori", "department.create": "Shtoi repart",
   "guest.accept": "Pranoi porosinë online", "guest.reject": "Refuzoi porosinë online", "guest.seen": "Pa porosinë online",
   "waiter.create": "Shtoi kamarier", "waiter.toggle": "Ndezi/fiku kamarierin", "waiter.pos": "Kaloi kamarierin në kasë", "waiter.area": "Caktoi sallën e kamarierit", "waiter.delete": "Fshiu kamarierin",
-  "pos.save": "Ruajti kasën", "pos.delete": "Fshiu kasën", "shift.open": "Hapi turnin", "shift.close": "Mbylli turnin", "shift.cash": "Hyrje/dalje arke",
+  "pos.save": "Ruajti kasën", "pos.delete": "Fshiu kasën", "shift.open": "Hapi turnin", "shift.close": "Mbylli turnin", "shift.cash": "Hyrje/dalje arke", "waiter.handover": "Mori paratë e kamarierit",
   // Settings and accounts (not commands).
   "menu.settings": "Ndryshoi menunë online", "menu.brand": "Ndryshoi identitetin / çmimet në euro", "menu.logo": "Ngarkoi logon",
   "menu.logoRemove": "Hoqi logon", "menu.translate": "Përktheu menunë", "menu.translationFix": "Korrigjoi një përkthim",

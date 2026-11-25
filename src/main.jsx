@@ -9,7 +9,7 @@ import { GuestOrderAlert, GuestOrders, OnlineMenuSettings, ProductPhoto } from "
 import { AiImport, StockAiImport, StockDelivery, StockFields } from "./ProductSetup.jsx";
 import { Reservations } from "./Reservations.jsx";
 import { Finance, TransactionCategories, firstPeriod, periodName } from "./Finance.jsx";
-import { ShiftReport, Shifts } from "./Shifts.jsx";
+import { Arka } from "./Arka.jsx";
 import { MenuSetup } from "./MenuSetup.jsx";
 import { StaffOverview, StaffSettings } from "./Staff.jsx";
 import { BusinessNetwork } from "./BusinessNetwork.jsx";
@@ -86,11 +86,10 @@ const pages = [
     description: "Shpenzimet, hyrjet e parave dhe shitjet, në një listë.",
   },
   {
-    // The till's day: the shift opens by itself with the first order; here the manager
-    // takes cash in or out, counts the drawer and closes the day with its report.
+    // Each waiter's money: what they took since their last handover, and "Mbyll" to take it.
     name: "Arka",
     icon: "clock",
-    description: "Hyrjet dhe daljet e arkës, numërimi dhe mbyllja e ditës.",
+    description: "Paratë e secilit kamarier: sa ka marrë, sa ka të hapur, dhe dorëzimi.",
   },
   {
     name: "Raportet",
@@ -356,7 +355,6 @@ function App({ user, onLogout, onUserChange }) {
     [cancelling, setCancelling] = useState(false),
     [deleteConfirmId, setDeleteConfirmId] = useState(null),
     [floorSelected, setFloorSelected] = useState(null),
-    [report, setReport] = useState(null),
     [roomDraft, setRoomDraft] = useState({}),
     // Menaxho sallën: every change is a draft until "Ruaj" saves it all (room.save).
     [roomAdded, setRoomAdded] = useState({}), // new tables, by a temporary negative id
@@ -461,7 +459,6 @@ function App({ user, onLogout, onUserChange }) {
     setTicketPrint(null);
     setManageTables(false);
     setFloorSelected(null);
-    setReport(null);
     setOrderMode("summary");
   };
   const draftTable = (id, patch) => id < 0
@@ -514,7 +511,6 @@ function App({ user, onLogout, onUserChange }) {
   };
   const closeRoomEditor = () => {
     setFloorSelected(null);
-    setReport(null);
     setManageTables(false);
     setSelected(null);
   };
@@ -851,16 +847,6 @@ function App({ user, onLogout, onUserChange }) {
     )
       setEditor(null);
   }
-  // The day's report goes to the till's network printer when there is one; else the browser prints it.
-  const printShiftReport = async (r) => {
-    if (!printerFor(state.printers, r.shift.posId)) return printFitted();
-    try {
-      await reprintDocument("shift", r.shift.id);
-      notify(`Raporti u dërgua te ${printerFor(state.printers, r.shift.posId).name}.`);
-    } catch (e) {
-      notify(e.message, "error");
-    }
-  };
   // A command that got no answer (the network dropped): finish it — by hand ("Provo tani") or
   // by itself when the connection comes back and every few seconds. The server never applies
   // the same command twice, so trying again is always safe.
@@ -2122,7 +2108,7 @@ function App({ user, onLogout, onUserChange }) {
             )}
 
             {page === "Arka" && (
-              <Shifts state={state} user={user} update={update} notify={notify} nav={nav} report={report} setReport={setReport} onPrintReport={printShiftReport} />
+              <Arka state={state} user={user} update={update} />
             )}
             {page === "Raportet" && <Finance state={state} notify={notify} sales={<Reports state={state} />} period={finPeriod} setPeriod={setFinPeriod} show={txShow} setShow={setTxShow} go={finGo} />}
             {page === "Transaksione" && <Finance state={state} notify={notify} mode="transactions" period={finPeriod} setPeriod={setFinPeriod} show={txShow} setShow={setTxShow} go={finGo} />}
@@ -2270,11 +2256,6 @@ function App({ user, onLogout, onUserChange }) {
       {(printDoc || receipt) && !ticketPrint && (
         <article className="receipt print-only invoice-print">
           <Receipt invoice={printDoc || receipt} venueName={user.venue?.name} waiterName={state.waiters.find((w) => w.id === (printDoc || receipt).waiter)?.name} tables={state.tables} />
-        </article>
-      )}
-      {report && !ticketPrint && !(printDoc || receipt) && (
-        <article className="receipt print-only">
-          <ShiftReport report={report} venueName={user.venue?.name} />
         </article>
       )}
     </>

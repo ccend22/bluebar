@@ -8,6 +8,7 @@ export async function loadState(client) {
     "control", "categories", "departments", "products", "waiters", "order_lines",
     "dining_tables", "shifts", "invoice_lines", "invoices", "stock_movements",
     "station_tickets", "printers", "points_of_sale", "stations", "order_payments", "refunds",
+    "waiter_handovers",
   ];
   // Identifiers come only from the fixed list above, never request data.
   const query = "SELECT jsonb_build_object(" + names.map((name) =>
@@ -229,6 +230,9 @@ export async function loadState(client) {
         .sort((a, b) => a.id - b.id)
         .map((k) => ({ id: k.id, name: k.name, areas: k.areas })),
       refunds,
+      handovers: rows("waiter_handovers")
+        .sort((a, b) => a.id - b.id)
+        .map((h) => ({ id: h.id, waiterId: h.waiter_id, date: iso(h.created_at), expected: Number(h.cash_expected), counted: Number(h.cash_counted), card: Number(h.card), tips: Number(h.tips), invoices: h.invoices, note: h.note, by: h.actor })),
       tickets: tickets
         .map((k) => ({
           id: k.id,
@@ -540,6 +544,11 @@ export async function persist(client, previous, next) {
     await client.query(
       "INSERT INTO bluebar.refunds(id,invoice_id,shift_id,method,amount,reason,actor,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
       [r.id, r.invoiceId, r.shiftId, r.method, r.amount, r.reason, r.by || null, r.date],
+    );
+  for (const h of (next.handovers || []).filter((h) => !(previous.handovers || []).some((x) => x.id === h.id)))
+    await client.query(
+      "INSERT INTO bluebar.waiter_handovers(id,waiter_id,created_at,cash_expected,cash_counted,card,tips,invoices,note,actor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+      [h.id, h.waiterId, h.date, h.expected, h.counted, h.card, h.tips, h.invoices, h.note, h.by],
     );
   // After the invoices: a 'pay' event references its invoice.
   for (const e of (next.events || []).slice((previous.events || []).length))

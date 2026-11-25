@@ -142,6 +142,27 @@ export function txIcon(state, name) {
 export const shiftFor = (state, posId) => state.openShifts.find((s) => s.posId === posId) || null;
 export const tableShift = (state, table) => shiftFor(state, posOf(state, table));
 // No shift to open by hand: the first order at a table opens its till's shift, from 0 Lek.
+// Arka: what a waiter has taken since their last handover (or ever, before the first):
+// their invoices in cash and by card, tips, and cash refunds on those invoices, which left
+// the drawer. Part payments on a table still open aren't counted yet: they join the
+// invoice when the table settles. Also their open tables, still to be paid.
+export function waiterTakings(state, waiterId) {
+  const last = (state.handovers || []).filter((h) => h.waiterId === waiterId).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const since = last?.date || "";
+  const invoices = state.invoices.filter((i) => i.waiter === waiterId && i.date > since);
+  const mine = new Set(invoices.map((i) => i.id));
+  const refunds = (state.refunds || []).filter((r) => r.date > since && (mine.has(r.invoiceId) || state.invoices.some((i) => i.id === r.invoiceId && i.waiter === waiterId)));
+  const sum = (list, f) => list.reduce((n, x) => n + (Number(x[f]) || 0), 0);
+  const cash = sum(invoices, "cash"), card = sum(invoices, "card"), tipCash = sum(invoices, "tipCash"), tipCard = sum(invoices, "tipCard");
+  const refundsCash = sum(refunds.filter((r) => r.method === "Cash"), "amount"), refundsCard = sum(refunds.filter((r) => r.method !== "Cash"), "amount");
+  const open = state.tables.filter((t) => t.waiter === waiterId && t.lines.length);
+  return {
+    since: since || null, last: last || null, invoices: invoices.length, cash, card, tipCash, tipCard, refundsCash, refundsCard,
+    expected: cash + tipCash - refundsCash,
+    openTables: open.length, openValue: open.reduce((n, t) => n + bill(t).remaining, 0),
+    partPaid: open.reduce((n, t) => n + bill(t).paid, 0),
+  };
+}
 export function withOpenShift(state, table, by = null) {
   const posId = posOf(state, table);
   if (posId == null || shiftFor(state, posId)) return state;

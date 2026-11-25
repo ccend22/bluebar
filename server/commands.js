@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { addItem, bill, checkout, closeShift, COURSES, DENOMINATIONS, drawer, findLine, lineDetails, newLineKey, pendingUnits, posOf, readDetails, reservationClash, reservationTime, routeStation, shiftFor, tableName, tableShift, unitPrice, withOpenShift } from "../src/domain.js";
+import { addItem, bill, checkout, closeShift, waiterTakings, COURSES, DENOMINATIONS, drawer, findLine, lineDetails, newLineKey, pendingUnits, posOf, readDetails, reservationClash, reservationTime, routeStation, shiftFor, tableName, tableShift, unitPrice, withOpenShift } from "../src/domain.js";
 import { openSpot, rectOf, sizeFor } from "../src/floorGeometry.js";
 // Why stock changes by hand. Losses are counted as such in the reports.
 export const LOSSES = ["Humbje", "Thyerje", "Skadim"];
@@ -1671,6 +1671,27 @@ export function applyCommand(state, type, payload, actor = null) {
           s === open ? { ...s, cashMovements: [...(s.cashMovements || []), move] } : s,
         ),
       };
+      break;
+    }
+    case "waiter.handover": {
+      // Arka: the waiter hands over what they took since their last handover. The server
+      // works out what was owed in cash; the manager says what was counted.
+      integer(p.waiterId);
+      const waiter = state.waiters.find((w) => w.id === p.waiterId);
+      if (!waiter) fail("Kamarieri nuk ekziston.");
+      integer(p.counted, 0, 100000000);
+      const t = waiterTakings(state, waiter.id);
+      if (!t.invoices && !t.refundsCash) fail(`${waiter.name} nuk ka para për të dorëzuar.`);
+      const note = p.note === undefined || p.note === null || String(p.note).trim() === "" ? null : name(p.note, 300);
+      if (p.counted !== t.expected && !note) fail("Shkruani pse ka diferencë.");
+      const handovers = state.handovers || [];
+      const handover = {
+        id: Math.max(0, ...handovers.map((h) => h.id)) + 1, waiterId: waiter.id, date: now,
+        expected: t.expected, counted: p.counted, card: t.card - t.refundsCard, tips: t.tipCash + t.tipCard,
+        invoices: t.invoices, note, by: actor?.name || null,
+      };
+      next = { ...state, handovers: [...handovers, handover] };
+      result = { handoverId: handover.id };
       break;
     }
     case "shift.close": {

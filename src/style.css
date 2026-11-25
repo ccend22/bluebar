@@ -8090,3 +8090,32 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .payment-tip-add { margin: 2px 0 8px; }
 .link-button { min-height: 0; padding: 4px 0; border: 0; background: none; color: var(--blue, #0867c9); font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .tabs[hidden] { display: none !important; }
+
+/* Arka: a card per waiter, then the latest handovers. */
+.arka { display: grid; gap: 18px; }
+.arka-team { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
+.arka-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--card-line, #e3e9f0); border-radius: 16px; background: #fff; }
+.arka-card header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.arka-card header > div { display: grid; flex: 1; min-width: 0; }
+.arka-card h3 { margin: 0; font-size: 16px; }
+.arka-card header small { color: var(--muted, #6b7887); }
+.arka-avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #e8f1fc; color: var(--blue, #0867c9); font-size: 13px; font-weight: 700; }
+.arka-card dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin: 0; }
+.arka-card dl div { padding: 8px 10px; border-radius: 10px; background: #f6f8fb; }
+.arka-card dt { color: var(--muted, #6b7887); font-size: 12px; }
+.arka-card dd { margin: 2px 0 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.arka-card footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line, #e3e9f0); }
+.arka-card footer p { display: grid; margin: 0; }
+.arka-card footer span { color: var(--muted, #6b7887); font-size: 12px; }
+.arka-card footer strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.arka-card .helper { margin: 0; }
+.arka-history { margin: 12px 0 0; padding: 0; list-style: none; }
+.arka-history li + li { border-top: 1px solid var(--line, #e3e9f0); }
+.arka-history button { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 4px; border: 0; background: none; text-align: left; }
+.arka-history button > div { display: grid; }
+.arka-history small { color: var(--muted, #6b7887); }
+.arka-history-end { justify-items: end; text-align: right; }
+.arka-dialog { width: min(420px, calc(100vw - 32px)); padding: 22px; border: 0; border-radius: 18px; }
+.arka-dialog form { display: grid; gap: 10px; }
+.arka-dialog h2 { margin: 0; font-size: 19px; }
+.arka-dialog .receipt-paper { padding: 16px; }
