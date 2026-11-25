@@ -85,12 +85,8 @@ const pages = [
     icon: "cash",
     description: "Shpenzimet, hyrjet e parave dhe shitjet, në një listë.",
   },
-  {
-    // Each waiter's money: what they took since their last handover, and "Mbyll" to take it.
-    name: "Arka",
-    icon: "clock",
-    description: "Paratë e secilit kamarier: sa ka marrë, sa ka të hapur, dhe dorëzimi.",
-  },
+  // Arka (each waiter's money and handover, src/Arka.jsx) is hidden for now: put back
+  // { name: "Arka", icon: "clock", description: "…" } here to show it again.
   {
     name: "Raportet",
     icon: "chart",
