@@ -16,6 +16,7 @@ import { accounts, finance } from "./finance.js";
 import { deeplTranslator, LANGS } from "./translate.js";
 import { geminiVoice, geminiMenuPhoto, geminiFurniture, geminiDelivery, geminiExpenses } from "./voice.js";
 import { verifyLuxHotelToken } from "./luxhotel.js";
+import { registerAdmin } from "./admin.js";
 import { posOf, resolveExtras, tableShift } from "../src/domain.js";
 import {
   agentKeyValid,
@@ -203,7 +204,7 @@ export function buildApp({
     // No CORS: cross-site browser requests cannot add this non-simple header.
     if (request.headers["x-bluebar-client"] !== "1")
       return reply.code(403).send({ error: "Kërkesë e palejuar." });
-    if (path === "/api/venues/register" || path === "/api/luxhotel/login" || path === "/api/print/pair" || path.startsWith("/api/menu/")) return;
+    if (path === "/api/venues/register" || path === "/api/luxhotel/login" || path === "/api/print/pair" || path.startsWith("/api/menu/") || path.startsWith("/api/admin/")) return;
     requireDb();
     request.venue = await resolveVenue(pool, request.headers["x-bluebar-venue"] || "bluebar");
     request.db = tenantPool(pool, request.venue.schema_name);
@@ -393,6 +394,7 @@ export function buildApp({
     const { uid } = await luxhotel(request.body.token);
     const venue = (await pool.query("SELECT * FROM bluebar_catalog.venues WHERE luxhotel_uid = $1", [uid])).rows[0];
     if (!venue) throw new AppError("Kjo llogari LuxHotel nuk ka ende biznes në BlueBar.", 404);
+    if (venue.suspended_at) throw new AppError("Ky biznes është pezulluar. Kontaktoni BlueSquare.", 403);
     request.venue = venue;
     request.db = tenantPool(pool, venue.schema_name);
     const manager = (await request.db.query("SELECT id FROM bluebar.accounts WHERE role = 'manager' AND active ORDER BY id LIMIT 1")).rows[0];
@@ -401,6 +403,7 @@ export function buildApp({
   });
   app.get("/api/venue", async request => publicVenue(request.venue));
   registerGpt(app, { pool, session });
+  registerAdmin(app, { pool, secretKey, secureCookies });
   app.get("/api/integrations/mcp", { preValidation: session("manager") }, async (request) => {
     if (!mcpOrigin) return { endpoint: null };
     const connections = new URL("/oauth/bluebar/connections", mcpOrigin);

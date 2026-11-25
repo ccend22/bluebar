@@ -14,7 +14,8 @@
     "api": "node --env-file-if-exists=.env server/index.js",
     "db:migrate": "node --env-file-if-exists=.env server/migrate.js",
     "db:check": "node --env-file-if-exists=.env scripts/db-check.js",
-    "auth:manager": "node --env-file-if-exists=.env scripts/create-manager.js"
+    "auth:manager": "node --env-file-if-exists=.env scripts/create-manager.js",
+    "auth:admin": "node --env-file-if-exists=.env scripts/create-admin.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

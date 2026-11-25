@@ -35,5 +35,5 @@ export async function verifyLuxHotelToken(token, projectId, keys = googleKeys, n
     typeof claims.sub !== "string" || !claims.sub || claims.sub.length > 128 ||
     !(claims.exp > now) || !(claims.iat <= now + 60) || !(claims.auth_time <= now + 60)
   ) throw invalid();
-  return { uid: claims.sub, email: claims.email || "", name: claims.name || "" };
+  return { uid: claims.sub, email: claims.email || "", emailVerified: claims.email_verified === true, name: claims.name || "" };
 }

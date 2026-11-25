@@ -23,6 +23,8 @@ export async function resolveVenue(pool, slug) {
   if (!validSlug(slug)) throw new AppError("Kodi i biznesit është i pavlefshëm.", 400);
   const venue = (await pool.query("SELECT * FROM bluebar_catalog.venues WHERE slug=$1", [slug])).rows[0];
   if (!venue) throw new AppError("Biznesi nuk u gjet. Kontrolloni kodin.", 404);
+  // Switched off by BlueSquare (/admin): its staff app, menu, GPT and print agents stop.
+  if (venue.suspended_at) throw new AppError("Ky biznes është pezulluar. Kontaktoni BlueSquare.", 403);
   return venue;
 }
 // Database-backed hourly budget, shared by every serverless instance. Returns the
@@ -39,11 +41,12 @@ export async function spendBudget(pool, key) {
       reset_at = CASE WHEN bluebar_catalog.registration_limits.reset_at < now() THEN now() + interval '1 hour' ELSE bluebar_catalog.registration_limits.reset_at END
     RETURNING attempts`, [createHmac("sha256", process.env.BLUEBAR_SECRET_KEY || "bluebar-rate-limit").update(key).digest("hex")])).rows[0].attempts;
 }
-export async function registerVenue(pool, { slug, name, pin, luxhotelUid = null }, ip) {
+// limit: businesses an IP (or a superadmin) may create in an hour.
+export async function registerVenue(pool, { slug, name, pin, luxhotelUid = null }, ip, limit = 5) {
   if (!validSlug(slug) || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 80)
     throw new AppError("Vendosni emrin dhe kodin e vlefshëm të biznesit.");
   if (!validPin(pin)) throw new AppError("PIN-i duhet të ketë 6 shifra.");
-  if ((await spendBudget(pool, ip)) > 5) throw new AppError("Shumë regjistrime. Provoni pas një ore.", 429);
+  if ((await spendBudget(pool, ip)) > limit) throw new AppError("Shumë regjistrime. Provoni pas një ore.", 429);
   const secret = await hashSecret(pin);
   const schema = `bluebar_${randomUUID().replaceAll("-", "")}`;
   const client = await pool.connect();

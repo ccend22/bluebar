@@ -81,3 +81,55 @@ CREATE TABLE IF NOT EXISTS bluebar_catalog.gpt_keys (
   created_at timestamptz NOT NULL DEFAULT now(),
   last_used_at timestamptz
 );
+
+-- Superadmin (BlueSquare, /admin): a business can be switched off, e.g. while its
+-- subscription is unpaid. Off, nobody in it can sign in or use its menu, GPT or MCP.
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS suspended_at timestamptz;
+ALTER TABLE bluebar_catalog.venues ADD COLUMN IF NOT EXISTS suspended_reason text;
+-- Each business's subscription to BlueBar: its plan, the monthly price in Lek, and the day
+-- it is paid until (null: nothing paid yet).
+CREATE TABLE IF NOT EXISTS bluebar_catalog.subscriptions (
+  venue_slug text PRIMARY KEY REFERENCES bluebar_catalog.venues(slug) ON DELETE CASCADE,
+  plan text NOT NULL DEFAULT 'Standard' CHECK (length(trim(plan)) BETWEEN 1 AND 40),
+  monthly_price integer NOT NULL DEFAULT 0 CHECK (monthly_price BETWEEN 0 AND 10000000),
+  paid_until date,
+  note text NOT NULL DEFAULT '' CHECK (length(note) <= 300),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- Every payment recorded by hand: how much, when, the months it covers and how it came in.
+CREATE TABLE IF NOT EXISTS bluebar_catalog.subscription_payments (
+  id uuid PRIMARY KEY,
+  venue_slug text NOT NULL REFERENCES bluebar_catalog.venues(slug) ON DELETE CASCADE,
+  amount integer NOT NULL CHECK (amount BETWEEN 1 AND 100000000),
+  paid_on date NOT NULL,
+  months integer NOT NULL CHECK (months BETWEEN 1 AND 24),
+  covers_from date NOT NULL,
+  covers_to date NOT NULL CHECK (covers_to >= covers_from),
+  method text NOT NULL CHECK (method IN ('Cash', 'Bankë')),
+  note text NOT NULL DEFAULT '' CHECK (length(note) <= 200),
+  recorded_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS subscription_payments_venue_idx ON bluebar_catalog.subscription_payments(venue_slug, created_at DESC);
+-- What each superadmin did, and to which business. Kept when the business is deleted.
+CREATE TABLE IF NOT EXISTS bluebar_catalog.admin_log (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  at timestamptz NOT NULL DEFAULT now(),
+  admin_email text NOT NULL,
+  action text NOT NULL,
+  venue_slug text,
+  detail jsonb NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS admin_log_at_idx ON bluebar_catalog.admin_log(at DESC);
+-- The superadmins themselves: an email and a password (scrypt, like the PINs). Created and
+-- reset with `npm run auth:admin -- <email>`. session_version goes up when the password
+-- changes, which signs that superadmin out everywhere else.
+CREATE TABLE IF NOT EXISTS bluebar_catalog.admin_accounts (
+  email text PRIMARY KEY CHECK (email = lower(email) AND email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+  password_hash text NOT NULL,
+  session_version integer NOT NULL DEFAULT 1,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  locked_until timestamptz,
+  last_login_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);

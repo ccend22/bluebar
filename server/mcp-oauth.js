@@ -92,7 +92,7 @@ export function createMcpOAuth({ pool, resource, signingKey, redirects, secureCo
     if (!validSlug(slug)) return null;
     const session = readCookie(request, cookieName(secureCookies, slug));
     if (!isToken(session)) return null;
-    const { rows: [venue] } = await pool.query("SELECT slug, name, schema_name FROM bluebar_catalog.venues WHERE slug=$1", [slug]);
+    const { rows: [venue] } = await pool.query("SELECT slug, name, schema_name FROM bluebar_catalog.venues WHERE slug=$1 AND suspended_at IS NULL", [slug]);
     if (!venue) return null;
     const user = await findSession(tenantPool(pool, venue.schema_name), session);
     return user?.role === "manager" ? { venue, user } : null;
@@ -185,7 +185,7 @@ export function createMcpOAuth({ pool, resource, signingKey, redirects, secureCo
       const { rows: [connection] } = await pool.query(`
         SELECT c.manager_id, c.client_id, c.venue_slug, c.access_expires_at, c.scopes, v.schema_name, v.name
         FROM bluebar_catalog.mcp_connections c JOIN bluebar_catalog.venues v ON c.venue_slug=v.slug
-        WHERE c.access_hash=$1 AND c.resource=$2 AND c.revoked_at IS NULL
+        WHERE c.access_hash=$1 AND c.resource=$2 AND c.revoked_at IS NULL AND v.suspended_at IS NULL
           AND c.expires_at > now() AND c.access_expires_at > now()
       `, [hash(token), resource.href]);
       if (!connection || !clientStore.getClient(connection.client_id))

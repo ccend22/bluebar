@@ -16,7 +16,10 @@ const sign = (claims, header = { alg: "RS256", kid: "k1" }) => {
 const check = (token) => verifyLuxHotelToken(token, "pms-test", keys, now);
 
 test("a LuxHotel token is trusted only when Google signed it for LuxHotel and it is current", async () => {
-  assert.deepEqual(await check(sign({})), { uid: "uid-1", email: "a@hotel.al", name: "" });
+  assert.deepEqual(await check(sign({})), { uid: "uid-1", email: "a@hotel.al", emailVerified: false, name: "" });
+  // Only Firebase's own "email_verified": true counts (the superadmin list trusts it).
+  assert.equal((await check(sign({ email_verified: true }))).emailVerified, true);
+  assert.equal((await check(sign({ email_verified: "true" }))).emailVerified, false);
   await assert.rejects(check(sign({ aud: "other-project", iss: "https://securetoken.google.com/other-project" })), /nuk u pranua/);
   await assert.rejects(check(sign({ exp: now - 1 })), /nuk u pranua/);
   await assert.rejects(check(sign({ sub: "" })), /nuk u pranua/);
