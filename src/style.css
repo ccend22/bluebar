@@ -8119,3 +8119,35 @@ button.fin-card small svg { vertical-align: -2px; opacity: 0.6; }
 .arka-dialog form { display: grid; gap: 10px; }
 .arka-dialog h2 { margin: 0; font-size: 19px; }
 .arka-dialog .receipt-paper { padding: 16px; }
+
+/* ---- Udhëzuesi (Tour.jsx): first-run guide, a pulsing dot on the target and a box beside it ---- */
+.tour-start { min-height: 34px; padding: 0 12px; font-size: 13px; }
+.tour { position: fixed; inset: 0; z-index: 1000; pointer-events: none; }
+.tour-spot {
+  position: fixed; border-radius: 12px; box-shadow: 0 0 0 4px var(--blue), 0 0 0 9999px rgb(10 22 34 / 0.45);
+  transition: top 420ms var(--ease-out), left 420ms var(--ease-out), width 420ms var(--ease-out), height 420ms var(--ease-out), opacity 200ms;
+}
+.tour-spot.none { inset: 50% auto auto 50%; width: 0; height: 0; box-shadow: 0 0 0 9999px rgb(10 22 34 / 0.45); }
+.tour-dot { position: fixed; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 2px solid #fff; border-radius: 50%; background: var(--blue); }
+.tour-dot::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; background: var(--blue); animation: tour-pulse 1.4s ease-out infinite; }
+@keyframes tour-pulse { from { transform: scale(1); opacity: .7; } to { transform: scale(3.2); opacity: 0; } }
+.tour-box {
+  position: fixed; box-sizing: border-box; padding: 16px 18px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); box-shadow: 0 18px 48px rgb(10 22 34 / 0.22); pointer-events: auto;
+  animation: tour-in 320ms var(--ease-out);
+  transition: top 420ms var(--ease-out), left 420ms var(--ease-out);
+}
+@keyframes tour-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+.tour-head { display: flex; align-items: flex-start; gap: 8px; }
+.tour-head h2 { flex: 1; margin: 0; font-size: 16px; }
+.tour-head .icon-button { flex: none; margin: -6px -8px 0 0; }
+.tour-box p { margin: 6px 0 14px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.tour-foot { display: flex; align-items: center; gap: 8px; }
+.tour-foot button { min-height: 38px; padding-inline: 16px; }
+.tour-dots { display: flex; flex: 1; gap: 5px; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); transition: width 240ms var(--ease-out), background 240ms; }
+.tour-dots i.on { width: 16px; border-radius: 3px; background: var(--blue); }
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot, .tour-box, .tour-dots i { transition: none; animation: none; }
+  .tour-dot::after { animation: none; }
+}

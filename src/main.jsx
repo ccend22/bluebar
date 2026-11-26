@@ -1,4 +1,5 @@
 import "./uuid.js";
+import { Tour, tourSeenKey } from "./Tour.jsx";
 import React, { useState, useEffect, useRef } from "react";
 import { extrasText, parseExtras } from "./parseList.js";
 import { bill, since, COURSES, invoicePos, money, posOf, printerFor, tableReservations, ticketPos, ticketWaiting, total, plural, tableName } from "./domain.js";
@@ -326,6 +327,13 @@ function App({ user, onLogout, onUserChange }) {
       () => user.waiterId ?? state.waiters.find((w) => w.active)?.id,
     );
   const role = user.role === "manager" ? "Menaxher" : "Kamarier";
+  // First run: a manager of a venue without products gets the setup guide once per device.
+  const [tour, setTour] = useState(false);
+  useEffect(() => {
+    if (role !== "Menaxher" || !database.ready || database.loading || state.products.length) return;
+    try { if (localStorage.getItem(tourSeenKey)) return; } catch {}
+    setTour(true);
+  }, [database.ready, database.loading]);
   const [printDoc, setPrintDoc] = useState(null);
   useEffect(() => {
     const done = () => setPrintDoc(null);
@@ -1046,6 +1054,9 @@ function App({ user, onLogout, onUserChange }) {
                   Pa internet
                 </span>
               )}
+              {role === "Menaxher" && (
+                <button type="button" className="tour-start" onClick={() => setTour(true)}>Udhëzuesi</button>
+              )}
               <span className="role">
                 <span>{user.name}</span>
                 <button onClick={onLogout} disabled={database.saving}>Dil</button>
@@ -1124,6 +1135,21 @@ function App({ user, onLogout, onUserChange }) {
                   <Icon name="close" size={18} />
                 </button>
               </div>
+            )}
+            {tour && (
+              <Tour
+                go={(p, tab) => {
+                  if (p === "Cilësimet" && tab) {
+                    setSettingsTab(tab);
+                    try { sessionStorage.setItem("settings-tab", tab); } catch {}
+                  }
+                  if (p !== page || p === "Cilësimet") nav(p);
+                }}
+                onClose={() => {
+                  setTour(false);
+                  try { localStorage.setItem(tourSeenKey, "1"); } catch {}
+                }}
+              />
             )}
             <dialog ref={desktopDialog} className="lux-dialog desktop-dialog" aria-labelledby="desktop-title">
               <button type="button" className="icon-button lux-close" aria-label="Mbyll" onClick={() => desktopDialog.current?.close()}>
